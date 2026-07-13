@@ -1,0 +1,58 @@
+{
+  "version": "1.0",
+  "categories": {
+    "mopa_fiber_laser": {
+      "label": "MOPA Fiber Laser",
+      "label_cn": "MOPA光纤激光器",
+      "series": {
+        "M7": {"power_range": "20-100W", "wavelength": "1064nm", "applications": ["Marking", "Engraving", "Color Marking"]},
+        "M8": {"power_range": "20-200W", "wavelength": "1064nm", "applications": ["Marking", "Engraving", "Cleaning"]},
+        "LP": {"power_range": "20-300W", "wavelength": "1064nm", "applications": ["Deep Engraving", "Cutting"]}
+      }
+    },
+    "cw_fiber_laser": {
+      "label": "CW Fiber Laser",
+      "label_cn": "连续光纤激光器",
+      "series": {
+        "CL": {"power_range": "100-1000W", "wavelength": "1080nm", "applications": ["Welding", "Cutting"]},
+        "PS-IR": {"power_range": "500-6000W", "wavelength": "1080nm", "applications": ["Cutting", "Welding"]},
+        "AOB": {"power_range": "1000-6000W", "wavelength": "915nm", "applications": ["Blue Laser Welding"]},
+        "Rack": {"power_range": "1000-30000W", "wavelength": "1080nm", "applications": ["Industrial Cutting"]}
+      }
+    },
+    "dpss_laser": {
+      "label": "DPSS Laser",
+      "label_cn": "固体激光器",
+      "series": {
+        "Sparrow": {"power_range": "3-30W", "wavelength": "355nm/532nm", "applications": ["UV Marking", "Micro Processing"]},
+        "Seal": {"power_range": "0.8-2W", "wavelength": "355nm/532nm", "applications": ["Precision Processing"]},
+        "Lark": {"power_range": "3-20W", "wavelength": "355nm/532nm", "applications": ["PCB Processing", "Marking"]}
+      }
+    },
+    "pump_source": {
+      "label": "Pump Source",
+      "label_cn": "泵浦源",
+      "series": {
+        "Diode": {"power_range": "15-480W", "wavelength": "Multiple", "applications": ["Fiber Laser Pumping"]}
+      }
+    },
+    "fiber_optic": {
+      "label": "Fiber Optic Components",
+      "label_cn": "光纤组件",
+      "series": {
+        "MPO/MTP": {"applications": ["Data Center", "5G Base Station"]},
+        "QBH": {"applications": ["High Power Laser Delivery"]},
+        "Patch Panel": {"applications": ["Data Center"]}
+      }
+    },
+    "equipment": {
+      "label": "Equipment",
+      "label_cn": "设备",
+      "series": {
+        "Trimmer": {"applications": ["Chip Resistor Trimming"]},
+        "Scriber": {"applications": ["Ceramic Substrate Scribing"]},
+        "Tester": {"applications": ["Module Testing"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "members": [],
+  "roles": {
+    "leader": {"label": "Sales Leader", "label_cn": "销售主管", "permissions": ["view", "edit", "merge", "export", "manage_team"]},
+    "sales": {"label": "Sales", "label_cn": "销售", "permissions": ["view", "edit", "export"]},
+    "assistant": {"label": "Sales Assistant", "label_cn": "销售助理", "permissions": ["view", "edit"]},
+    "pre_sales": {"label": "Pre-sales", "label_cn": "售前", "permissions": ["view", "edit"]},
+    "after_sales": {"label": "After-sales", "label_cn": "售后", "permissions": ["view", "edit"]}
+  }
+}

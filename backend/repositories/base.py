@@ -1,0 +1,437 @@
+"""
+Base repository with database connection management.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Generator, Optional, Union
+from uuid import uuid4
+
+# Database connection singleton
+_db_path: Optional[Path] = None
+_connection: Optional[sqlite3.Connection] = None
+
+
+def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    """Check whether a table already contains a column."""
+    cursor = conn.execute(f"PRAGMA table_info({table_name})")
+    return any(row[1] == column_name for row in cursor.fetchall())
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    """Check whether a table exists."""
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _ensure_column(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_sql: str,
+) -> None:
+    """Add a missing column for lightweight runtime migrations."""
+    if not _column_exists(conn, table_name, column_name):
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
+
+
+def _apply_runtime_migrations(conn: sqlite3.Connection) -> None:
+    """Apply lightweight schema fixes needed for existing local databases."""
+    _ensure_column(conn, "customers", "normalized_address", "TEXT")
+    _ensure_column(conn, "customers", "geocode_source", "TEXT")
+    _ensure_column(conn, "customers", "geocode_confidence", "TEXT")
+    _ensure_column(conn, "customers", "geocode_locked", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "lead_activities", "archived_at", "TEXT")
+    _ensure_column(conn, "customer_contacts", "archived_at", "TEXT")
+    _repair_owner_assignments(conn)
+    _repair_followup_stage_from_activities(conn)
+    _repair_service_status_from_tasks(conn)
+    _ensure_trip_planning_tables(conn)
+    conn.commit()
+
+
+def _ensure_trip_planning_tables(conn: sqlite3.Connection) -> None:
+    """Create v0.7 trip planning tables for existing local databases."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS trip_plans (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            owner_id TEXT NOT NULL REFERENCES users(id),
+            start_date TEXT,
+            end_date TEXT,
+            region TEXT,
+            origin_name TEXT,
+            origin_lat REAL,
+            origin_lng REAL,
+            destination_name TEXT,
+            destination_lat REAL,
+            destination_lng REAL,
+            travel_mode TEXT NOT NULL DEFAULT 'auto',
+            avoid_weekends INTEGER NOT NULL DEFAULT 1,
+            holiday_dates TEXT,
+            itinerary_generated_at TEXT,
+            itinerary_summary TEXT,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'Draft' CHECK (
+                status IN ('Draft', 'Active', 'Completed')
+            ),
+            archived_at TEXT,
+            created_at TEXT NOT NULL,
+            created_by TEXT REFERENCES users(id),
+            updated_at TEXT NOT NULL,
+            updated_by TEXT REFERENCES users(id),
+            row_version INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS trip_plan_stops (
+            id TEXT PRIMARY KEY,
+            plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+            customer_id TEXT NOT NULL REFERENCES customers(id),
+            lead_id TEXT REFERENCES leads(id),
+            sequence_no INTEGER NOT NULL DEFAULT 1,
+            planned_date TEXT,
+            planned_end_date TEXT,
+            stay_days INTEGER NOT NULL DEFAULT 1,
+            travel_from_label TEXT,
+            travel_mode TEXT,
+            travel_distance_km REAL,
+            travel_time_hours REAL,
+            travel_days INTEGER,
+            visit_purpose TEXT,
+            notes TEXT,
+            result_status TEXT NOT NULL DEFAULT 'Planned' CHECK (
+                result_status IN ('Planned', 'Visited', 'Follow-up Needed', 'Skipped')
+            ),
+            result_notes TEXT,
+            result_activity_id TEXT REFERENCES lead_activities(id),
+            archived_at TEXT,
+            created_at TEXT NOT NULL,
+            created_by TEXT REFERENCES users(id),
+            updated_at TEXT NOT NULL,
+            updated_by TEXT REFERENCES users(id),
+            row_version INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    _ensure_column(conn, "trip_plan_stops", "result_activity_id", "TEXT REFERENCES lead_activities(id)")
+    _ensure_column(conn, "trip_plans", "origin_name", "TEXT")
+    _ensure_column(conn, "trip_plans", "origin_lat", "REAL")
+    _ensure_column(conn, "trip_plans", "origin_lng", "REAL")
+    _ensure_column(conn, "trip_plans", "destination_name", "TEXT")
+    _ensure_column(conn, "trip_plans", "destination_lat", "REAL")
+    _ensure_column(conn, "trip_plans", "destination_lng", "REAL")
+    _ensure_column(conn, "trip_plans", "travel_mode", "TEXT NOT NULL DEFAULT 'auto'")
+    _ensure_column(conn, "trip_plans", "avoid_weekends", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(conn, "trip_plans", "holiday_dates", "TEXT")
+    _ensure_column(conn, "trip_plans", "itinerary_generated_at", "TEXT")
+    _ensure_column(conn, "trip_plans", "itinerary_summary", "TEXT")
+    _ensure_column(conn, "trip_plans", "row_version", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(conn, "trip_plan_stops", "planned_end_date", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "stay_days", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(conn, "trip_plan_stops", "travel_from_label", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "travel_mode", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "travel_distance_km", "REAL")
+    _ensure_column(conn, "trip_plan_stops", "travel_time_hours", "REAL")
+    _ensure_column(conn, "trip_plan_stops", "travel_days", "INTEGER")
+    _ensure_column(conn, "trip_plan_stops", "visit_customer_needs", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "visit_competitor", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "visit_budget", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "visit_decision_maker", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "visit_next_action", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "visit_followup_due_date", "TEXT")
+    _ensure_column(conn, "trip_plan_stops", "visit_sample_needed", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "trip_plan_stops", "visit_quote_needed", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "trip_plan_stops", "followup_activity_id", "TEXT REFERENCES lead_activities(id)")
+    _ensure_column(conn, "trip_plan_stops", "row_version", "INTEGER NOT NULL DEFAULT 1")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_trip_plans_owner ON trip_plans(owner_id, status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_trip_stops_plan ON trip_plan_stops(plan_id, sequence_no)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_trip_stops_customer ON trip_plan_stops(customer_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_trip_stops_lead ON trip_plan_stops(lead_id)")
+
+
+def _repair_owner_assignments(conn: sqlite3.Connection) -> None:
+    """Keep leads.owner_id and active owner assignment in sync for older local DBs."""
+    if not _table_exists(conn, "leads") or not _table_exists(conn, "lead_assignments"):
+        return
+
+    now = now_iso()
+    leads = conn.execute(
+        """
+        SELECT id, owner_id
+        FROM leads
+        WHERE archived_at IS NULL AND owner_id IS NOT NULL
+        """
+    ).fetchall()
+
+    for lead_id, owner_id in leads:
+        active_owners = conn.execute(
+            """
+            SELECT id, user_id
+            FROM lead_assignments
+            WHERE lead_id = ? AND assignment_type = 'owner' AND archived_at IS NULL
+            """,
+            (lead_id,),
+        ).fetchall()
+
+        if len(active_owners) == 1 and active_owners[0][1] == owner_id:
+            continue
+
+        conn.execute(
+            """
+            UPDATE lead_assignments
+            SET archived_at = ?
+            WHERE lead_id = ? AND assignment_type = 'owner' AND archived_at IS NULL
+            """,
+            (now, lead_id),
+        )
+
+        archived_owner = conn.execute(
+            """
+            SELECT id
+            FROM lead_assignments
+            WHERE lead_id = ? AND user_id = ? AND assignment_type = 'owner'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (lead_id, owner_id),
+        ).fetchone()
+
+        if archived_owner:
+            conn.execute(
+                """
+                UPDATE lead_assignments
+                SET archived_at = NULL
+                WHERE id = ?
+                """,
+                (archived_owner[0],),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO lead_assignments
+                    (id, lead_id, user_id, assignment_type, created_at, created_by, archived_at)
+                VALUES (?, ?, ?, 'owner', ?, NULL, NULL)
+                """,
+                (generate_uuid(), lead_id, owner_id, now),
+            )
+
+
+def _repair_service_status_from_tasks(conn: sqlite3.Connection) -> None:
+    """Keep lead service_status aligned with active after-sales tasks."""
+    if not _table_exists(conn, "leads") or not _table_exists(conn, "after_sales_tasks"):
+        return
+
+    now = now_iso()
+    rows = conn.execute(
+        """
+        SELECT lead_id, GROUP_CONCAT(status) AS statuses
+        FROM after_sales_tasks
+        WHERE archived_at IS NULL
+        GROUP BY lead_id
+        """
+    ).fetchall()
+
+    for lead_id, statuses_text in rows:
+        statuses = set((statuses_text or "").split(","))
+        if "Open" in statuses:
+            service_status = "Open"
+        elif "In Progress" in statuses:
+            service_status = "In Progress"
+        elif "Resolved" in statuses:
+            service_status = "Resolved"
+        elif "Closed" in statuses:
+            service_status = "Closed"
+        else:
+            service_status = "None"
+
+        conn.execute(
+            """
+            UPDATE leads
+            SET service_status = ?, updated_at = ?
+            WHERE id = ? AND archived_at IS NULL AND service_status != ?
+            """,
+            (service_status, now, lead_id, service_status),
+        )
+
+
+def _repair_followup_stage_from_activities(conn: sqlite3.Connection) -> None:
+    """Move leads with formal follow-ups into the follow-up stage."""
+    if not _table_exists(conn, "leads") or not _table_exists(conn, "lead_activities"):
+        return
+
+    now = now_iso()
+    conn.execute(
+        """
+        UPDATE leads
+        SET sales_stage = 'Following',
+            updated_at = ?,
+            row_version = row_version + 1
+        WHERE archived_at IS NULL
+          AND sales_stage IN ('New', 'Assigned')
+          AND EXISTS (
+              SELECT 1
+              FROM lead_activities a
+              WHERE a.lead_id = leads.id
+                AND a.action_type = 'follow_up'
+                AND a.archived_at IS NULL
+          )
+        """,
+        (now,),
+    )
+
+
+def init_db(db_path: Union[Path, str]) -> None:
+    """Initialize database path and create schema if needed."""
+    global _db_path
+    _db_path = Path(db_path)
+
+    # Create schema if database doesn't exist
+    if not _db_path.exists():
+        conn = sqlite3.connect(str(_db_path))
+        schema_path = Path(__file__).parent.parent / "schema.sql"
+        if schema_path.exists():
+            with open(schema_path, "r", encoding="utf-8") as f:
+                conn.executescript(f.read())
+        _apply_runtime_migrations(conn)
+        conn.close()
+    else:
+        conn = sqlite3.connect(str(_db_path))
+        _apply_runtime_migrations(conn)
+        conn.close()
+
+
+def get_db() -> sqlite3.Connection:
+    """Get database connection (creates if needed)."""
+    global _connection
+    if _connection is None:
+        if _db_path is None:
+            raise RuntimeError("Database not initialized. Call init_db() first.")
+        _connection = sqlite3.connect(str(_db_path), check_same_thread=False)
+        _connection.row_factory = sqlite3.Row
+        _connection.execute("PRAGMA foreign_keys = ON")
+    return _connection
+
+
+def close_db() -> None:
+    """Close the shared database connection so the database file can be replaced."""
+    global _connection
+    if _connection is not None:
+        _connection.close()
+        _connection = None
+
+
+@contextmanager
+def get_transaction() -> Generator[sqlite3.Connection, None, None]:
+    """Context manager for database transactions."""
+    conn = get_db()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def generate_uuid() -> str:
+    """Generate a new UUID string."""
+    return str(uuid4())
+
+
+def now_iso() -> str:
+    """Return current timestamp in ISO format."""
+    return datetime.utcnow().isoformat()
+
+
+class ConflictError(Exception):
+    """Raised when row_version conflict detected."""
+
+    def __init__(self, current_version: int, your_version: int, current_data: dict):
+        self.current_version = current_version
+        self.your_version = your_version
+        self.current_data = current_data
+        super().__init__(f"Version conflict: current={current_version}, yours={your_version}")
+
+
+class NotFoundError(Exception):
+    """Raised when entity not found."""
+    pass
+
+
+class BaseRepository:
+    """Base repository with common CRUD operations."""
+
+    table_name: str = ""
+    id_column: str = "id"
+
+    def __init__(self, conn: Optional[sqlite3.Connection] = None):
+        self._conn = conn
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        return self._conn or get_db()
+
+    def get_by_id(self, entity_id: str) -> Optional[dict]:
+        """Get entity by ID."""
+        cursor = self.conn.execute(
+            f"SELECT * FROM {self.table_name} WHERE {self.id_column} = ?",
+            (entity_id,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def exists(self, entity_id: str) -> bool:
+        """Check if entity exists."""
+        cursor = self.conn.execute(
+            f"SELECT 1 FROM {self.table_name} WHERE {self.id_column} = ?",
+            (entity_id,),
+        )
+        return cursor.fetchone() is not None
+
+    def delete_by_id(self, entity_id: str) -> bool:
+        """Hard delete entity (use archive for soft delete)."""
+        cursor = self.conn.execute(
+            f"DELETE FROM {self.table_name} WHERE {self.id_column} = ?",
+            (entity_id,),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def count(self, where_clause: str = "", params: tuple = ()) -> int:
+        """Count entities with optional filter."""
+        sql = f"SELECT COUNT(*) FROM {self.table_name}"
+        if where_clause:
+            sql += f" WHERE {where_clause}"
+        cursor = self.conn.execute(sql, params)
+        return cursor.fetchone()[0]
+
+    def _build_insert(self, data: dict) -> tuple[str, tuple]:
+        """Build INSERT SQL from dict."""
+        columns = ", ".join(data.keys())
+        placeholders = ", ".join("?" * len(data))
+        sql = f"INSERT INTO {self.table_name} ({columns}) VALUES ({placeholders})"
+        return sql, tuple(data.values())
+
+    def _build_update(
+        self, entity_id: str, data: dict, check_version: Optional[int] = None
+    ) -> tuple[str, tuple]:
+        """Build UPDATE SQL from dict."""
+        set_clause = ", ".join(f"{k} = ?" for k in data.keys())
+        sql = f"UPDATE {self.table_name} SET {set_clause} WHERE {self.id_column} = ?"
+        params = list(data.values()) + [entity_id]
+
+        if check_version is not None:
+            sql += " AND row_version = ?"
+            params.append(check_version)
+
+        return sql, tuple(params)

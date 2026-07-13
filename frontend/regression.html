@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JPT Browser Regression</title>
+    <style>
+        body {
+            font-family: Inter, system-ui, sans-serif;
+            margin: 24px;
+            color: #1f2937;
+            background: #f7f3ee;
+        }
+        h1 {
+            margin: 0 0 8px;
+            font-size: 28px;
+        }
+        .muted {
+            color: #6b7280;
+            margin-bottom: 16px;
+        }
+        .status {
+            display: inline-block;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        .status.running { background: #fef3c7; color: #92400e; }
+        .status.pass { background: #dcfce7; color: #166534; }
+        .status.fail { background: #fee2e2; color: #991b1b; }
+        pre {
+            white-space: pre-wrap;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            max-width: 1100px;
+            overflow: auto;
+        }
+        iframe {
+            width: 1440px;
+            height: 900px;
+            border: 1px solid #d1d5db;
+            background: #fff;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>JPT Browser Regression</h1>
+    <div class="muted">Runs a same-origin browser regression against the main app.</div>
+    <div id="status" class="status running">RUNNING</div>
+    <pre id="results">Starting...</pre>
+    <iframe id="app-frame" src="about:blank"></iframe>
+
+    <script>
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        async function waitFor(label, fn, timeout = 20000, interval = 250) {
+            const start = Date.now();
+            while (Date.now() - start < timeout) {
+                try {
+                    const value = await fn();
+                    if (value) return value;
+                } catch (err) {
+                    // Ignore transient frame errors during reload/navigation.
+                }
+                await sleep(interval);
+            }
+            throw new Error(`Timed out waiting for ${label}`);
+        }
+
+        function setStatus(text, cls) {
+            const el = document.getElementById('status');
+            el.textContent = text;
+            el.className = `status ${cls}`;
+        }
+
+        function writeResults(data) {
+            document.getElementById('results').textContent =
+                typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        }
+
+        function publishResult(result) {
+            try {
+                localStorage.setItem('jpt_browser_regression_result', JSON.stringify(result));
+            } catch (err) {
+                // Ignore storage failures in regression runner.
+            }
+            try {
+                const summary = encodeURIComponent(JSON.stringify(result));
+                history.replaceState(null, '', `${location.pathname}${location.search}#${summary}`);
+            } catch (err) {
+                // Ignore hash publication failures.
+            }
+        }
+
+        function setProgress(step, extra = null) {
+            const payload = { step, ...(extra || {}) };
+            writeResults(payload);
+            document.title = `JPT Browser Regression RUNNING - ${step}`;
+        }
+
+        function frameDoc() {
+            return document.getElementById('app-frame').contentDocument;
+        }
+
+        function frameWin() {
+            return document.getElementById('app-frame').contentWindow;
+        }
+
+        function getAuthToken() {
+            return frameWin().localStorage.getItem('jpt_auth_token');
+        }
+
+        async function apiRequest(path, options = {}) {
+            const token = getAuthToken();
+            const response = await fetch(path, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(options.headers || {}),
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                }
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`API ${response.status}: ${text}`);
+            }
+            return response.json();
+        }
+
+        async function navigateFrame(url) {
+            const frame = document.getElementById('app-frame');
+            frame.src = url;
+            await waitFor('frame document ready', () => {
+                const doc = frame.contentDocument;
+                return doc && doc.readyState === 'complete' && doc.getElementById('app');
+            }, 20000);
+            const win = frameWin();
+            const dialogs = [];
+            win.alert = (msg) => dialogs.push(String(msg));
+            win.confirm = (msg) => {
+                dialogs.push(`CONFIRM:${msg}`);
+                return true;
+            };
+            return dialogs;
+        }
+
+        async function reloadAndReopenLead(leadId, targetTab) {
+            setProgress(`reload-for-${targetTab}`);
+            await navigateFrame(`/?regression=${Date.now()}`);
+
+            // Wait for app to be ready
+            await waitFor('app ready after reload', () => {
+                const doc = frameDoc();
+                return getComputedStyle(doc.getElementById('app')).display !== 'none' &&
+                    !doc.getElementById('login-modal').classList.contains('show');
+            }, 15000);
+            await sleep(1000);
+
+            // Navigate to handler
+            setProgress(`navigate-handler-for-${targetTab}`);
+            frameWin().switchModule('handler');
+            await sleep(800);
+            if (frameDoc().querySelectorAll('#handler-cards .inquiry-card').length === 0) {
+                const stageSelect = frameDoc().getElementById('filter-stage');
+                if (stageSelect) {
+                    stageSelect.value = '';
+                    stageSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+            await waitFor('handler cards', () => frameDoc().querySelectorAll('#handler-cards .inquiry-card').length > 0);
+
+            // Find and click the lead card by ID
+            setProgress(`open-lead-for-${targetTab}`);
+            const cards = frameDoc().querySelectorAll('#handler-cards .inquiry-card');
+            let targetCard = null;
+            for (const card of cards) {
+                card.click();
+                await sleep(300);
+                await waitFor('detail panel', () => frameDoc().getElementById('detail-panel')?.classList.contains('open'));
+                await waitFor('state loaded', () => frameWin().eval('!!State.currentInquiry && !!State.currentInquiry.id'));
+                const currentId = frameWin().eval('State.currentInquiry.id');
+                if (currentId === leadId) {
+                    targetCard = card;
+                    break;
+                } else {
+                    frameWin().closePanel();
+                    await sleep(300);
+                }
+            }
+
+            if (!targetCard) {
+                throw new Error(`Could not find lead ${leadId} after reload`);
+            }
+
+            await waitFor('detail state', () => frameWin().eval('!!State.currentInquiry && !!State.currentInquiry._lead && !!State.currentInquiry._customer'));
+            await sleep(500);
+
+            // Switch to target tab
+            setProgress(`switch-to-${targetTab}-tab`);
+            frameDoc().querySelector(`#panel-tabs .panel-tab[data-tab="${targetTab}"]`).click();
+            await sleep(500);
+        }
+
+        async function run() {
+            const params = new URLSearchParams(location.search);
+            const username = params.get('username') || 'Li';
+            const password = params.get('password') || 'LiJPT2026';
+            const mode = params.get('mode') || 'full';
+            const dialogs = [];
+
+            setProgress('navigate-initial');
+            dialogs.push(...await navigateFrame(`/?regression=${Date.now()}`));
+            setProgress('clear-auth');
+            frameWin().localStorage.clear();
+            setProgress('navigate-fresh');
+            dialogs.push(...await navigateFrame(`/?regression=${Date.now()}&fresh=1`));
+
+            setProgress('wait-login-modal');
+            await waitFor('login modal', () => frameDoc().getElementById('login-modal')?.classList.contains('show'));
+
+            const beforeLogin = {
+                loginVisible: frameDoc().getElementById('login-modal').classList.contains('show'),
+                appDisplay: getComputedStyle(frameDoc().getElementById('app')).display
+            };
+
+            frameDoc().getElementById('login-username').value = username;
+            frameDoc().getElementById('login-password').value = password;
+            setProgress('submit-login');
+            frameWin().handleLogin();
+
+            setProgress('wait-app');
+            await waitFor('app after login', () => {
+                const doc = frameDoc();
+                return getComputedStyle(doc.getElementById('app')).display !== 'none' &&
+                    !doc.getElementById('login-modal').classList.contains('show');
+            }, 25000);
+            await sleep(1200);
+
+            setProgress('collect-dashboard');
+            const dashboardApiData = await apiRequest('/api/review/dashboard');
+            const mapApiData = await apiRequest('/api/review/map');
+            const dashboard = {
+                userName: frameDoc().getElementById('user-name')?.textContent?.trim(),
+                userRole: frameDoc().getElementById('user-role')?.textContent?.trim(),
+                kpiTotal: frameDoc().getElementById('kpi-total')?.textContent?.trim(),
+                kpiFollowing: frameDoc().getElementById('kpi-following')?.textContent?.trim(),
+                kpiWon: frameDoc().getElementById('kpi-won')?.textContent?.trim(),
+                kpiWonValue: frameDoc().getElementById('kpi-pipeline')?.textContent?.trim(),
+                apiWonValueK: Math.round((dashboardApiData.won_value || 0) / 1000).toLocaleString(),
+                navTotal: frameDoc().getElementById('nav-total')?.textContent?.trim(),
+                navHandler: frameDoc().getElementById('nav-handler-total')?.textContent?.trim(),
+                navFollowup: frameDoc().getElementById('nav-followup-total')?.textContent?.trim(),
+                navSampling: frameDoc().getElementById('nav-sampling-total')?.textContent?.trim(),
+                navDeal: frameDoc().getElementById('nav-deal-total')?.textContent?.trim(),
+                navFulfillment: frameDoc().getElementById('nav-fulfillment-total')?.textContent?.trim(),
+                funnelRows: frameDoc().querySelectorAll('#pipeline-funnel > *').length,
+                mapPane: !!frameDoc().querySelector('#world-map .leaflet-pane'),
+                mapMarkers: frameDoc().querySelectorAll('#world-map .leaflet-marker-icon, #world-map .leaflet-interactive').length,
+                mapSummaryText: frameDoc().getElementById('map-summary')?.textContent?.trim(),
+                mapApiPoints: (mapApiData.points || []).length,
+                mapApiApproximatePoints: mapApiData.summary?.approximate_points || 0,
+                mapStageFilterOptions: Array.from(frameDoc().querySelectorAll('#map-stage-filter option')).map(o => o.value),
+                mapOutcomeFilterOptions: Array.from(frameDoc().querySelectorAll('#map-outcome-filter option')).map(o => o.value),
+                mapQualityFilterOptions: Array.from(frameDoc().querySelectorAll('#map-quality-filter option')).map(o => o.value),
+                stageFilterOptions: Array.from(frameDoc().querySelectorAll('#filter-stage option')).map(o => o.value),
+                navAftersales: frameDoc().getElementById('nav-aftersales-total')?.textContent?.trim()
+            };
+
+            setProgress('check-stage-buckets');
+            const stageBuckets = { handler: {}, followup: {}, deal: {}, fulfillment: {} };
+            frameWin().switchModule('handler');
+            await sleep(800);
+            stageBuckets.handler = {
+                filterValue: frameDoc().getElementById('filter-stage')?.value,
+                cardCount: frameDoc().querySelectorAll('#handler-cards .inquiry-card').length,
+                cardStages: Array.from(frameDoc().querySelectorAll('#handler-cards .card-footer .stage-badge')).map(el => el.textContent.trim()),
+                navCount: frameDoc().getElementById('nav-handler-total')?.textContent?.trim()
+            };
+
+            frameWin().switchModule('followup');
+            await sleep(800);
+            stageBuckets.followup = {
+                cardCount: frameDoc().querySelectorAll('#followup-cards .inquiry-card').length,
+                cardStages: Array.from(frameDoc().querySelectorAll('#followup-cards .card-footer .stage-badge')).map(el => el.textContent.trim()),
+                cardSummaries: Array.from(frameDoc().querySelectorAll('#followup-cards .inquiry-card')).map(card => {
+                    const values = card.querySelectorAll('.card-details .card-value');
+                    return {
+                        displayId: card.querySelector('.card-meta span')?.textContent?.trim(),
+                        followUpCount: Number(values[0]?.textContent?.trim() || 0)
+                    };
+                }),
+                cardFollowUpCounts: Array.from(frameDoc().querySelectorAll('#followup-cards .inquiry-card')).map(card => {
+                    const values = card.querySelectorAll('.card-details .card-value');
+                    return Number(values[0]?.textContent?.trim() || 0);
+                }),
+                navCount: frameDoc().getElementById('nav-followup-total')?.textContent?.trim(),
+                countLabel: frameDoc().getElementById('followup-count')?.textContent?.trim()
+            };
+
+            frameWin().switchModule('deal');
+            await sleep(800);
+            stageBuckets.deal = {
+                filterValues: Array.from(frameDoc().querySelectorAll('#deal-tabs .filter-tab')).map(t => t.dataset.filter),
+                cardCount: frameDoc().querySelectorAll('#deal-cards .inquiry-card').length,
+                cardStages: Array.from(frameDoc().querySelectorAll('#deal-cards .stage-badge')).map(el => el.textContent.trim()),
+                navCount: frameDoc().getElementById('nav-deal-total')?.textContent?.trim()
+            };
+
+            frameWin().switchModule('fulfillment');
+            await sleep(800);
+            stageBuckets.fulfillment = {
+                filterValues: Array.from(frameDoc().querySelectorAll('#fulfillment-tabs .filter-tab')).map(t => t.dataset.filter),
+                cardCount: frameDoc().querySelectorAll('#fulfillment-cards .inquiry-card').length,
+                cardStatuses: Array.from(frameDoc().querySelectorAll('#fulfillment-cards .card-details .card-value'))
+                    .filter((_, idx) => idx % 2 === 0)
+                    .map(el => el.textContent.trim()),
+                navCount: frameDoc().getElementById('nav-fulfillment-total')?.textContent?.trim(),
+                activeTabAfterCard: null,
+                appDetailOpenAfterCard: false
+            };
+            const fulfillmentCard = frameDoc().querySelector('#fulfillment-cards .inquiry-card');
+            if (fulfillmentCard) {
+                fulfillmentCard.click();
+                await waitFor('fulfillment detail panel', () => frameDoc().getElementById('detail-panel')?.classList.contains('open'));
+                stageBuckets.fulfillment.activeTabAfterCard = frameDoc().querySelector('#panel-tabs .panel-tab.active')?.textContent?.trim();
+                stageBuckets.fulfillment.appDetailOpenAfterCard = frameDoc().getElementById('app')?.classList.contains('detail-open');
+                frameWin().closePanel();
+            }
+
+            setProgress('switch-handler');
+            frameWin().switchModule('handler');
+            await sleep(800);
+            if (frameDoc().querySelectorAll('#handler-cards .inquiry-card').length === 0) {
+                const stageSelect = frameDoc().getElementById('filter-stage');
+                if (stageSelect) {
+                    stageSelect.value = '';
+                    stageSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+            await waitFor('handler cards', () => frameDoc().querySelectorAll('#handler-cards .inquiry-card').length > 0);
+
+            const handler = {
+                count: frameDoc().querySelectorAll('#handler-cards .inquiry-card').length,
+                firstTitle: frameDoc().querySelector('#handler-cards .card-title')?.textContent?.trim(),
+                countLabel: frameDoc().getElementById('inquiry-count')?.textContent?.trim()
+            };
+
+            setProgress('open-detail');
+            frameDoc().querySelector('#handler-cards .inquiry-card').click();
+            await waitFor('detail panel open', () => frameDoc().getElementById('detail-panel')?.classList.contains('open'));
+            await waitFor('detail state', () => frameWin().eval('!!State.currentInquiry && !!State.currentInquiry._lead && !!State.currentInquiry._customer'));
+            await sleep(500);
+
+            const detail = {
+                panelTitle: frameDoc().getElementById('panel-title')?.textContent?.trim(),
+                tabLabels: Array.from(frameDoc().querySelectorAll('#panel-tabs .panel-tab')).map(t => t.textContent.trim()),
+                leadId: frameWin().eval('State.currentInquiry.id'),
+                leadStage: frameWin().eval('State.currentInquiry._lead?.sales_stage'),
+                customerId: frameWin().eval('State.currentInquiry._customer?.id'),
+                customerName: frameWin().eval('State.currentInquiry._customer?.display_name || null'),
+                customerFieldCount: frameWin().eval('Object.keys(State.currentInquiry._customer || {}).length'),
+                followupCount: frameWin().eval('(State.currentInquiry.follow_ups || []).length'),
+                afterSalesCount: frameWin().eval('(State.currentInquiry.after_sales || []).length')
+            };
+
+            let customerAfterSave = { skipped: true };
+            let customerAfterRevert = { skipped: true };
+            setProgress('customer-tab');
+            frameDoc().querySelector('#panel-tabs .panel-tab[data-tab="customer"]').click();
+            await waitFor('customer tab', () => frameDoc().querySelector('#panel-content [name="company_name"]'));
+
+            const customerBefore = {
+                rowVersion: frameWin().eval('State.currentInquiry._customer?.row_version'),
+                postalCode: frameDoc().querySelector('#panel-content [name="postal_code"]')?.value || '',
+                language: frameDoc().querySelector('#panel-content [name="language"]')?.value || '',
+                companySize: frameDoc().querySelector('#panel-content [name="company_size"]')?.value || '',
+                companyDescription: frameDoc().querySelector('#panel-content [name="company_description"]')?.value || '',
+                contactFieldSummary: ['contact_name', 'email', 'phone', 'contact_position'].map(name => {
+                    const el = frameDoc().querySelector(`#panel-content [name="${name}"]`);
+                    return {
+                        name,
+                        exists: !!el,
+                        readonly: !!el?.readOnly,
+                        static: !!Array.from(frameDoc().querySelectorAll('#panel-content .form-group'))
+                            .find(group => {
+                                const label = group.querySelector('.form-label')?.textContent?.trim().toLowerCase() || '';
+                                return label.includes(name.replace('_', ' ')) && !!group.querySelector('.form-static');
+                            })
+                    };
+                })
+            };
+
+            if (mode === 'customer' || mode === 'full') {
+                const originalPostal = customerBefore.postalCode || '';
+                const regressionPostal = `${originalPostal}${originalPostal ? '-RG' : 'RG'}${String(Date.now()).slice(-4)}`;
+                frameDoc().querySelector('#panel-content [name="postal_code"]').value = regressionPostal;
+                setProgress('save-customer');
+                await frameWin().saveInquiry();
+                const customerAfterSaveApi = await waitFor('customer save applied', async () => {
+                    const customer = await apiRequest(`/api/customers/${detail.customerId}`);
+                    return customer.postal_code === regressionPostal && customer.row_version > customerBefore.rowVersion
+                        ? customer
+                        : null;
+                }, 20000);
+
+                customerAfterSave = {
+                    rowVersion: customerAfterSaveApi.row_version,
+                    postalCode: customerAfterSaveApi.postal_code
+                };
+
+                await apiRequest(`/api/customers/${detail.customerId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        postal_code: originalPostal,
+                        row_version: customerAfterSave.rowVersion
+                    })
+                });
+
+                customerAfterRevert = {
+                    cleanupRequested: true,
+                    originalPostal
+                };
+            }
+
+            let followupBefore = null;
+            let followupAfter = { skipped: true };
+            let aftersalesBefore = null;
+            let aftersalesAfter = { skipped: true };
+            let attachmentBefore = null;
+            let attachmentAfter = { skipped: true };
+
+            if (mode === 'followup' || mode === 'full') {
+                // Reload app and reopen lead for clean state
+                if (mode === 'full') {
+                    await reloadAndReopenLead(detail.leadId, 'followup');
+                } else {
+                    setProgress('followup-tab');
+                    frameDoc().querySelector('#panel-tabs .panel-tab[data-tab="followup"]').click();
+                    await waitFor('followup tab', () =>
+                        frameDoc().querySelector('#panel-content .followup-item, #panel-content #followup-form, #panel-content button[onclick="showFollowUpForm()"]')
+                    );
+                    await sleep(300);
+                }
+
+                followupBefore = frameDoc().querySelectorAll('#panel-content .followup-item').length;
+                const followupMarker = `[regression] browser follow-up ${new Date().toISOString()}`;
+                frameWin().showFollowUpForm();
+                await sleep(200);
+                frameDoc().getElementById('fu-content').value = followupMarker;
+                frameDoc().getElementById('fu-method').value = 'Email';
+                frameDoc().getElementById('fu-status').value = 'pending';
+                frameDoc().getElementById('fu-feedback').value = 'browser-regression';
+                frameDoc().getElementById('fu-next').value = 'review';
+                setProgress('save-followup');
+                await frameWin().saveFollowUp();
+                const followupAfterApi = await waitFor('followup new item', async () => {
+                    const activities = await apiRequest(`/api/leads/${detail.leadId}/activities`);
+                    return activities.some(item => item.summary && item.summary.includes(followupMarker)) ? activities : null;
+                }, 20000);
+                const createdFollowup = followupAfterApi.find(item => item.summary && item.summary.includes(followupMarker));
+                const createdFollowupPayload = createdFollowup?.payload_json ? JSON.parse(createdFollowup.payload_json) : {};
+                const updatedFollowupMarker = `${followupMarker} updated`;
+                const updatedFollowup = await apiRequest(`/api/leads/${detail.leadId}/activities/${createdFollowup.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        method: 'Phone',
+                        content: updatedFollowupMarker,
+                        status: 'responded',
+                        response_date: new Date().toISOString().slice(0, 16),
+                        customer_feedback: 'browser-regression-updated',
+                        next_action: 'review updated',
+                        next_action_date: '2026-05-20'
+                    })
+                });
+                const updatedFollowupPayload = updatedFollowup?.payload_json ? JSON.parse(updatedFollowup.payload_json) : {};
+                const leadAfterFollowup = await apiRequest(`/api/leads/${detail.leadId}`);
+                await apiRequest(`/api/leads/${detail.leadId}/activities/${createdFollowup.id}/archive`, {
+                    method: 'POST'
+                });
+                const followupAfterArchive = await apiRequest(`/api/leads/${detail.leadId}/activities`);
+                followupAfter = {
+                    count: followupAfterApi.length,
+                    containsMarker: !!createdFollowup,
+                    status: createdFollowupPayload.status,
+                    updatedStatus: updatedFollowupPayload.status,
+                    updatedMethod: updatedFollowupPayload.method,
+                    updatedSummary: updatedFollowup.summary,
+                    leadStageAfter: leadAfterFollowup.sales_stage,
+                    archived: !followupAfterArchive.some(item => item.id === createdFollowup.id)
+                };
+            }
+
+            if (mode === 'aftersales' || mode === 'full') {
+                // Reload app and reopen lead for clean state
+                if (mode === 'full') {
+                    await reloadAndReopenLead(detail.leadId, 'aftersales');
+                } else {
+                    setProgress('aftersales-tab');
+                    frameDoc().querySelector('#panel-tabs .panel-tab[data-tab="aftersales"]').click();
+                    await waitFor('aftersales tab', () =>
+                        frameDoc().querySelector('#panel-content .followup-item, #panel-content #aftersales-form, #panel-content button[onclick="showAfterSalesForm()"]')
+                    );
+                    await sleep(300);
+                }
+
+                aftersalesBefore = frameDoc().querySelectorAll('#panel-content .followup-item').length;
+                const aftersalesMarker = `[regression] browser after-sales ${new Date().toISOString()}`;
+                frameWin().showAfterSalesForm();
+                await sleep(200);
+                frameDoc().getElementById('as-description').value = aftersalesMarker;
+                frameDoc().getElementById('as-type').value = 'Technical';
+                frameDoc().getElementById('as-status').value = 'Open';
+                setProgress('save-aftersales');
+                await frameWin().saveAfterSales();
+                const aftersalesAfterApi = await waitFor('after-sales new item', async () => {
+                    const tasks = await apiRequest(`/api/after-sales-tasks?lead_id=${detail.leadId}`);
+                    return tasks.some(item => (item.issue_description || '').includes(aftersalesMarker)) ? tasks : null;
+                }, 20000);
+                const createdTask = aftersalesAfterApi.find(item => (item.issue_description || '').includes(aftersalesMarker));
+                const updatedAfterSalesMarker = `${aftersalesMarker} updated`;
+                const updatedTask = await apiRequest(`/api/after-sales-tasks/${createdTask.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        issue_type: 'Quality',
+                        issue_description: updatedAfterSalesMarker,
+                        status: 'Resolved',
+                        solution: 'browser-regression-updated',
+                        row_version: createdTask.row_version
+                    })
+                });
+                await apiRequest(`/api/after-sales-tasks/${createdTask.id}/archive`, {
+                    method: 'POST'
+                });
+                const aftersalesAfterArchive = await apiRequest(`/api/after-sales-tasks?lead_id=${detail.leadId}`);
+                aftersalesAfter = {
+                    count: aftersalesAfterApi.length,
+                    containsMarker: !!createdTask,
+                    updatedStatus: updatedTask.status,
+                    updatedType: updatedTask.issue_type,
+                    updatedSolution: updatedTask.solution,
+                    archived: !aftersalesAfterArchive.some(item => item.id === createdTask.id)
+                };
+            }
+
+            if (mode === 'attachment' || mode === 'full') {
+                if (mode === 'full') {
+                    await reloadAndReopenLead(detail.leadId, 'files');
+                } else {
+                    setProgress('files-tab');
+                    frameDoc().querySelector('#panel-tabs .panel-tab[data-tab="files"]').click();
+                    await waitFor('files tab', () =>
+                        frameDoc().querySelector('#panel-content #attachment-form, #panel-content button[onclick="showAttachmentForm()"]')
+                    );
+                    await sleep(300);
+                }
+
+                attachmentBefore = (await apiRequest(`/api/leads/${detail.leadId}/attachments`)).length;
+                const attachmentText = `[regression] attachment ${new Date().toISOString()}`;
+                const attachmentName = `regression-attachment-${Date.now()}.txt`;
+                frameWin().showAttachmentForm();
+                await sleep(200);
+                frameDoc().getElementById('attachment-category').value = 'other';
+                const FileCtor = frameWin().File;
+                const DataTransferCtor = frameWin().DataTransfer;
+                const file = new FileCtor([attachmentText], attachmentName, { type: 'text/plain' });
+                const transfer = new DataTransferCtor();
+                transfer.items.add(file);
+                frameDoc().getElementById('attachment-file').files = transfer.files;
+
+                setProgress('save-attachment');
+                await frameWin().saveAttachment();
+                const attachmentAfterUpload = await waitFor('attachment uploaded', async () => {
+                    const attachments = await apiRequest(`/api/leads/${detail.leadId}/attachments`);
+                    return attachments.find(item => item.original_name === attachmentName) ? attachments : null;
+                }, 20000);
+
+                const uploaded = attachmentAfterUpload.find(item => item.original_name === attachmentName);
+                const updatedAttachmentName = `updated-${attachmentName}`;
+                const updatedAttachment = await apiRequest(`/api/leads/${detail.leadId}/attachments/${uploaded.id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        category: 'quotation',
+                        version_no: 2,
+                        original_name: updatedAttachmentName
+                    })
+                });
+                const token = getAuthToken();
+                const downloadResponse = await fetch(`/api/leads/${detail.leadId}/attachments/${uploaded.id}/download`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                });
+                const downloadedText = await downloadResponse.text();
+
+                await apiRequest(`/api/leads/${detail.leadId}/attachments/${uploaded.id}/archive`, {
+                    method: 'POST'
+                });
+                const attachmentAfterArchive = await apiRequest(`/api/leads/${detail.leadId}/attachments`);
+
+                attachmentAfter = {
+                    uploadedId: uploaded.id,
+                    countAfterUpload: attachmentAfterUpload.length,
+                    updatedCategory: updatedAttachment.category,
+                    updatedVersion: updatedAttachment.version_no,
+                    updatedName: updatedAttachment.original_name,
+                    downloadOk: downloadResponse.ok && downloadedText === attachmentText,
+                    archived: !attachmentAfterArchive.some(item => item.id === uploaded.id)
+                };
+            }
+
+            let exchangeBefore = null;
+            let exchangeAfter = { skipped: true };
+
+            if (mode === 'exchange' || mode === 'full') {
+                if (mode === 'full') {
+                    setProgress('reload-for-exchange');
+                    dialogs.push(...await navigateFrame(`/?regression=${Date.now()}`));
+                    await waitFor('app after reload', () => {
+                        const doc = frameDoc();
+                        return getComputedStyle(doc.getElementById('app')).display !== 'none';
+                    }, 15000);
+                    await sleep(800);
+                }
+
+                setProgress('switch-export');
+                frameWin().switchModule('export');
+                await waitFor('export module', () => frameDoc().getElementById('module-export'));
+                await sleep(300);
+
+                // Export data first to get baseline counts
+                setProgress('export-data');
+                const token = getAuthToken();
+                const exportResponse = await fetch('/api/data/export', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({ lead_ids: null })
+                });
+
+                if (!exportResponse.ok) {
+                    throw new Error(`Export failed: ${exportResponse.status}`);
+                }
+
+                const exportBlob = await exportResponse.blob();
+                const exportData = JSON.parse(await exportBlob.text());
+
+                // Use export data for initial counts (no GET /api/customers endpoint)
+                const initialCustomers = Object.keys(exportData.customers || {}).length;
+                const initialLeads = (exportData.leads || []).length;
+
+                exchangeBefore = {
+                    customerCount: initialCustomers,
+                    leadCount: initialLeads
+                };
+
+                // Import the exported data back (should be idempotent)
+                setProgress('import-data');
+                const formData = new FormData();
+                formData.append('file', exportBlob, 'regression-export.json');
+
+                const importResponse = await fetch('/api/data/import', {
+                    method: 'POST',
+                    headers: {
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    },
+                    body: formData
+                });
+
+                if (!importResponse.ok) {
+                    throw new Error(`Import failed: ${importResponse.status}`);
+                }
+
+                const importReport = await importResponse.json();
+
+                // Re-export to verify counts unchanged
+                setProgress('verify-export');
+                const verifyResponse = await fetch('/api/data/export', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify({ lead_ids: null })
+                });
+                const verifyData = JSON.parse(await (await verifyResponse.blob()).text());
+
+                const finalCustomers = Object.keys(verifyData.customers || {}).length;
+                const finalLeads = (verifyData.leads || []).length;
+
+                exchangeAfter = {
+                    exportedCustomers: Object.keys(exportData.customers || {}).length,
+                    exportedLeads: (exportData.leads || []).length,
+                    importNewCustomers: importReport.new_customers,
+                    importNewLeads: importReport.new_leads,
+                    importUpdatedCustomers: importReport.updated_customers,
+                    importUpdatedLeads: importReport.updated_leads,
+                    importMergedActivities: importReport.merged_activities || 0,
+                    importMergedTasks: importReport.merged_tasks || 0,
+                    importSkipped: importReport.skipped_records,
+                    importErrors: importReport.errors || [],
+                    finalCustomerCount: finalCustomers,
+                    finalLeadCount: finalLeads,
+                    countsUnchanged: initialCustomers === finalCustomers && initialLeads === finalLeads
+                };
+            }
+
+            const results = {
+                beforeLogin,
+                dashboard,
+                stageBuckets,
+                handler,
+                detail,
+                customerBefore,
+                customerAfterSave,
+                customerAfterRevert,
+                followup: { before: followupBefore, after: followupAfter },
+                aftersales: { before: aftersalesBefore, after: aftersalesAfter },
+                attachment: { before: attachmentBefore, after: attachmentAfter },
+                exchange: { before: exchangeBefore, after: exchangeAfter },
+                dialogs
+            };
+
+            const failures = [];
+            const expectedStages = ['New', 'Assigned', 'Following', 'Quoted', 'Won', 'Lost'];
+
+            if (!beforeLogin.loginVisible) failures.push('Login modal was not visible before sign-in.');
+            const dashboardTotal = Number(dashboard.kpiTotal || 0);
+            if (!Number.isFinite(dashboardTotal) || dashboardTotal <= 0) {
+                failures.push(`Dashboard total should be positive, got ${dashboard.kpiTotal}.`);
+            }
+            if (!dashboard.mapPane) failures.push('Dashboard map did not render.');
+            if (dashboard.mapMarkers <= 0) failures.push('Review Map rendered without visible point markers.');
+            if (dashboard.mapApiPoints <= 0) failures.push('Review Map API returned no points.');
+            if (!dashboard.mapSummaryText || dashboard.mapSummaryText.includes('Loading')) failures.push('Review Map summary did not update.');
+            if (dashboard.kpiWonValue !== dashboard.apiWonValueK) {
+                failures.push(`Dashboard won value should match API won_value (${dashboard.apiWonValueK}K), got ${dashboard.kpiWonValue}K.`);
+            }
+            if (dashboard.kpiFollowing !== dashboard.navFollowup) {
+                failures.push(`Dashboard following KPI should match Follow-up nav count (${dashboard.navFollowup}), got ${dashboard.kpiFollowing}.`);
+            }
+            if (Number(stageBuckets.handler.navCount || 0) !== stageBuckets.handler.cardCount) {
+                failures.push(`Handler nav count should match default New cards (${stageBuckets.handler.cardCount}), got ${stageBuckets.handler.navCount}.`);
+            }
+            if (stageBuckets.handler.cardStages.some(stage => stage !== 'New')) {
+                failures.push(`Handler default cards should only be New, got ${stageBuckets.handler.cardStages.join(', ')}`);
+            }
+            if (Number(stageBuckets.followup.navCount || 0) !== stageBuckets.followup.cardCount) {
+                failures.push(`Follow-up nav count should match active follow-up cards (${stageBuckets.followup.cardCount}), got ${stageBuckets.followup.navCount}.`);
+            }
+            if (stageBuckets.followup.cardStages.some(stage => !['Assigned', 'Following'].includes(stage))) {
+                failures.push(`Follow-up cards should only be Assigned/Following, got ${stageBuckets.followup.cardStages.join(', ')}`);
+            }
+            if (stageBuckets.followup.cardFollowUpCounts.some(count => !Number.isFinite(count) || count < 0)) {
+                failures.push(`Follow-up card counts are invalid: ${stageBuckets.followup.cardFollowUpCounts.join(', ')}`);
+            }
+            const matchingFollowupCard = stageBuckets.followup.cardSummaries.find(card => card.displayId === detail.panelTitle);
+            if (matchingFollowupCard && matchingFollowupCard.followUpCount !== detail.followupCount) {
+                failures.push(`Right panel follow-up count (${detail.followupCount}) should match middle card count (${matchingFollowupCard.followUpCount}) for ${detail.panelTitle}.`);
+            }
+            if (stageBuckets.deal.filterValues.includes('Won')) {
+                failures.push('Deal filters should not include Won; won orders belong in Fulfillment.');
+            }
+            if (stageBuckets.deal.cardStages.includes('Won')) {
+                failures.push('Deal cards should not include Won records; won orders belong in Fulfillment.');
+            }
+            if (Number(stageBuckets.deal.navCount || 0) !== stageBuckets.deal.cardCount) {
+                failures.push(`Deal nav count should match active deal cards (${stageBuckets.deal.cardCount}), got ${stageBuckets.deal.navCount}.`);
+            }
+            if (JSON.stringify(stageBuckets.fulfillment.filterValues) !== JSON.stringify(['all', 'Not Started', 'In Progress', 'Completed'])) {
+                failures.push(`Fulfillment filters are stale: ${stageBuckets.fulfillment.filterValues.join(', ')}`);
+            }
+            if (Number(stageBuckets.fulfillment.navCount || 0) !== stageBuckets.fulfillment.cardCount) {
+                failures.push(`Fulfillment nav count should match order cards (${stageBuckets.fulfillment.cardCount}), got ${stageBuckets.fulfillment.navCount}.`);
+            }
+            if (stageBuckets.fulfillment.activeTabAfterCard && stageBuckets.fulfillment.activeTabAfterCard !== 'Fulfillment') {
+                failures.push(`Fulfillment card should open the Fulfillment tab, got ${stageBuckets.fulfillment.activeTabAfterCard}.`);
+            }
+            if (stageBuckets.fulfillment.activeTabAfterCard && !stageBuckets.fulfillment.appDetailOpenAfterCard) {
+                failures.push('Opening a detail panel should add the detail-open layout state.');
+            }
+            if (!detail.panelTitle) failures.push('Detail panel title missing.');
+            if ((mode === 'customer' || mode === 'full') && customerBefore.contactFieldSummary.some(item => !item.exists && !item.static)) {
+                failures.push('Some contact fields did not render.');
+            }
+            if ((mode === 'customer' || mode === 'full') && customerAfterSave.postalCode !== undefined) {
+                if (!(customerAfterSave.rowVersion > customerBefore.rowVersion)) failures.push('Customer row_version did not increment after save.');
+            }
+            if (mode === 'followup' || mode === 'full') {
+                if (!(followupAfter.count > followupBefore) || !followupAfter.containsMarker) failures.push('Follow-up creation was not reflected in the API verification.');
+                if (followupAfter.status !== 'pending') failures.push(`New follow-up should keep selected status pending, got ${followupAfter.status}.`);
+                if (followupAfter.updatedStatus !== 'responded' || followupAfter.updatedMethod !== 'Phone' || !(followupAfter.updatedSummary || '').includes('updated')) {
+                    failures.push('Follow-up update was not reflected in the API verification.');
+                }
+                if (['New', 'Assigned'].includes(detail.leadStage) && followupAfter.leadStageAfter !== 'Following') {
+                    failures.push(`New/Assigned lead should move to Following after formal follow-up, got ${followupAfter.leadStageAfter}.`);
+                }
+                if (!followupAfter.archived) failures.push('Follow-up archive did not hide the test record.');
+            }
+            if (mode === 'aftersales' || mode === 'full') {
+                if (!(aftersalesAfter.count > aftersalesBefore) || !aftersalesAfter.containsMarker) failures.push('After-sales creation was not reflected in the API verification.');
+                if (aftersalesAfter.updatedStatus !== 'Resolved' || aftersalesAfter.updatedType !== 'Quality' || aftersalesAfter.updatedSolution !== 'browser-regression-updated') {
+                    failures.push('After-sales update was not reflected in the API verification.');
+                }
+                if (!aftersalesAfter.archived) failures.push('After-sales archive did not hide the test task.');
+            }
+            if (mode === 'attachment' || mode === 'full') {
+                if (!(attachmentAfter.countAfterUpload > attachmentBefore)) failures.push('Attachment upload was not reflected in the API verification.');
+                if (attachmentAfter.updatedCategory !== 'quotation' || attachmentAfter.updatedVersion !== 2 || !(attachmentAfter.updatedName || '').startsWith('updated-')) {
+                    failures.push('Attachment metadata update was not reflected in the API verification.');
+                }
+                if (!attachmentAfter.downloadOk) failures.push('Attachment download did not return the uploaded content.');
+                if (!attachmentAfter.archived) failures.push('Attachment archive did not hide the uploaded file.');
+            }
+            if (mode === 'exchange' || mode === 'full') {
+                if (!exchangeAfter.exportedCustomers || !exchangeAfter.exportedLeads) failures.push('Export did not include customers or leads.');
+                if (exchangeAfter.importNewCustomers !== 0 || exchangeAfter.importNewLeads !== 0) {
+                    failures.push(`Import should be idempotent (new customers: ${exchangeAfter.importNewCustomers}, new leads: ${exchangeAfter.importNewLeads})`);
+                }
+                if (exchangeAfter.importErrors.length > 0) {
+                    failures.push(`Import had errors: ${exchangeAfter.importErrors.join(', ')}`);
+                }
+                if (!exchangeAfter.countsUnchanged) {
+                    failures.push(`Import changed record counts (customers: ${exchangeBefore.customerCount} → ${exchangeAfter.finalCustomerCount}, leads: ${exchangeBefore.leadCount} → ${exchangeAfter.finalLeadCount})`);
+                }
+            }
+            if (JSON.stringify(dashboard.stageFilterOptions) !== JSON.stringify(['New', '', 'Assigned', 'Following', 'Quoted', 'Won', 'Lost'])) {
+                failures.push(`Handler stage filter options are stale: ${dashboard.stageFilterOptions.join(', ')}`);
+            }
+            if (JSON.stringify(dashboard.mapStageFilterOptions) !== JSON.stringify(['', ...expectedStages])) {
+                failures.push(`Review Map stage filter options are stale: ${dashboard.mapStageFilterOptions.join(', ')}`);
+            }
+            if (JSON.stringify(dashboard.mapOutcomeFilterOptions) !== JSON.stringify(['', 'open', 'won', 'lost'])) {
+                failures.push(`Review Map outcome filter options are stale: ${dashboard.mapOutcomeFilterOptions.join(', ')}`);
+            }
+            if (JSON.stringify(dashboard.mapQualityFilterOptions) !== JSON.stringify(['', 'exact', 'needs_geocode'])) {
+                failures.push(`Review Map coordinate quality filter options are stale: ${dashboard.mapQualityFilterOptions.join(', ')}`);
+            }
+
+            results.failures = failures;
+            writeResults(results);
+            publishResult(results);
+
+            if (failures.length) {
+                document.title = `JPT Browser Regression FAIL - ${failures[0]}`;
+                setStatus('FAIL', 'fail');
+            } else {
+                document.title = 'JPT Browser Regression PASS';
+                setStatus('PASS', 'pass');
+            }
+        }
+
+        run().catch((error) => {
+            const result = {
+                failures: [error.message],
+                stack: error.stack
+            };
+            setStatus('FAIL', 'fail');
+            document.title = `JPT Browser Regression FAIL - ${error.message}`;
+            writeResults(result);
+            publishResult(result);
+        });
+    </script>
+</body>
+</html>

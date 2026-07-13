@@ -1,0 +1,104 @@
+{
+  "version": "1.0",
+  "last_updated": "2024-01-01",
+  "field_groups": {
+    "basic": {
+      "label": "基础信息",
+      "fields": {
+        "inquiry_id": {"type": "string", "label": "询盘ID", "required": true, "editable": false},
+        "inquiry_date": {"type": "datetime", "label": "询盘日期", "required": true},
+        "source_channel": {"type": "select", "label": "来源渠道", "options": ["Email", "Website", "Exhibition", "LinkedIn", "Referral", "Other"]},
+        "original_email": {"type": "text", "label": "原始邮件内容"},
+        "assigned_sales": {"type": "string", "label": "负责销售", "editable": false}
+      }
+    },
+    "customer": {
+      "label": "客户信息",
+      "fields": {
+        "contact_name": {"type": "string", "label": "联系人姓名"},
+        "contact_position": {"type": "string", "label": "职位"},
+        "company_name": {"type": "string", "label": "公司名称"},
+        "email": {"type": "email", "label": "邮箱"},
+        "phone": {"type": "string", "label": "电话"},
+        "address": {"type": "string", "label": "详细地址"},
+        "city": {"type": "string", "label": "城市"},
+        "postal_code": {"type": "string", "label": "邮编"},
+        "country": {"type": "string", "label": "国家"},
+        "lat": {"type": "number", "label": "纬度", "editable": false},
+        "lng": {"type": "number", "label": "经度", "editable": false},
+        "region": {"type": "select", "label": "区域", "options": ["EU", "SEA", "AM", "RIMEA"]},
+        "customer_type": {"type": "select", "label": "客户类型", "options": ["End User", "Integrator", "OEM", "Distributor", "Other"]},
+        "industry": {"type": "string", "label": "行业"},
+        "language": {"type": "string", "label": "语言"},
+        "website": {"type": "string", "label": "网站"},
+        "company_description": {"type": "text", "label": "公司简介"},
+        "company_size": {"type": "string", "label": "公司规模"},
+        "business_links": {"type": "text", "label": "商业信息链接", "editable": false}
+      }
+    },
+    "requirement": {
+      "label": "需求信息",
+      "fields": {
+        "product_category": {"type": "select", "label": "产品大类", "options": ["MOPA Fiber Laser", "CW Fiber Laser", "DPSS Laser", "Pump Source", "Fiber Optic Components", "Equipment", "Other"]},
+        "product_series": {"type": "string", "label": "产品系列"},
+        "power_range": {"type": "string", "label": "功率范围"},
+        "wavelength": {"type": "string", "label": "波长需求"},
+        "application": {"type": "string", "label": "应用场景"},
+        "material": {"type": "string", "label": "加工材料"},
+        "special_requirements": {"type": "text", "label": "特殊要求"},
+        "potential_needs": {"type": "text", "label": "潜在需求挖掘"}
+      }
+    },
+    "evaluation": {
+      "label": "询盘评估",
+      "fields": {
+        "quality_rating": {"type": "select", "label": "询盘质量", "options": ["A", "B", "C", "D"]},
+        "urgency": {"type": "select", "label": "紧急程度", "options": ["High", "Medium", "Low"]},
+        "estimated_value": {"type": "number", "label": "预估价值(USD)"},
+        "stage": {"type": "select", "label": "当前阶段", "options": ["New", "Assigned", "Following", "Quoted", "Won", "Lost"]},
+        "next_followup_date": {"type": "date", "label": "下次跟进日期"}
+      }
+    },
+    "deal": {
+      "label": "成交信息",
+      "fields": {
+        "quotation_id": {"type": "string", "label": "报价单号"},
+        "quotation_date": {"type": "date", "label": "报价日期"},
+        "po_number": {"type": "string", "label": "PO号"},
+        "po_date": {"type": "date", "label": "PO日期"},
+        "deal_amount": {"type": "number", "label": "合同金额"},
+        "currency": {"type": "select", "label": "币种", "options": ["USD", "EUR", "GBP", "CNY", "JPY", "Other"]},
+        "products_detail": {"type": "text", "label": "产品明细"}
+      }
+    },
+    "fulfillment": {
+      "label": "订单履行",
+      "fields": {
+        "fulfillment_status": {"type": "select", "label": "履约状态", "options": ["Not Started", "In Progress", "Completed"]}
+      }
+    }
+  },
+  "array_fields": {
+    "follow_ups": {
+      "label": "跟进记录",
+      "item_fields": {
+        "date": {"type": "datetime", "label": "跟进日期"},
+        "method": {"type": "select", "label": "方式", "options": ["Email", "Phone", "Meeting", "Video Call", "Other"]},
+        "content": {"type": "text", "label": "内容摘要"},
+        "customer_feedback": {"type": "text", "label": "客户反馈"},
+        "next_action": {"type": "string", "label": "下一步行动"}
+      }
+    },
+    "after_sales": {
+      "label": "售后记录",
+      "item_fields": {
+        "issue_date": {"type": "datetime", "label": "问题日期"},
+        "issue_type": {"type": "select", "label": "问题类型", "options": ["Technical", "Quality", "Delivery", "Other"]},
+        "issue_description": {"type": "text", "label": "问题描述"},
+        "technician": {"type": "string", "label": "售后技术人员"},
+        "solution": {"type": "text", "label": "解决方案"},
+        "status": {"type": "select", "label": "状态", "options": ["Open", "In Progress", "Resolved", "Closed"]}
+      }
+    }
+  }
+}

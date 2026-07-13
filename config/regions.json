@@ -1,0 +1,79 @@
+{
+  "version": "1.0",
+  "regions": {
+    "EU": {
+      "label": "Europe",
+      "label_cn": "欧洲",
+      "color": "#4A90D9",
+      "countries": {
+        "DE": {"name": "Germany", "name_cn": "德国", "lat": 51.1657, "lng": 10.4515},
+        "FR": {"name": "France", "name_cn": "法国", "lat": 46.2276, "lng": 2.2137},
+        "IT": {"name": "Italy", "name_cn": "意大利", "lat": 41.8719, "lng": 12.5674},
+        "ES": {"name": "Spain", "name_cn": "西班牙", "lat": 40.4637, "lng": -3.7492},
+        "GB": {"name": "United Kingdom", "name_cn": "英国", "lat": 55.3781, "lng": -3.4360},
+        "PL": {"name": "Poland", "name_cn": "波兰", "lat": 51.9194, "lng": 19.1451},
+        "NL": {"name": "Netherlands", "name_cn": "荷兰", "lat": 52.1326, "lng": 5.2913},
+        "BE": {"name": "Belgium", "name_cn": "比利时", "lat": 50.5039, "lng": 4.4699},
+        "AT": {"name": "Austria", "name_cn": "奥地利", "lat": 47.5162, "lng": 14.5501},
+        "CH": {"name": "Switzerland", "name_cn": "瑞士", "lat": 46.8182, "lng": 8.2275},
+        "SE": {"name": "Sweden", "name_cn": "瑞典", "lat": 60.1282, "lng": 18.6435},
+        "NO": {"name": "Norway", "name_cn": "挪威", "lat": 60.4720, "lng": 8.4689},
+        "DK": {"name": "Denmark", "name_cn": "丹麦", "lat": 56.2639, "lng": 9.5018},
+        "FI": {"name": "Finland", "name_cn": "芬兰", "lat": 61.9241, "lng": 25.7482},
+        "CZ": {"name": "Czech Republic", "name_cn": "捷克", "lat": 49.8175, "lng": 15.4730},
+        "PT": {"name": "Portugal", "name_cn": "葡萄牙", "lat": 39.3999, "lng": -8.2245},
+        "HU": {"name": "Hungary", "name_cn": "匈牙利", "lat": 47.1625, "lng": 19.5033},
+        "RO": {"name": "Romania", "name_cn": "罗马尼亚", "lat": 45.9432, "lng": 24.9668},
+        "GR": {"name": "Greece", "name_cn": "希腊", "lat": 39.0742, "lng": 21.8243},
+        "IE": {"name": "Ireland", "name_cn": "爱尔兰", "lat": 53.1424, "lng": -7.6921}
+      }
+    },
+    "SEA": {
+      "label": "Southeast Asia",
+      "label_cn": "东南亚",
+      "color": "#50C878",
+      "countries": {
+        "VN": {"name": "Vietnam", "name_cn": "越南", "lat": 14.0583, "lng": 108.2772},
+        "TH": {"name": "Thailand", "name_cn": "泰国", "lat": 15.8700, "lng": 100.9925},
+        "ID": {"name": "Indonesia", "name_cn": "印度尼西亚", "lat": -0.7893, "lng": 113.9213},
+        "MY": {"name": "Malaysia", "name_cn": "马来西亚", "lat": 4.2105, "lng": 101.9758},
+        "SG": {"name": "Singapore", "name_cn": "新加坡", "lat": 1.3521, "lng": 103.8198},
+        "PH": {"name": "Philippines", "name_cn": "菲律宾", "lat": 12.8797, "lng": 121.7740},
+        "MM": {"name": "Myanmar", "name_cn": "缅甸", "lat": 21.9162, "lng": 95.9560},
+        "KH": {"name": "Cambodia", "name_cn": "柬埔寨", "lat": 12.5657, "lng": 104.9910}
+      }
+    },
+    "AM": {
+      "label": "Americas & Oceania",
+      "label_cn": "美洲+澳洲",
+      "color": "#FF6B6B",
+      "countries": {
+        "US": {"name": "United States", "name_cn": "美国", "lat": 37.0902, "lng": -95.7129},
+        "CA": {"name": "Canada", "name_cn": "加拿大", "lat": 56.1304, "lng": -106.3468},
+        "MX": {"name": "Mexico", "name_cn": "墨西哥", "lat": 23.6345, "lng": -102.5528},
+        "BR": {"name": "Brazil", "name_cn": "巴西", "lat": -14.2350, "lng": -51.9253},
+        "AR": {"name": "Argentina", "name_cn": "阿根廷", "lat": -38.4161, "lng": -63.6167},
+        "CL": {"name": "Chile", "name_cn": "智利", "lat": -35.6751, "lng": -71.5430},
+        "CO": {"name": "Colombia", "name_cn": "哥伦比亚", "lat": 4.5709, "lng": -74.2973},
+        "AU": {"name": "Australia", "name_cn": "澳大利亚", "lat": -25.2744, "lng": 133.7751},
+        "NZ": {"name": "New Zealand", "name_cn": "新西兰", "lat": -40.9006, "lng": 174.8860}
+      }
+    },
+    "RIMEA": {
+      "label": "Russia, India, Middle East & Africa",
+      "label_cn": "俄印中东",
+      "color": "#FFB347",
+      "countries": {
+        "RU": {"name": "Russia", "name_cn": "俄罗斯", "lat": 61.5240, "lng": 105.3188},
+        "IN": {"name": "India", "name_cn": "印度", "lat": 20.5937, "lng": 78.9629},
+        "TR": {"name": "Turkey", "name_cn": "土耳其", "lat": 38.9637, "lng": 35.2433},
+        "AE": {"name": "UAE", "name_cn": "阿联酋", "lat": 23.4241, "lng": 53.8478},
+        "SA": {"name": "Saudi Arabia", "name_cn": "沙特阿拉伯", "lat": 23.8859, "lng": 45.0792},
+        "IL": {"name": "Israel", "name_cn": "以色列", "lat": 31.0461, "lng": 34.8516},
+        "EG": {"name": "Egypt", "name_cn": "埃及", "lat": 26.8206, "lng": 30.8025},
+        "ZA": {"name": "South Africa", "name_cn": "南非", "lat": -30.5595, "lng": 22.9375},
+        "PK": {"name": "Pakistan", "name_cn": "巴基斯坦", "lat": 30.3753, "lng": 69.3451}
+      }
+    }
+  }
+}

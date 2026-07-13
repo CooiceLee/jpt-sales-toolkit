@@ -1,0 +1,133 @@
+function renderPanelContent(tabId) {
+    const container = document.getElementById('panel-content');
+    const inq = State.currentInquiry;
+    if (!inq) return;
+
+    if (tabId === 'followup') {
+        container.innerHTML = renderFollowupsTab(inq);
+        return;
+    }
+
+    if (tabId === 'aftersales') {
+        container.innerHTML = renderAftersalesTab(inq);
+        return;
+    }
+
+    if (tabId === 'files') {
+        container.innerHTML = renderFilesTab(inq);
+        return;
+    }
+
+    if (tabId === 'sample') {
+        container.innerHTML = SamplingModule.renderTab(inq);
+        return;
+    }
+
+    // Get fields for this tab
+    const fieldGroup = State.config.fields?.field_groups?.[tabId];
+    if (!fieldGroup) {
+        container.innerHTML = '<div class="empty-state">No fields configured for this tab.</div>';
+        return;
+    }
+
+    const fields = Object.entries(fieldGroup.fields);
+    let html = fields.map(([name, def]) => {
+        const value = getFieldValue(inq, name);
+        const editable = def.editable !== false;
+
+        // Add help text for contact fields
+        let helpText = '';
+        if (tabId === 'customer' && (name === 'contact_name' || name === 'email')) {
+            if (name === 'contact_name') {
+                helpText = '<div class="form-help">姓名或邮箱至少填写一项</div>';
+            } else if (name === 'email') {
+                helpText = '<div class="form-help">邮箱格式: example@company.com</div>';
+            }
+        }
+
+        return `
+            <div class="form-group">
+                <label class="form-label">${def.label}</label>
+                ${editable ? renderFormField(name, def, value) : `<div class="form-static">${value || '-'}</div>`}
+                ${helpText}
+                <div class="form-error" id="error-${name}" style="display:none;"></div>
+            </div>
+        `;
+    }).join('');
+
+    // Add Assignment management for basic tab (leader only)
+    if (tabId === 'basic' && State.user?.role === 'leader') {
+        html += renderAssignmentSection(inq);
+    }
+
+    if (tabId === 'basic' || tabId === 'deal') {
+        html += renderLeadClosureSection(inq);
+    }
+
+    container.innerHTML = html;
+
+    // Load assignment users after rendering
+    if (tabId === 'basic' && State.user?.role === 'leader') {
+        loadAssignmentUsers();
+    }
+
+    // Add contact validation for customer tab
+    if (tabId === 'customer') {
+        setupContactValidation();
+    }
+}
+
+function renderFormField(name, def, value) {
+    const type = def.type;
+    const safeValue = escapeHtml(value);
+
+    if (type === 'select' && def.options) {
+        return `
+            <select class="form-select" name="${name}">
+                <option value="">Select...</option>
+                ${def.options.map(o => `<option value="${escapeHtml(o)}" ${value === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+            </select>
+        `;
+    }
+
+    if (type === 'text') {
+        return `<textarea class="form-textarea" name="${name}" rows="3">${safeValue}</textarea>`;
+    }
+
+    if (type === 'boolean') {
+        return `
+            <select class="form-select" name="${name}">
+                <option value="">Select...</option>
+                <option value="true" ${value === true ? 'selected' : ''}>Yes</option>
+                <option value="false" ${value === false ? 'selected' : ''}>No</option>
+            </select>
+        `;
+    }
+
+    if (type === 'date') {
+        let dateVal = '';
+        if (value) {
+            try { dateVal = new Date(value).toISOString().split('T')[0]; } catch {}
+        }
+        return `<input type="date" class="form-input" name="${name}" value="${dateVal}">`;
+    }
+
+    if (type === 'datetime') {
+        let dtVal = '';
+        if (value) {
+            try { dtVal = new Date(value).toISOString().slice(0, 16); } catch {}
+        }
+        return `<input type="datetime-local" class="form-input" name="${name}" value="${dtVal}">`;
+    }
+
+    if (type === 'number') {
+        return `<input type="number" class="form-input" name="${name}" value="${safeValue}" step="any">`;
+    }
+
+    if (type === 'email') {
+        return `<input type="email" class="form-input" name="${name}" value="${safeValue}" placeholder="example@company.com">`;
+    }
+
+    return `<input type="text" class="form-input" name="${name}" value="${safeValue}">`;
+}
+

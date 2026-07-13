@@ -1,0 +1,33 @@
+# OS and editor files
+.DS_Store
+*.swp
+*.swo
+
+# Python runtime
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local configuration and credentials
+.env
+*.env
+!*.env.example
+
+# Business and test data
+data/
+data-test-server/
+data.sqlite
+*.sqlite
+*.sqlite-*
+*.db
+logs/
+
+# Generated regression artifacts
+test_*_data/
+test_data_exchange*/
+test_output/
+
+# Local archives and reports
+*.zip
+lan_test_accounts.md
