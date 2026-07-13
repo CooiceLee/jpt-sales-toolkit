@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>JPT v0.9 Browser Smoke</title>
+    <style>
+        body { font-family: Inter, system-ui, sans-serif; margin: 24px; background: #f7f3ee; color: #1f2937; }
+        .status { display: inline-block; padding: 8px 12px; border-radius: 6px; font-weight: 700; }
+        .running { background: #fef3c7; color: #92400e; }
+        .pass { background: #dcfce7; color: #166534; }
+        .fail { background: #fee2e2; color: #991b1b; }
+        pre { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; white-space: pre-wrap; }
+        iframe { width: 1280px; height: 820px; border: 1px solid #d1d5db; background: #fff; }
+    </style>
+</head>
+<body>
+    <h1>JPT v0.9 Browser Smoke</h1>
+    <div id="status" class="status running">RUNNING</div>
+    <pre id="results">Starting...</pre>
+    <iframe id="app-frame" src="about:blank"></iframe>
+
+    <script>
+        const errors = [];
+        const steps = [];
+
+        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+        function doc() { return document.getElementById('app-frame').contentDocument; }
+        function win() { return document.getElementById('app-frame').contentWindow; }
+        function token() { return win().localStorage.getItem('jpt_auth_token'); }
+        function result(data) { document.getElementById('results').textContent = JSON.stringify(data, null, 2); }
+        function step(name) { steps.push(name); document.title = `JPT v0.9 Smoke RUNNING - ${name}`; result({ steps, errors }); }
+        function status(text, cls) { const el = document.getElementById('status'); el.textContent = text; el.className = `status ${cls}`; }
+
+        async function waitFor(label, fn, timeout = 20000) {
+            const start = Date.now();
+            while (Date.now() - start < timeout) {
+                try {
+                    const value = await fn();
+                    if (value) return value;
+                } catch (err) {}
+                await sleep(250);
+            }
+            throw new Error(`Timed out waiting for ${label}`);
+        }
+
+        async function api(path, options = {}) {
+            const response = await fetch(path, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(options.headers || {}),
+                    ...(token() ? { Authorization: `Bearer ${token()}` } : {})
+                }
+            });
+            if (!response.ok) throw new Error(`API ${response.status}: ${await response.text()}`);
+            return response.json();
+        }
+
+        async function openApp() {
+            const frame = document.getElementById('app-frame');
+            frame.src = `/?smoke=${Date.now()}`;
+            await waitFor('app frame', () => doc()?.readyState === 'complete' && doc().getElementById('app'));
+            const frameWin = win();
+            frameWin.onerror = (message, source, line) => errors.push(`${message} @ ${source}:${line}`);
+            const originalConsoleError = frameWin.console.error.bind(frameWin.console);
+            frameWin.console.error = (...args) => {
+                errors.push(args.map(String).join(' '));
+                originalConsoleError(...args);
+            };
+            frameWin.alert = msg => steps.push(`alert:${msg}`);
+            frameWin.confirm = () => true;
+        }
+
+        async function run() {
+            const params = new URLSearchParams(location.search);
+            const username = params.get('username') || 'leader01';
+            const password = params.get('password') || 'LeaderJPT2026';
+
+            step('open-app');
+            await openApp();
+            win().localStorage.clear();
+            await openApp();
+
+            step('login');
+            await waitFor('login modal', () => doc().getElementById('login-modal')?.classList.contains('show'));
+            doc().getElementById('login-username').value = username;
+            doc().getElementById('login-password').value = password;
+            win().handleLogin();
+            const loginResult = await waitFor('logged in', () => {
+                const app = doc().getElementById('app');
+                if (app && getComputedStyle(app).display !== 'none') return { ok: true };
+                const errorEl = doc().getElementById('login-error');
+                const errorText = errorEl?.textContent?.trim();
+                if (errorEl && errorEl.style.display !== 'none' && errorText) {
+                    return { ok: false, error: errorText };
+                }
+                return null;
+            });
+            if (!loginResult.ok) throw new Error(`Login failed: ${loginResult.error}`);
+
+            step('open-core-modules');
+            for (const moduleName of ['dashboard', 'data-review', 'trip-planner', 'coordinate-review']) {
+                win().switchModule(moduleName);
+                await waitFor(`${moduleName} active`, () => doc().getElementById(`module-${moduleName}`)?.classList.contains('active'));
+                await sleep(800);
+            }
+
+            step('seed-trip-records');
+            const me = await api('/api/auth/me');
+            const stamp = Date.now();
+            const customer = await api('/api/customers', {
+                method: 'POST',
+                body: JSON.stringify({
+                    display_name: `Smoke Customer ${stamp}`,
+                    country: 'DE',
+                    city: 'Berlin',
+                    address: 'Smoke Street 1',
+                    lat: 52.52,
+                    lng: 13.405,
+                    geocode_source: 'manual',
+                    geocode_confidence: 'high',
+                    geocode_locked: true
+                })
+            });
+            const lead = await api('/api/leads', {
+                method: 'POST',
+                body: JSON.stringify({
+                    customer_id: customer.id,
+                    owner_id: me.id,
+                    title: `Smoke Lead ${stamp}`,
+                    source_channel: 'Smoke',
+                    sales_stage: 'New',
+                    product_category: 'Fiber Laser',
+                    application: 'Welding'
+                })
+            });
+
+            step('trip-plan-create-preview-archive');
+            const plan = await api('/api/review/trip-plans', {
+                method: 'POST',
+                body: JSON.stringify({
+                    title: `Smoke Trip ${stamp}`,
+                    region: 'EU',
+                    start_date: '2026-05-18',
+                    origin_name: 'Berlin',
+                    origin_lat: 52.52,
+                    origin_lng: 13.405,
+                    destination_name: 'Berlin',
+                    destination_lat: 52.52,
+                    destination_lng: 13.405
+                })
+            });
+            await api(`/api/review/trip-plans/${plan.id}/stops`, {
+                method: 'POST',
+                body: JSON.stringify({ customer_id: customer.id, lead_id: lead.id, visit_purpose: 'Smoke visit' })
+            });
+            const preview = await api(`/api/review/trip-plans/${plan.id}/preview-itinerary`, {
+                method: 'POST',
+                body: JSON.stringify({ start_date: '2026-05-18', travel_mode: 'drive' })
+            });
+            if (!preview.itinerary_preview) throw new Error('Trip preview did not mark itinerary_preview');
+            await api(`/api/review/trip-plans/${plan.id}/archive`, { method: 'POST' });
+
+            step('coordinate-geocode-failure-visible');
+            win().switchModule('coordinate-review');
+            await sleep(500);
+            win().eval("ApiClient.geocode = async () => { throw new Error('smoke geocode failure'); }");
+            win().openCoordinateCorrection(customer.id, customer.display_name, customer.lat, customer.lng, {
+                address: customer.address,
+                city: customer.city,
+                country: customer.country
+            });
+            await waitFor('coordinate modal', () => doc().getElementById('coordinate-modal')?.classList.contains('show'));
+            doc().getElementById('coord-address').value = 'not found smoke address';
+            await win().geocodeCoordinateAddress();
+            const geocodeText = doc().getElementById('coord-geocode-result')?.textContent || '';
+            if (!geocodeText.includes('Address not found')) throw new Error('Geocode failure message was not visible');
+
+            const filteredErrors = errors.filter(item => !item.includes('smoke geocode failure'));
+            const output = { steps, errors: filteredErrors };
+            result(output);
+            if (filteredErrors.length) throw new Error(filteredErrors[0]);
+            document.title = 'JPT v0.9 Smoke PASS';
+            status('PASS', 'pass');
+        }
+
+        run().catch(err => {
+            const output = { steps, errors, failure: err.message, stack: err.stack };
+            result(output);
+            document.title = `JPT v0.9 Smoke FAIL - ${err.message}`;
+            status('FAIL', 'fail');
+        });
+    </script>
+</body>
+</html>

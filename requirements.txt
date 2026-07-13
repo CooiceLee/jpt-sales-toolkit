@@ -1,0 +1,15 @@
+# JPT Sales Toolkit v2 - Python Dependencies
+
+# Web framework
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# File upload support
+python-multipart>=0.0.6
+
+# Testing
+httpx>=0.26.0
+requests>=2.31.0
+
+# JWT (optional - has stdlib fallback)
+# PyJWT>=2.8.0

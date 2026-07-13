@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JPT Sales Toolkit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/css/style.css?v=4.4">
+</head>
+<body>
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal">
+        <div class="modal-content" style="max-width:400px;">
+            <div class="modal-header">
+                <h2 class="modal-title">JPT Sales Toolkit</h2>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:20px;color:var(--ink-600);">Sign in to continue</p>
+                <form id="login-form" onsubmit="return false;">
+                    <div class="form-group">
+                        <label class="form-label">Username</label>
+                        <input type="text" id="login-username" class="form-input" required placeholder="Enter username" autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" id="login-password" class="form-input" required placeholder="Enter password" autocomplete="current-password">
+                    </div>
+                    <div id="login-error" style="color:var(--error);margin-bottom:12px;display:none;"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="handleLogin()" style="width:100%;">Sign In</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Coordinate Correction Modal -->
+    <div id="coordinate-modal" class="modal">
+        <div class="modal-content" style="max-width:720px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Correct Location</h2>
+                <button type="button" class="btn btn-text" onclick="closeCoordinateModal()" style="position:absolute;right:16px;top:16px;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:12px;font-weight:500;" id="coord-customer-name"></p>
+                <p style="margin-bottom:16px;color:var(--ink-600);font-size:14px;">Paste an address from email, click on the map, or enter coordinates manually. Drag the marker to fine-tune.</p>
+                <div class="coord-address-grid">
+                    <div class="form-group coord-address-main">
+                        <label class="form-label">Address</label>
+                        <input type="text" id="coord-address" class="form-input" placeholder="Street, company park, building" oninput="clearCoordinateGeocodeResult()">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">City</label>
+                        <input type="text" id="coord-city" class="form-input" placeholder="City" oninput="clearCoordinateGeocodeResult()">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Country</label>
+                        <input type="text" id="coord-country" class="form-input" placeholder="Country" oninput="clearCoordinateGeocodeResult()">
+                    </div>
+                </div>
+                <div class="coord-address-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="coord-geocode-btn" onclick="geocodeCoordinateAddress()">Find on map</button>
+                    <span id="coord-geocode-result" class="coord-geocode-result"></span>
+                </div>
+                <div id="coord-map-picker" style="height:280px;border-radius:var(--radius-md);margin-bottom:16px;background:var(--cream-200);"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <div class="form-group">
+                        <label class="form-label">Latitude</label>
+                        <input type="number" id="coord-lat" class="form-input" step="any" min="-90" max="90" placeholder="e.g. 48.8566" onchange="updateCoordinateMarker()">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Longitude</label>
+                        <input type="number" id="coord-lng" class="form-input" step="any" min="-180" max="180" placeholder="e.g. 2.3522" onchange="updateCoordinateMarker()">
+                    </div>
+                </div>
+                <p style="margin-top:8px;font-size:12px;color:var(--ink-500);">This will mark the location as manually verified and lock it from auto-geocoding.</p>
+            </div>
+            <div class="modal-footer" style="display:flex;gap:12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeCoordinateModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveCoordinates()">Save Location</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="app" style="display:none;">
+        <!-- Icon Rail -->
+        <aside class="rail">
+            <div class="rail-logo">J</div>
+            <button type="button" class="rail-btn active" data-module="dashboard" title="Dashboard">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="parser" title="Inquiry Parser">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="handler" title="Inquiry Handler">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="followup" title="Follow-up">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="sampling" title="Sampling">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="deal" title="Deal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="fulfillment" title="Fulfillment">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="aftersales" title="After-sales">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            </button>
+            <div class="rail-spacer"></div>
+            <div class="rail-sep"></div>
+            <button type="button" class="rail-btn" data-module="data-review" title="Data Review">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="trip-planner" title="Trip Planner">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="coordinate-review" title="Coordinate Review">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </button>
+            <button type="button" class="rail-btn" data-module="export" title="Export/Import">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </button>
+        </aside>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Sales Toolkit</div>
+                <div class="sidebar-subtitle" id="sidebar-subtitle">Q2 · 2026</div>
+            </div>
+            <div class="sidebar-search">
+                <div class="search-box">
+                    <span class="icon">&#128269;</span>
+                    <input type="text" id="global-search" placeholder="Jump to inquiry, country...">
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-section">Overview</div>
+                <div class="nav-item active" data-module="dashboard">
+                    <span class="nav-dot"></span>
+                    <span class="nav-label">Dashboard</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-total">0</span></span>
+                </div>
+
+                <div class="nav-section">Pipeline Funnel</div>
+                <div class="nav-item" data-module="parser">
+                    <span class="nav-step">01</span>
+                    <span class="nav-label">Parser</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-parser-total">0</span></span>
+                </div>
+                <div class="nav-item" data-module="handler">
+                    <span class="nav-step">02</span>
+                    <span class="nav-label">Handler</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-handler-total">0</span></span>
+                </div>
+                <div class="nav-item" data-module="followup">
+                    <span class="nav-step">03</span>
+                    <span class="nav-label">Follow-up</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-followup-total">0</span></span>
+                </div>
+                <div class="nav-item" data-module="sampling">
+                    <span class="nav-step">04</span>
+                    <span class="nav-label">Sampling</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-sampling-total">0</span></span>
+                </div>
+                <div class="nav-item" data-module="deal">
+                    <span class="nav-step">05</span>
+                    <span class="nav-label">Deal</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-deal-total">0</span></span>
+                </div>
+                <div class="nav-item" data-module="fulfillment">
+                    <span class="nav-step">06</span>
+                    <span class="nav-label">Fulfillment</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-fulfillment-total">0</span></span>
+                </div>
+                <div class="nav-item" data-module="aftersales">
+                    <span class="nav-step">07</span>
+                    <span class="nav-label">After-sales</span>
+                    <span class="nav-counts"><span class="nav-count-total" id="nav-aftersales-total">0</span></span>
+                </div>
+
+                <div class="nav-section">Data</div>
+                <div class="nav-item" data-module="data-review">
+                    <span class="nav-dot"></span>
+                    <span class="nav-label">Data Review</span>
+                </div>
+                <div class="nav-item" data-module="trip-planner">
+                    <span class="nav-dot"></span>
+                    <span class="nav-label">Trip Planner</span>
+                </div>
+                <div class="nav-item" data-module="coordinate-review">
+                    <span class="nav-dot"></span>
+                    <span class="nav-label">Coordinate Review</span>
+                    <span class="nav-counts"><span class="nav-count-alert" id="nav-coordinate-review-total">0</span></span>
+                </div>
+                <div class="nav-item" data-module="export">
+                    <span class="nav-dot"></span>
+                    <span class="nav-label">Export / Import</span>
+                </div>
+            </nav>
+            <div class="sidebar-footer" id="user-footer" style="position:relative;">
+                <div class="user-avatar" id="user-avatar">U</div>
+                <div class="user-info">
+                    <div class="user-name" id="user-name">User</div>
+                    <div class="user-role" id="user-role">Sales</div>
+                </div>
+                <div class="user-menu" id="user-menu">
+                    <div class="user-menu-item" onclick="switchAccount()">&#128100; Switch Account</div>
+                    <div class="user-menu-item" onclick="logout()">&#128682; Logout</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main">
+            <header class="main-header">
+                <nav class="breadcrumb">
+                    <span class="breadcrumb-item">Pipeline</span>
+                    <span class="breadcrumb-sep">/</span>
+                    <span class="breadcrumb-current" id="breadcrumb-current">Dashboard</span>
+                </nav>
+                <div class="header-actions" id="header-actions"></div>
+            </header>
+
+            <div class="main-content">
+                <!-- Dashboard Module -->
+                <div id="module-dashboard" class="module active">
+                    <h1 class="module-title">Dashboard</h1>
+
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-label">Total Inquiries</div>
+                            <div class="kpi-value" id="kpi-total">0</div>
+                            <div class="kpi-footer">All time</div>
+                        </div>
+                        <div class="kpi-card highlight">
+                            <div class="kpi-label">Last 7 Days</div>
+                            <div class="kpi-value" id="kpi-recent">0</div>
+                            <div class="kpi-footer">New inquiries</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Following</div>
+                            <div class="kpi-value" id="kpi-following">0</div>
+                            <div class="kpi-footer">Active follow-ups</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Won Deals</div>
+                            <div class="kpi-value" id="kpi-won">0</div>
+                            <div class="kpi-footer">Closed won</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Won Value</div>
+                            <div class="kpi-value">$<span id="kpi-pipeline">0</span><span class="kpi-unit">K</span></div>
+                            <div class="kpi-footer">Total deal amount</div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="map-card">
+                            <div class="map-header">
+                                <div>
+                                    <div class="card-title">Review Map</div>
+                                    <div class="map-summary" id="map-summary">Loading map data...</div>
+                                </div>
+                                <div class="map-controls">
+                                    <select class="filter-select" id="map-stage-filter" title="Stage">
+                                        <option value="">All stages</option>
+                                        <option value="New">New</option>
+                                        <option value="Assigned">Assigned</option>
+                                        <option value="Following">Following</option>
+                                        <option value="Quoted">Quoted</option>
+                                        <option value="Won">Won</option>
+                                        <option value="Lost">Lost</option>
+                                    </select>
+                                    <select class="filter-select" id="map-outcome-filter" title="Outcome">
+                                        <option value="">All outcomes</option>
+                                        <option value="open">Open</option>
+                                        <option value="won">Won</option>
+                                        <option value="lost">Lost</option>
+                                    </select>
+                                    <select class="filter-select" id="map-region-filter" title="Region">
+                                        <option value="">All regions</option>
+                                        <option value="EU">Europe</option>
+                                        <option value="SEA">Southeast Asia</option>
+                                        <option value="AM">Americas</option>
+                                        <option value="RIMEA">Russia/India/ME</option>
+                                    </select>
+                                    <select class="filter-select" id="map-quality-filter" title="Coordinate quality">
+                                        <option value="">All coordinates</option>
+                                        <option value="exact">Exact only</option>
+                                        <option value="needs_geocode">Needs geocode</option>
+                                    </select>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="batchGeocode()" title="Re-geocode customers without precise coordinates" id="batch-geocode-btn" style="white-space:nowrap;">
+                                        Batch Geocode
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="world-map"></div>
+                        </div>
+                        <div class="funnel-card">
+                            <div class="card-title">Pipeline Funnel</div>
+                            <div id="pipeline-funnel"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Parser Module -->
+                <div id="module-parser" class="module">
+                    <h1 class="module-title">Step 01 · Inquiry Parser</h1>
+                    <div class="parser-grid">
+                        <div class="parser-input">
+                            <div class="section-title">
+                                <h3>Raw Email</h3>
+                                <div>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="pasteFromClipboard()">Paste</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearParser()">Clear</button>
+                                </div>
+                            </div>
+                            <textarea id="email-content" class="parser-textarea" placeholder="Paste the inquiry email content here..."></textarea>
+                            <div class="parser-footer">
+                                <span class="char-count"><span id="char-count">0</span> chars</span>
+                                <button type="button" class="btn btn-primary" onclick="parseEmail()">&#9889; Parse with AI</button>
+                            </div>
+                        </div>
+                        <div class="parsed-fields" id="parsed-result" style="display:none;">
+                            <h3>
+                                Extracted Fields
+                                <span class="parsed-badge" id="parsed-count">0 fields</span>
+                            </h3>
+                            <div id="parsed-fields-list"></div>
+                            <div style="margin-top:20px;display:flex;gap:12px;">
+                                <button type="button" class="btn btn-secondary" onclick="discardParsed()">Discard</button>
+                                <button type="button" class="btn btn-primary" onclick="saveAsInquiry()">&#10003; Save as new inquiry</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Handler Module -->
+                <div id="module-handler" class="module">
+                    <h1 class="module-title">Step 02 · Inquiry Handler</h1>
+                    <div class="filters-bar">
+                        <select class="filter-select" id="filter-stage">
+                            <option value="New" selected>New</option>
+                            <option value="">All stages</option>
+                            <option value="Assigned">Assigned</option>
+                            <option value="Following">Following</option>
+                            <option value="Quoted">Quoted</option>
+                            <option value="Won">Won</option>
+                            <option value="Lost">Lost</option>
+                        </select>
+                        <select class="filter-select" id="filter-region">
+                            <option value="">All regions</option>
+                            <option value="EU">Europe</option>
+                            <option value="SEA">Southeast Asia</option>
+                            <option value="AM">Americas</option>
+                            <option value="RIMEA">Russia/India/ME</option>
+                        </select>
+                        <input type="text" class="form-input" id="search-inquiry" placeholder="Search company, ID, country..." style="max-width:250px;">
+                        <span class="filter-spacer"></span>
+                        <span id="inquiry-count" style="color:var(--ink-500);font-size:13px;">0 inquiries</span>
+                        <button type="button" class="btn btn-primary" onclick="showNewInquiryModal()">+ New Inquiry</button>
+                    </div>
+                    <div class="cards-grid" id="handler-cards"></div>
+                </div>
+
+                <!-- Follow-up Module -->
+                <div id="module-followup" class="module">
+                    <h1 class="module-title">Step 03 · Follow-up Tracker</h1>
+                    <div class="filters-bar">
+                        <div class="filter-tabs">
+                            <button type="button" class="filter-tab active" data-filter="all">All Active</button>
+                            <button type="button" class="filter-tab" data-filter="overdue">Overdue</button>
+                            <button type="button" class="filter-tab" data-filter="today">Due today</button>
+                            <button type="button" class="filter-tab" data-filter="week">This week</button>
+                        </div>
+                        <select class="filter-select" id="followup-region">
+                            <option value="">All regions</option>
+                        </select>
+                        <span class="filter-spacer"></span>
+                        <span id="followup-count" style="color:var(--ink-500);font-size:13px;">0 active</span>
+                        <button type="button" class="btn btn-primary" onclick="logFollowUp()">+ Log follow-up</button>
+                    </div>
+                    <div class="cards-grid" id="followup-cards"></div>
+                </div>
+
+                <!-- Sampling Module -->
+                <div id="module-sampling" class="module">
+                    <h1 class="module-title">Step 04 · Sample Manager</h1>
+                    <div class="filters-bar">
+                        <div class="filter-tabs" id="sampling-tabs">
+                            <button type="button" class="filter-tab active" data-filter="all">All sampling</button>
+                            <button type="button" class="filter-tab" data-filter="Open">Open</button>
+                            <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
+                            <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
+                            <button type="button" class="filter-tab" data-filter="Cancelled">Cancelled</button>
+                        </div>
+                        <span class="filter-spacer"></span>
+                        <span id="sampling-count" style="color:var(--ink-500);font-size:13px;">0 samples</span>
+                        <button type="button" class="btn btn-primary" onclick="newSampleRequest()">+ New sample request</button>
+                    </div>
+                    <div class="cards-grid" id="sampling-cards"></div>
+                </div>
+
+                <!-- Deal Module -->
+                <div id="module-deal" class="module">
+                    <h1 class="module-title">Step 05 · Deal Closer</h1>
+                    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+                        <div class="kpi-card">
+                            <div class="kpi-label">Quoting</div>
+                            <div class="kpi-value" id="deal-quoting">0</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Closed Won</div>
+                            <div class="kpi-value" id="deal-won">0</div>
+                        </div>
+                        <div class="kpi-card highlight">
+                            <div class="kpi-label">Won Value</div>
+                            <div class="kpi-value">$<span id="deal-value">0</span><span class="kpi-unit">K</span></div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Avg Cycle</div>
+                            <div class="kpi-value"><span id="deal-cycle">0</span><span class="kpi-unit">d</span></div>
+                        </div>
+                    </div>
+                    <div class="filters-bar">
+                        <div class="filter-tabs" id="deal-tabs">
+                            <button type="button" class="filter-tab active" data-filter="all">All deals</button>
+                            <button type="button" class="filter-tab" data-filter="Quoted">Quoted</button>
+                            <button type="button" class="filter-tab" data-filter="Lost">Lost</button>
+                        </div>
+                        <span class="filter-spacer"></span>
+                        <button type="button" class="btn btn-primary" onclick="createQuote()">+ Create quote</button>
+                    </div>
+                    <div class="cards-grid" id="deal-cards"></div>
+                </div>
+
+                <!-- Fulfillment Module -->
+                <div id="module-fulfillment" class="module">
+                    <h1 class="module-title">Step 06 · Order Fulfillment</h1>
+                    <div class="filters-bar">
+                        <div class="filter-tabs" id="fulfillment-tabs">
+                            <button type="button" class="filter-tab active" data-filter="all">All orders</button>
+                            <button type="button" class="filter-tab" data-filter="Not Started">Not started</button>
+                            <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
+                            <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
+                        </div>
+                        <span class="filter-spacer"></span>
+                        <span id="fulfillment-count" style="color:var(--ink-500);font-size:13px;">0 orders</span>
+                        <button type="button" class="btn btn-primary" onclick="logStatus()">+ Log status</button>
+                    </div>
+                    <div class="cards-grid" id="fulfillment-cards"></div>
+                </div>
+
+                <!-- After-sales Module -->
+                <div id="module-aftersales" class="module">
+                    <h1 class="module-title">Step 07 · After-sales</h1>
+                    <div class="filters-bar">
+                        <div class="filter-tabs" id="aftersales-tabs">
+                            <button type="button" class="filter-tab active" data-filter="all">All issues</button>
+                            <button type="button" class="filter-tab" data-filter="Open">Open</button>
+                            <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
+                            <button type="button" class="filter-tab" data-filter="Resolved">Resolved</button>
+                        </div>
+                        <span class="filter-spacer"></span>
+                        <span id="aftersales-count" style="color:var(--ink-500);font-size:13px;">0 issues</span>
+                        <button type="button" class="btn btn-primary" onclick="logIssue()">+ Log issue</button>
+                    </div>
+                    <div class="cards-grid" id="aftersales-cards"></div>
+                </div>
+
+                <!-- Data Review Module -->
+                <div id="module-data-review" class="module">
+                    <h1 class="module-title">Data Review</h1>
+                    <div class="filters-bar">
+                        <select class="filter-select" id="review-period">
+                            <option value="all">All time</option>
+                            <option value="this_month">This month</option>
+                            <option value="last_month">Last month</option>
+                            <option value="this_quarter">This quarter</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <input type="date" class="form-input compact-date" id="review-date-from">
+                        <input type="date" class="form-input compact-date" id="review-date-to">
+                        <select class="filter-select" id="review-region">
+                            <option value="">All regions</option>
+                            <option value="EU">Europe</option>
+                            <option value="SEA">Southeast Asia</option>
+                            <option value="AM">Americas</option>
+                            <option value="RIMEA">Russia/India/ME</option>
+                        </select>
+                        <select class="filter-select" id="review-stage">
+                            <option value="">All stages</option>
+                            <option value="New">New</option>
+                            <option value="Assigned">Assigned</option>
+                            <option value="Following">Following</option>
+                            <option value="Quoted">Quoted</option>
+                            <option value="Won">Won</option>
+                            <option value="Lost">Lost</option>
+                        </select>
+                        <span class="filter-spacer"></span>
+                        <button type="button" class="btn btn-primary" onclick="loadDataReview()">Refresh</button>
+                    </div>
+                    <div class="kpi-grid" style="grid-template-columns: repeat(5, 1fr);">
+                        <div class="kpi-card"><div class="kpi-label">Open Leads</div><div class="kpi-value" id="review-open">0</div></div>
+                        <div class="kpi-card"><div class="kpi-label">Won Leads</div><div class="kpi-value" id="review-won">0</div></div>
+                        <div class="kpi-card highlight"><div class="kpi-label">Won Value</div><div class="kpi-value">$<span id="review-won-value">0</span><span class="kpi-unit">K</span></div></div>
+                        <div class="kpi-card"><div class="kpi-label">Win Rate</div><div class="kpi-value"><span id="review-win-rate">0</span><span class="kpi-unit">%</span></div></div>
+                        <div class="kpi-card"><div class="kpi-label">Overdue</div><div class="kpi-value" id="review-overdue">0</div></div>
+                    </div>
+                    <div class="review-brief" id="review-brief"></div>
+                    <div class="review-grid">
+                        <div class="review-panel">
+                            <div class="card-title">Stage Breakdown</div>
+                            <div id="review-stage-table"></div>
+                        </div>
+                        <div class="review-panel">
+                            <div class="card-title">Owner Performance</div>
+                            <div id="review-owner-table"></div>
+                        </div>
+                        <div class="review-panel">
+                            <div class="card-title">Region Performance</div>
+                            <div id="review-region-table"></div>
+                        </div>
+                        <div class="review-panel">
+                            <div class="card-title">Risk Leads</div>
+                            <div id="review-risk-table"></div>
+                        </div>
+                        <div class="review-panel review-panel-wide">
+                            <div class="card-title">High Value Open Leads</div>
+                            <div id="review-value-table"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trip Planner Module -->
+                <div id="module-trip-planner" class="module">
+                    <h1 class="module-title">Trip Planner</h1>
+                    <div class="filters-bar">
+                        <select class="filter-select" id="trip-region">
+                            <option value="">All regions</option>
+                            <option value="EU">Europe</option>
+                            <option value="SEA">Southeast Asia</option>
+                            <option value="AM">Americas</option>
+                            <option value="RIMEA">Russia/India/ME</option>
+                        </select>
+                        <select class="filter-select" id="trip-stage">
+                            <option value="">All stages</option>
+                            <option value="Following">Following</option>
+                            <option value="Quoted">Quoted</option>
+                            <option value="Won">Won</option>
+                            <option value="Lost">Lost</option>
+                        </select>
+                        <span class="filter-spacer"></span>
+                        <button type="button" class="btn btn-secondary" onclick="loadTripPlanner()">Refresh</button>
+                        <button type="button" class="btn btn-primary" onclick="createTripPlanFromForm()">New plan</button>
+                    </div>
+                    <div class="trip-layout">
+                        <div class="trip-main">
+                            <div id="trip-map"></div>
+                            <div class="review-panel">
+                                <div class="card-title">Candidate Customers</div>
+                                <div id="trip-candidate-list"></div>
+                            </div>
+                        </div>
+                        <aside class="trip-side">
+                            <div class="review-panel">
+                                <div class="card-title">Plan</div>
+                                <div class="trip-form">
+                                    <input type="text" class="form-input" id="trip-title" placeholder="Plan title">
+                                    <div class="trip-date-row">
+                                        <input type="date" class="form-input" id="trip-start-date">
+                                        <input type="date" class="form-input" id="trip-end-date">
+                                    </div>
+                                    <div class="trip-route-grid">
+                                        <input type="text" class="form-input" id="trip-origin-name" placeholder="Origin">
+                                        <input type="text" class="form-input" id="trip-destination-name" placeholder="Destination">
+                                        <input type="number" step="0.000001" class="form-input" id="trip-origin-lat" placeholder="Origin lat">
+                                        <input type="number" step="0.000001" class="form-input" id="trip-origin-lng" placeholder="Origin lng">
+                                        <input type="number" step="0.000001" class="form-input" id="trip-destination-lat" placeholder="Destination lat">
+                                        <input type="number" step="0.000001" class="form-input" id="trip-destination-lng" placeholder="Destination lng">
+                                    </div>
+                                    <div class="trip-date-row">
+                                        <select class="form-input" id="trip-travel-mode">
+                                            <option value="auto">Auto transport</option>
+                                            <option value="drive">Drive</option>
+                                            <option value="ground_public">Ground public</option>
+                                            <option value="flight">Flight</option>
+                                        </select>
+                                        <label class="trip-check">
+                                            <input type="checkbox" id="trip-avoid-weekends" checked>
+                                            <span>Skip weekends</span>
+                                        </label>
+                                    </div>
+                                    <input type="text" class="form-input" id="trip-holidays" placeholder="Holidays: 2026-05-01, 2026-10-01">
+                                    <textarea class="form-input" id="trip-description" rows="3" placeholder="Planning notes"></textarea>
+                                    <div class="trip-action-row">
+                                        <button type="button" class="btn btn-secondary" onclick="previewCurrentTripItinerary()">Preview route</button>
+                                        <button type="button" class="btn btn-primary" onclick="generateCurrentTripItinerary()">Save route</button>
+                                    </div>
+                                </div>
+                                <div id="trip-plan-list" style="margin-top:16px;"></div>
+                            </div>
+                            <div class="review-panel">
+                                <div class="card-title">Selected Stops</div>
+                                <div id="trip-current-plan"></div>
+                                <div class="trip-export-actions">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="exportCurrentTripPlan('md')">Markdown</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="exportCurrentTripPlan('csv')">CSV</button>
+                                </div>
+                            </div>
+                            <div class="review-panel">
+                                <div class="card-title">Visit Execution</div>
+                                <div id="trip-visit-execution"></div>
+                            </div>
+                        </aside>
+                    </div>
+                </div>
+
+                <!-- Coordinate Review Module -->
+                <div id="module-coordinate-review" class="module">
+                    <h1 class="module-title">Coordinate Review</h1>
+                    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+                        <div class="kpi-card">
+                            <div class="kpi-label">Needs Review</div>
+                            <div class="kpi-value" id="coord-needs-review">0</div>
+                            <div class="kpi-footer">Auto coordinates</div>
+                        </div>
+                        <div class="kpi-card highlight">
+                            <div class="kpi-label">Missing Coordinates</div>
+                            <div class="kpi-value" id="coord-missing">0</div>
+                            <div class="kpi-footer">No location data</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Verified</div>
+                            <div class="kpi-value" id="coord-verified">0</div>
+                            <div class="kpi-footer">Manually locked</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <div class="filter-tabs">
+                            <button type="button" class="filter-tab active" data-coord-filter="all" onclick="filterCoordinateReview('all')">All Customers</button>
+                            <button type="button" class="filter-tab" data-coord-filter="needs_review" onclick="filterCoordinateReview('needs_review')">Needs Review</button>
+                            <button type="button" class="filter-tab" data-coord-filter="missing" onclick="filterCoordinateReview('missing')">Missing</button>
+                            <button type="button" class="filter-tab" data-coord-filter="verified" onclick="filterCoordinateReview('verified')">Verified</button>
+                        </div>
+                        <input type="search" class="form-input" id="coordinate-review-search" placeholder="Search customer, city, country, address" oninput="searchCoordinateReview(this.value)" style="margin-top:12px;">
+                    </div>
+
+                    <div id="coordinate-review-list"></div>
+                </div>
+
+                <!-- Export Module -->
+                <div id="module-export" class="module">
+                    <h1 class="module-title">Export / Import</h1>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+                        <div class="kpi-card">
+                            <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">Export Data</h3>
+                            <p style="color:var(--ink-600);margin-bottom:16px;">Export your inquiries to share with your leader.</p>
+                            <div style="background:var(--warn-light,#fff3cd);border-left:4px solid var(--warn,#ffc107);padding:12px;margin-bottom:16px;border-radius:4px;">
+                                <strong style="color:var(--warn-dark,#856404);">Note:</strong>
+                                <span style="color:var(--warn-dark,#856404);font-size:14px;">Attachment files are NOT included in JSON export (metadata only).</span>
+                            </div>
+                            <button type="button" class="btn btn-primary" onclick="exportData()">Export My Data</button>
+                            <div id="export-result" style="margin-top:16px;display:none;">
+                                <p style="color:var(--success);margin-bottom:8px;">Export successful!</p>
+                                <a id="export-link" href="#" class="btn btn-secondary">Download File</a>
+                            </div>
+                        </div>
+                        <div class="kpi-card">
+                            <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">Import & Merge</h3>
+                            <p style="color:var(--ink-600);margin-bottom:16px;">Import data files from team members.</p>
+                            <div style="background:var(--warn-light,#fff3cd);border-left:4px solid var(--warn,#ffc107);padding:12px;margin-bottom:16px;border-radius:4px;">
+                                <strong style="color:var(--warn-dark,#856404);">Note:</strong>
+                                <span style="color:var(--warn-dark,#856404);font-size:14px;">Import only merges data records. Attachment files must be transferred separately. For complete backup/restore, ask the administrator to use the server backup/restore procedure.</span>
+                            </div>
+                            <input type="file" id="import-file" accept=".json" style="margin-bottom:12px;">
+                            <button type="button" class="btn btn-secondary" onclick="preflightImportData()">Preflight Check</button>
+                            <button type="button" class="btn btn-primary" onclick="importData()">Import & Merge</button>
+                            <div id="import-preflight-result" style="margin-top:16px;"></div>
+                            <div id="import-result" style="margin-top:16px;"></div>
+                        </div>
+                    </div>
+                    <div class="review-panel" style="margin-top:24px;">
+                        <div class="card-title">Data Governance</div>
+                        <div class="governance-actions">
+                            <button type="button" class="btn btn-secondary" onclick="normalizeCountries()">Normalize Countries / Regions</button>
+                            <button type="button" class="btn btn-secondary" onclick="loadCoordinateAudit()">Load Coordinate Audit</button>
+                        </div>
+                        <div class="governance-batch-grid">
+                            <textarea class="form-input" id="gov-customer-ids" rows="2" placeholder="Customer IDs, one per line"></textarea>
+                            <textarea class="form-input" id="gov-lead-ids" rows="2" placeholder="Lead IDs, one per line"></textarea>
+                            <input type="text" class="form-input" id="gov-country" placeholder="Country">
+                            <input type="text" class="form-input" id="gov-region" placeholder="Region">
+                            <input type="number" step="0.000001" class="form-input" id="gov-lat" placeholder="Latitude">
+                            <input type="number" step="0.000001" class="form-input" id="gov-lng" placeholder="Longitude">
+                            <input type="text" class="form-input" id="gov-owner-id" placeholder="Owner ID">
+                            <input type="text" class="form-input" id="gov-product" placeholder="Product category">
+                            <input type="text" class="form-input" id="gov-application" placeholder="Application">
+                            <button type="button" class="btn btn-primary" onclick="runBatchRepair()">Run Batch Repair</button>
+                        </div>
+                        <div id="governance-result" style="margin-top:16px;"></div>
+                    </div>
+                    <div class="review-panel" style="margin-top:24px;">
+                        <div class="card-title">Customer Merge</div>
+                        <p style="color:var(--ink-600);margin-bottom:12px;">Select a duplicate source customer and merge it into the target customer that should remain active.</p>
+                        <div class="customer-merge-grid">
+                            <div class="customer-merge-column">
+                                <div class="customer-merge-head">
+                                    <strong>Source duplicate</strong>
+                                    <div class="customer-merge-search">
+                                        <input type="search" class="form-input" id="merge-source-search" placeholder="Search source customer">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="searchMergeCustomers('source')">Search</button>
+                                    </div>
+                                </div>
+                                <div id="merge-source-selected" class="customer-merge-selected"></div>
+                                <div id="merge-source-results"></div>
+                            </div>
+                            <div class="customer-merge-column">
+                                <div class="customer-merge-head">
+                                    <strong>Target customer</strong>
+                                    <div class="customer-merge-search">
+                                        <input type="search" class="form-input" id="merge-target-search" placeholder="Search target customer">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="searchMergeCustomers('target')">Search</button>
+                                    </div>
+                                </div>
+                                <div id="merge-target-selected" class="customer-merge-selected"></div>
+                                <div id="merge-target-results"></div>
+                            </div>
+                        </div>
+                        <div class="governance-actions" style="margin-top:12px;">
+                            <button type="button" class="btn btn-primary" onclick="mergeSelectedCustomers()">Merge Source Into Target</button>
+                        </div>
+                        <div id="customer-merge-result" style="margin-top:16px;"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Detail Panel -->
+        <aside class="detail-panel" id="detail-panel">
+            <div class="panel-header">
+                <span class="panel-title" id="panel-title">Inquiry Details</span>
+                <button type="button" class="panel-close" onclick="closePanel()">&times;</button>
+            </div>
+            <div class="panel-tabs" id="panel-tabs"></div>
+            <div class="panel-content" id="panel-content"></div>
+            <div class="panel-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePanel()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="panel-save-btn" onclick="saveInquiry()">Save Changes</button>
+            </div>
+        </aside>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/js/api-client.js?v=3.3"></script>
+    <script src="/static/js/shared/utils.js?v=1.0"></script>
+    <script src="/static/js/shared/render.js?v=1.0"></script>
+    <script src="/static/js/app.js?v=6.6"></script>
+
+    <!-- Shared workflow contracts -->
+    <script src="/static/js/modules/stage-filter-view.js?v=1.0"></script>
+    <script src="/static/js/modules/stage-filter-data.js?v=1.0"></script>
+    <script src="/static/js/modules/lead-navigation.js?v=1.0"></script>
+    <script src="/static/js/modules/refresh-counts.js?v=1.0"></script>
+    <script src="/static/js/modules/user-menu.js?v=1.0"></script>
+
+    <!-- Intake and stage worklists -->
+    <script src="/static/js/modules/intake-parser.js?v=1.0"></script>
+    <script src="/static/js/modules/intake-submit.js?v=1.0"></script>
+    <script src="/static/js/modules/card-template.js?v=1.0"></script>
+    <script src="/static/js/modules/cards.js?v=1.0"></script>
+    <script src="/static/js/modules/sales-worklists.js?v=1.0"></script>
+    <script src="/static/js/modules/service-worklists.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling-panel.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling.js?v=1.0"></script>
+    <script src="/static/js/modules/stage-filters.js?v=1.0"></script>
+
+    <!-- Inquiry detail panel -->
+    <script src="/static/js/modules/contact-validation.js?v=1.0"></script>
+    <script src="/static/js/modules/assignment-view.js?v=1.0"></script>
+    <script src="/static/js/modules/assignment-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/assignment-users.js?v=1.0"></script>
+    <script src="/static/js/modules/lead-closure.js?v=1.0"></script>
+    <script src="/static/js/modules/followups-view.js?v=1.0"></script>
+    <script src="/static/js/modules/followups-form.js?v=1.0"></script>
+    <script src="/static/js/modules/followups-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/aftersales-view.js?v=1.0"></script>
+    <script src="/static/js/modules/aftersales-form.js?v=1.0"></script>
+    <script src="/static/js/modules/aftersales-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/files-view.js?v=1.0"></script>
+    <script src="/static/js/modules/files-form.js?v=1.0"></script>
+    <script src="/static/js/modules/files-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-save-errors.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-save.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-fields.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-form.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-panel.js?v=1.0"></script>
+
+    <!-- Governance and review -->
+    <script src="/static/js/modules/customer-merge-view.js?v=1.0"></script>
+    <script src="/static/js/modules/customer-merge-action.js?v=1.0"></script>
+    <script src="/static/js/modules/data-transfer.js?v=1.0"></script>
+    <script src="/static/js/modules/data-governance.js?v=1.0"></script>
+    <script src="/static/js/modules/data-review-tables.js?v=1.0"></script>
+    <script src="/static/js/modules/data-review.js?v=1.0"></script>
+
+    <!-- Trip planning -->
+    <script src="/static/js/modules/trip-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-candidates-list.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-candidates-map.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-plans.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-itinerary-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-itinerary-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-loader.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-visit-state.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-planner.js?v=1.1"></script>
+    <script src="/static/js/modules/trip-visit-actions.js?v=1.0"></script>
+
+    <!-- Coordinate maintenance -->
+    <script src="/static/js/modules/coordinate-state.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-panel.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/batch-geocode.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-review-data.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-review-view.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-review-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/legacy-actions.js?v=1.0"></script>
+</body>
+</html>
