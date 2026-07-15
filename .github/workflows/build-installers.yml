@@ -133,7 +133,16 @@ jobs:
           hdiutil verify "$dmg"
           mount_dir="$(mktemp -d)"
           hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
-          trap 'hdiutil detach "$mount_dir"' EXIT
+          cleanup_mount() {
+            for attempt in 1 2 3; do
+              if hdiutil detach "$mount_dir"; then
+                return 0
+              fi
+              sleep 2
+            done
+            hdiutil detach -force "$mount_dir"
+          }
+          trap cleanup_mount EXIT
           for name in user.json team.json regression.html smoke-v09.html; do
             if find "$mount_dir/JPT Sales Toolkit.app" -name "$name" -print -quit | grep -q .; then
               echo "Prohibited packaged asset: $name" >&2

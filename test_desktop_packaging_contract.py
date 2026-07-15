@@ -65,6 +65,7 @@ def test_packaging_sources() -> None:
     assert "Installed executable remains after uninstall" in workflow
     assert "lipo -archs" in workflow
     assert "codesign --verify --deep --strict" in workflow
+    assert 'hdiutil detach -force "$mount_dir"' in workflow
 
     installer = (ROOT / "packaging" / "windows" / "installer.iss").read_text(
         encoding="utf-8"
