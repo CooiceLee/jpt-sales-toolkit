@@ -33,6 +33,7 @@
 - `docs/v0.6-internal-runbook.md`：历史试运行手册，保留作归档。
 - `docs/v0.7-trial-runbook.md`：v0.7 数据复盘和出差规划阶段说明。
 - `docs/v0.8-plus-module-roadmap.md`：后续模块规划和状态。
+- `docs/v0.10.0-validation-result.md`：当前权限授权与跨平台安装包验证记录。
 - `docs/v0.9.0-validation-result.md`：上一版 v0.9 验证记录。
 - `docs/deployment/`：当前桌面安装、账号签发、试运行和发布说明。
 - `docs/v0.8.7-validation-result.md`：上一稳定基线验证记录。
