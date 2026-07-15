@@ -121,6 +121,26 @@ def get_actor_role_for_lead(lead_id: str, user: dict) -> str:
     if not lead:
         return "none"
 
+    # Global Tech always remains task-scoped, even if legacy data incorrectly
+    # assigns that member as a commercial owner or collaborator.
+    if user["role"] == "tech":
+        assigned_task = lead_repo.conn.execute(
+            """
+            SELECT 1
+            FROM (
+                SELECT lead_id, assignee_id, archived_at FROM pre_sales_tasks
+                UNION ALL
+                SELECT lead_id, assignee_id, archived_at FROM after_sales_tasks
+            ) tasks
+            WHERE tasks.lead_id = ?
+              AND tasks.assignee_id = ?
+              AND tasks.archived_at IS NULL
+            LIMIT 1
+            """,
+            (lead_id, user["id"]),
+        ).fetchone()
+        return "tech" if assigned_task else "none"
+
     # Check if owner
     if lead["owner_id"] == user["id"]:
         return "owner"
@@ -131,8 +151,44 @@ def get_actor_role_for_lead(lead_id: str, user: dict) -> str:
         if assignment["user_id"] == user["id"]:
             return assignment["assignment_type"]
 
-    # Tech users with task assignment
-    if user["role"] == "tech":
-        return "tech"
-
     return "none"
+
+
+def can_access_customer(customer_id: str, user: dict) -> bool:
+    """Return whether the user has a visible lead or task for a customer."""
+    from ..repositories import LeadRepository
+
+    lead_repo = LeadRepository()
+    if user["role"] == "leader":
+        row = lead_repo.conn.execute(
+            "SELECT 1 FROM customers WHERE id = ? AND archived_at IS NULL",
+            (customer_id,),
+        ).fetchone()
+        return row is not None
+
+    if user["role"] == "tech":
+        row = lead_repo.conn.execute(
+            """
+            SELECT 1 FROM leads l
+            WHERE l.customer_id = ? AND l.archived_at IS NULL
+              AND (
+                EXISTS (SELECT 1 FROM pre_sales_tasks t WHERE t.lead_id = l.id AND t.assignee_id = ? AND t.archived_at IS NULL)
+                OR EXISTS (SELECT 1 FROM after_sales_tasks t WHERE t.lead_id = l.id AND t.assignee_id = ? AND t.archived_at IS NULL)
+              )
+            LIMIT 1
+            """,
+            (customer_id, user["id"], user["id"]),
+        ).fetchone()
+        return row is not None
+
+    row = lead_repo.conn.execute(
+        """
+        SELECT 1 FROM leads l
+        LEFT JOIN lead_assignments a ON a.lead_id = l.id AND a.archived_at IS NULL
+        WHERE l.customer_id = ? AND l.archived_at IS NULL
+          AND (l.owner_id = ? OR a.user_id = ?)
+        LIMIT 1
+        """,
+        (customer_id, user["id"], user["id"]),
+    ).fetchone()
+    return row is not None

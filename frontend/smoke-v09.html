@@ -73,8 +73,9 @@
 
         async function run() {
             const params = new URLSearchParams(location.search);
-            const username = params.get('username') || 'leader01';
-            const password = params.get('password') || 'LeaderJPT2026';
+            const username = params.get('username');
+            const password = params.get('password');
+            if (!username || !password) throw new Error('Pass test credentials with ?username=...&password=...');
 
             step('open-app');
             await openApp();

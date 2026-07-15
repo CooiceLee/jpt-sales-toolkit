@@ -1,4 +1,5 @@
 window.showAfterSalesForm = function() {
+    if (!RoleCapabilities.canManageTaskRequests()) return;
     document.getElementById('aftersales-form').classList.remove('hidden');
     document.getElementById('as-index').value = '-1';
     document.getElementById('as-date').value = new Date().toISOString().slice(0, 16);
@@ -27,8 +28,11 @@ window.editAfterSales = function(index) {
     document.getElementById('as-tech').value = issue.technician || '';
     document.getElementById('as-status').value = issue.status || 'Open';
     document.getElementById('as-solution').value = issue.solution || '';
+    ['as-date', 'as-type', 'as-description'].forEach(id => {
+        const field = document.getElementById(id);
+        if (field) field.disabled = RoleCapabilities.isTech();
+    });
     const saveBtn = document.getElementById('as-save-btn');
     if (saveBtn) saveBtn.textContent = 'Update';
     document.getElementById('aftersales-form')?.scrollIntoView({ block: 'nearest' });
 };
-

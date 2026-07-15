@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+import stat
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,10 +34,14 @@ class AdminService:
         if bad_member:
             raise ValueError(f"Invalid backup: corrupt member {bad_member}")
 
-        for name in zf.namelist():
+        for member in zf.infolist():
+            name = member.filename
             member_path = Path(name)
             if member_path.is_absolute() or ".." in member_path.parts:
                 raise ValueError(f"Invalid backup: unsafe path {name}")
+            member_mode = (member.external_attr >> 16) & 0o170000
+            if stat.S_ISLNK(member_mode):
+                raise ValueError(f"Invalid backup: symbolic link {name}")
 
         if "manifest.json" not in zf.namelist():
             raise ValueError("Invalid backup: missing manifest.json")
@@ -83,9 +88,51 @@ class AdminService:
                 return backup_name, backup_path, snapshot_path
             suffix += 1
 
+    @staticmethod
+    def _add_directory(
+        zf: zipfile.ZipFile,
+        source_dir: Path,
+        archive_dir: str,
+        manifest: dict,
+        include_root: bool = False,
+    ) -> None:
+        """Add regular files from one data directory to a backup archive."""
+        if include_root:
+            root_name = f"{archive_dir}/"
+            zf.writestr(root_name, b"")
+            manifest["contents"].append(root_name)
+        if not source_dir.exists():
+            return
+        for file_path in sorted(source_dir.rglob("*")):
+            if not file_path.is_file() or file_path.is_symlink():
+                continue
+            arcname = f"{archive_dir}/{file_path.relative_to(source_dir)}"
+            zf.write(file_path, arcname)
+            manifest["contents"].append(arcname)
+
+    @staticmethod
+    def _remove_path(path: Path) -> None:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _secure_runtime_config(config_dir: Path) -> None:
+        """Keep restored installation secrets private on POSIX systems."""
+        try:
+            config_dir.chmod(0o700)
+        except OSError:
+            pass
+        for path in config_dir.rglob("*"):
+            try:
+                path.chmod(0o700 if path.is_dir() else 0o600)
+            except OSError:
+                pass
+
     def backup(self, output_dir: Path, actor_id: str) -> dict:
         """
-        Create full backup (database + attachments).
+        Create full backup (database + attachments + runtime configuration).
 
         Returns backup metadata.
         """
@@ -112,15 +159,27 @@ class AdminService:
 
                 # Add attachments directory
                 attachments_dir = self.data_dir / "attachments" if self.data_dir else None
-                if attachments_dir and attachments_dir.exists():
-                    for file_path in attachments_dir.rglob("*"):
-                        if file_path.is_file():
-                            arcname = f"attachments/{file_path.relative_to(attachments_dir)}"
-                            zf.write(file_path, arcname)
-                            manifest["contents"].append(arcname)
+                if attachments_dir:
+                    self._add_directory(zf, attachments_dir, "attachments", manifest)
+
+                # Always write the directory marker so an empty runtime config
+                # can be distinguished from a legacy backup without config.
+                runtime_config_dir = self.data_dir / "config" if self.data_dir else None
+                if runtime_config_dir:
+                    self._add_directory(
+                        zf,
+                        runtime_config_dir,
+                        "config",
+                        manifest,
+                        include_root=True,
+                    )
 
                 # Add manifest
                 zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+            try:
+                backup_path.chmod(0o600)
+            except OSError:
+                pass
         finally:
             snapshot_path.unlink(missing_ok=True)
 
@@ -255,6 +314,8 @@ class AdminService:
         stage_dir = self.data_dir / f".restore_stage_{timestamp}"
         old_db_path = self.data_dir / f".database_before_restore_{timestamp}.sqlite"
         old_attachments_dir = self.data_dir / f".attachments_before_restore_{timestamp}"
+        old_config_dir = self.data_dir / f".config_before_restore_{timestamp}"
+        restore_succeeded = False
 
         # Extract backup
         if stage_dir.exists():
@@ -263,56 +324,89 @@ class AdminService:
 
         try:
             with zipfile.ZipFile(backup_path, "r") as zf:
+                names = zf.namelist()
                 # Extract database
                 zf.extract("database.sqlite", stage_dir)
 
-                # Extract attachments
-                for name in zf.namelist():
-                    if name.startswith("attachments/"):
+                # Extract data directories. Legacy archives have no config/
+                # marker and intentionally leave the current config untouched.
+                restore_config = any(name.startswith("config/") for name in names)
+                for name in names:
+                    if name.startswith("attachments/") or name.startswith("config/"):
                         zf.extract(name, stage_dir)
 
             staged_db = stage_dir / "database.sqlite"
             staged_attachments = stage_dir / "attachments"
+            staged_config = stage_dir / "config"
             self._validate_database_file(staged_db)
 
             db_path = self._database_path()
             attachments_dir = self.data_dir / "attachments"
+            config_dir = self.data_dir / "config"
 
             close_db()
-
-            if old_db_path.exists():
-                old_db_path.unlink()
-            if db_path.exists():
-                db_path.replace(old_db_path)
-
-            if old_attachments_dir.exists():
-                shutil.rmtree(old_attachments_dir)
-            if attachments_dir.exists():
-                attachments_dir.replace(old_attachments_dir)
-
+            moved_original = {"database": False, "attachments": False, "config": False}
+            installed_replacement = {"database": False, "attachments": False, "config": False}
             try:
+                self._remove_path(old_db_path)
+                self._remove_path(old_attachments_dir)
+                self._remove_path(old_config_dir)
+
+                if db_path.exists():
+                    db_path.replace(old_db_path)
+                    moved_original["database"] = True
+                if attachments_dir.exists():
+                    attachments_dir.replace(old_attachments_dir)
+                    moved_original["attachments"] = True
+                if restore_config and config_dir.exists():
+                    config_dir.replace(old_config_dir)
+                    moved_original["config"] = True
+
                 staged_db.replace(db_path)
+                installed_replacement["database"] = True
                 if staged_attachments.exists():
                     staged_attachments.replace(attachments_dir)
                 else:
                     attachments_dir.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                if db_path.exists():
-                    db_path.unlink()
-                if old_db_path.exists():
-                    old_db_path.replace(db_path)
-
-                if attachments_dir.exists():
-                    shutil.rmtree(attachments_dir)
-                if old_attachments_dir.exists():
-                    old_attachments_dir.replace(attachments_dir)
+                installed_replacement["attachments"] = True
+                if restore_config:
+                    if staged_config.exists():
+                        staged_config.replace(config_dir)
+                    else:
+                        config_dir.mkdir(parents=True, exist_ok=True)
+                    installed_replacement["config"] = True
+                    self._secure_runtime_config(config_dir)
+            except Exception as restore_error:
+                rollback_errors = []
+                paths = (
+                    (db_path, old_db_path, "database"),
+                    (attachments_dir, old_attachments_dir, "attachments"),
+                    (config_dir, old_config_dir, "config"),
+                )
+                for current, previous, label in reversed(paths):
+                    if label == "config" and not restore_config:
+                        continue
+                    try:
+                        if moved_original[label] or installed_replacement[label]:
+                            self._remove_path(current)
+                        if moved_original[label]:
+                            previous.replace(current)
+                    except Exception as rollback_error:
+                        rollback_errors.append(f"{label}: {rollback_error}")
+                if rollback_errors:
+                    details = "; ".join(rollback_errors)
+                    raise RuntimeError(
+                        f"Restore failed and rollback was incomplete ({details})"
+                    ) from restore_error
                 raise
+            restore_succeeded = True
         finally:
             if stage_dir.exists():
                 shutil.rmtree(stage_dir)
-            old_db_path.unlink(missing_ok=True)
-            if old_attachments_dir.exists():
-                shutil.rmtree(old_attachments_dir)
+            if restore_succeeded:
+                self._remove_path(old_db_path)
+                self._remove_path(old_attachments_dir)
+                self._remove_path(old_config_dir)
 
         return {
             "restore_time": datetime.utcnow().isoformat(),

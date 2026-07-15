@@ -21,8 +21,11 @@
     async function loadWorklist() {
         const filter = State.currentFilters.sampling || 'all';
         try {
+            const leadFilters = RoleCapabilities.isTech()
+                ? getSharedLeadFilters()
+                : { ...getSharedLeadFilters(), sales_stage: 'Following' };
             const [leads, tasks] = await Promise.all([
-                ApiClient.listLeads({ ...getSharedLeadFilters(), sales_stage: 'Following' }),
+                ApiClient.listLeads(leadFilters),
                 ApiClient.listPreSalesTasks()
             ]);
             const latestByLead = new Map();
@@ -38,7 +41,7 @@
                     sample_due_date: task?.due_date || '',
                     _sampleTask: task || null
                 });
-            });
+            }).filter(item => !RoleCapabilities.isTech() || item._sampleTask);
             if (filter !== 'all') items = items.filter(item => item.sample_status === filter);
             setText('sampling-count', `${items.length} samples`);
             renderCards('sampling-cards', items, 'sampling');

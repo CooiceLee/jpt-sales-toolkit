@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from ..services import CustomerService
 from ..repositories.base import ConflictError
-from .deps import get_current_user, require_role
+from .deps import can_access_customer, get_current_user, require_role
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -89,6 +89,17 @@ def get_customer_service() -> CustomerService:
     return CustomerService()
 
 
+def ensure_customer_access(customer_id: str, user: dict, *, write: bool = False) -> None:
+    """Enforce lead-scoped customer access and read-only technical visibility."""
+    if not can_access_customer(customer_id, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if write and user["role"] == "tech":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Technical users have read-only customer access",
+        )
+
+
 @router.post("")
 async def create_customer(
     request: CustomerCreate,
@@ -96,6 +107,8 @@ async def create_customer(
     service: CustomerService = Depends(get_customer_service),
 ):
     """Create new customer."""
+    if user["role"] not in {"leader", "sales"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     data = request.model_dump(exclude_none=True)
     return service.create(data, user["id"])
 
@@ -127,6 +140,7 @@ async def get_customer(
     service: CustomerService = Depends(get_customer_service),
 ):
     """Get customer by ID."""
+    ensure_customer_access(customer_id, user)
     customer = service.get(customer_id)
     if not customer:
         raise HTTPException(
@@ -144,6 +158,7 @@ async def update_customer(
     service: CustomerService = Depends(get_customer_service),
 ):
     """Update customer."""
+    ensure_customer_access(customer_id, user, write=True)
     data = request.model_dump(exclude_none=True, exclude={"row_version"})
 
     try:
@@ -194,6 +209,8 @@ async def match_customers(
     service: CustomerService = Depends(get_customer_service),
 ):
     """Find potential customer matches."""
+    if user["role"] not in {"leader", "sales"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return service.match(request.email, request.company_name)
 
 
@@ -238,6 +255,7 @@ async def create_customer_contact(
     service: CustomerService = Depends(get_customer_service),
 ):
     """Create customer contact."""
+    ensure_customer_access(customer_id, user, write=True)
     contact_id = service.add_contact(
         customer_id,
         request.model_dump(exclude_none=True),
@@ -257,6 +275,7 @@ async def update_customer_contact(
     service: CustomerService = Depends(get_customer_service),
 ):
     """Update customer contact."""
+    ensure_customer_access(customer_id, user, write=True)
     contact = service.customer_repo.get_contact_by_id(contact_id)
     if not contact or contact["customer_id"] != customer_id:
         raise HTTPException(
@@ -279,6 +298,7 @@ async def archive_customer_contact(
     service: CustomerService = Depends(get_customer_service),
 ):
     """Archive customer contact."""
+    ensure_customer_access(customer_id, user, write=True)
     contact = service.customer_repo.get_contact_by_id(contact_id)
     if not contact or contact["customer_id"] != customer_id:
         raise HTTPException(

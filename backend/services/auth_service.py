@@ -4,52 +4,26 @@ Authentication service - login, logout, JWT tokens.
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
-from datetime import datetime, timedelta
 from typing import Optional
 
-try:
-    import jwt  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover - optional dependency fallback
-    jwt = None
-
-from ..repositories import UserRepository
-
-# JWT configuration (MVP: simple secret, production should use env var)
-JWT_SECRET = "jpt-sales-toolkit-secret-key-change-in-production"
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_DAYS = 7
-
-
-def hash_password(password: str) -> str:
-    """Hash password using SHA-256. MVP only."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    """Verify password against hash."""
-    return hash_password(password) == password_hash
-
-
-def _b64url_encode(data: bytes) -> str:
-    """Encode bytes using URL-safe base64 without padding."""
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _b64url_decode(data: str) -> bytes:
-    """Decode URL-safe base64 string with optional missing padding."""
-    padding = "=" * (-len(data) % 4)
-    return base64.urlsafe_b64decode(data + padding)
+from ..authorization import AuthorizationProvider, resolve_authorization_provider
+from ..repositories import UserCredentialRepository, UserRepository
+from .password_service import hash_password, needs_rehash, verify_password
+from .token_service import decode_token, encode_token
 
 
 class AuthService:
     """Authentication service."""
 
-    def __init__(self, user_repo: Optional[UserRepository] = None):
+    def __init__(
+        self,
+        user_repo: Optional[UserRepository] = None,
+        credential_repo: Optional[UserCredentialRepository] = None,
+        authorization_service: Optional[AuthorizationProvider] = None,
+    ):
         self.user_repo = user_repo or UserRepository()
+        self.credential_repo = credential_repo or UserCredentialRepository()
+        self.authorization_service = authorization_service or resolve_authorization_provider()
 
     def login(self, username: str, password: str) -> Optional[dict]:
         """
@@ -65,14 +39,23 @@ class AuthService:
         if not user["is_active"]:
             return None
 
-        if not verify_password(password, user["password_hash"]):
+        if not self.authorization_service.validate_user(user):
             return None
+
+        credential = self.credential_repo.get_by_user_id(user["id"], active_only=True)
+        password_hash = credential["password_hash"] if credential else user["password_hash"]
+        if not verify_password(password, password_hash):
+            return None
+
+        if needs_rehash(password_hash):
+            self._store_password(user["id"], hash_password(password), credential)
+            credential = self.credential_repo.get_by_user_id(user["id"], active_only=True)
 
         # Update last login
         self.user_repo.update_last_login(user["id"])
 
         # Generate token
-        token = self._generate_token(user)
+        token = encode_token(user)
 
         return {
             "token": token,
@@ -82,6 +65,7 @@ class AuthService:
                 "display_name": user["display_name"],
                 "role": user["role"],
                 "region": user["region"],
+                "must_change_password": bool(credential and credential["must_change_password"]),
             },
         }
 
@@ -93,13 +77,15 @@ class AuthService:
             User dict or None if token invalid
         """
         try:
-            payload = self._decode_token(token)
+            payload = decode_token(token)
             user_id = payload.get("sub")
             if not user_id:
                 return None
 
             user = self.user_repo.get_by_id(user_id)
-            if not user or not user["is_active"]:
+            if not user or not user["is_active"] or payload.get("role") != user["role"]:
+                return None
+            if not self.authorization_service.validate_user(user):
                 return None
 
             return {
@@ -137,11 +123,17 @@ class AuthService:
         if not user:
             return False
 
-        if not verify_password(old_password, user["password_hash"]):
+        credential = self.credential_repo.get_by_user_id(user_id, active_only=True)
+        current_hash = credential["password_hash"] if credential else user["password_hash"]
+        if not verify_password(old_password, current_hash):
             return False
 
-        new_hash = hash_password(new_password)
-        return self.user_repo.update_password(user_id, new_hash)
+        try:
+            new_hash = hash_password(new_password)
+        except ValueError:
+            return False
+        self._store_password(user_id, new_hash, credential)
+        return True
 
     def list_users(self, role: Optional[str] = None) -> list[dict]:
         """List active users (for assignment dropdowns)."""
@@ -157,57 +149,13 @@ class AuthService:
             for u in users
         ]
 
-    def _generate_token(self, user: dict) -> str:
-        """Generate JWT token for user."""
-        now = datetime.utcnow()
-        payload = {
-            "sub": user["id"],
-            "iat": int(now.timestamp()),
-            "exp": int((now + timedelta(days=JWT_EXPIRY_DAYS)).timestamp()),
-            "role": user["role"],
-        }
-        return self._encode_token(payload)
-
-    def _encode_token(self, payload: dict) -> str:
-        """Encode token with PyJWT when available, otherwise use stdlib fallback."""
-        if jwt is not None:
-            return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-        header = {"alg": JWT_ALGORITHM, "typ": "JWT"}
-        header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-        payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-        signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-        signature = hmac.new(
-            JWT_SECRET.encode("utf-8"),
-            signing_input,
-            hashlib.sha256,
-        ).digest()
-        return f"{header_b64}.{payload_b64}.{_b64url_encode(signature)}"
-
-    def _decode_token(self, token: str) -> dict:
-        """Decode token with PyJWT when available, otherwise use stdlib fallback."""
-        if jwt is not None:
-            return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-
-        parts = token.split(".")
-        if len(parts) != 3:
-            raise ValueError("Invalid token format")
-
-        header_b64, payload_b64, signature_b64 = parts
-        signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-        expected = hmac.new(
-            JWT_SECRET.encode("utf-8"),
-            signing_input,
-            hashlib.sha256,
-        ).digest()
-        actual = _b64url_decode(signature_b64)
-
-        if not hmac.compare_digest(expected, actual):
-            raise ValueError("Invalid token signature")
-
-        payload = json.loads(_b64url_decode(payload_b64).decode("utf-8"))
-        exp = payload.get("exp")
-        if exp is not None and int(exp) < int(datetime.utcnow().timestamp()):
-            raise ValueError("Token expired")
-
-        return payload
+    def _store_password(self, user_id: str, password_hash: str, credential: Optional[dict]) -> None:
+        self.user_repo.update_password(user_id, password_hash)
+        if credential:
+            return
+        self.credential_repo.create({
+            "user_id": user_id,
+            "password_hash": password_hash,
+            "password_scheme": "pbkdf2_sha256",
+            "must_change_password": False,
+        })

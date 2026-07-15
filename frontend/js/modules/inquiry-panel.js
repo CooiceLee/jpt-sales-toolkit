@@ -15,13 +15,14 @@ function panelTabForContext(context) {
 
 window.openInquiryPanel = async function(leadId, targetContext = null) {
     try {
+        const taskOnly = RoleCapabilities.isTech();
         // Load lead and related panel data in parallel
         const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
             ApiClient.getLead(leadId),
-            ApiClient.listActivities(leadId).catch(() => []),
+            taskOnly ? [] : ApiClient.listActivities(leadId).catch(() => []),
             ApiClient.listPreSalesTasks({ lead_id: leadId, include_archived: true }).catch(() => []),
             ApiClient.listAfterSalesTasks({ lead_id: leadId }).catch(() => []),
-            ApiClient.listAttachments(leadId).catch(() => [])
+            taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
         ]);
 
         // Parse payload_json from activities
@@ -111,7 +112,7 @@ window.closePanel = function() {
 };
 
 function renderPanelTabs(activeTabId = 'basic') {
-    const tabs = [
+    const allTabs = [
         { id: 'basic', label: 'Basic' },
         { id: 'customer', label: 'Customer' },
         { id: 'requirement', label: 'Requirement' },
@@ -123,6 +124,9 @@ function renderPanelTabs(activeTabId = 'basic') {
         { id: 'aftersales', label: 'After-sales' },
         { id: 'files', label: 'Files' }
     ];
+    const tabs = RoleCapabilities.isTech()
+        ? allTabs.filter(tab => ['sample', 'aftersales'].includes(tab.id))
+        : allTabs;
     const validActiveTab = tabs.some(t => t.id === activeTabId) ? activeTabId : 'basic';
 
     const tabsContainer = document.getElementById('panel-tabs');
@@ -149,4 +153,3 @@ function togglePanelSaveButton(tabId) {
     const actionTabs = ['sample', 'followup', 'aftersales', 'files'];
     document.getElementById('panel-save-btn')?.classList.toggle('hidden', actionTabs.includes(tabId));
 }
-

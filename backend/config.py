@@ -13,7 +13,8 @@ from typing import Optional
 from dataclasses import dataclass
 
 
-APP_VERSION = "0.9.0-internal"
+VERSION_FILE = Path(__file__).resolve().parents[1] / "VERSION"
+APP_VERSION = VERSION_FILE.read_text(encoding="utf-8").strip()
 
 MAX_UPLOAD_SIZE = 25 * 1024 * 1024
 ALLOWED_ATTACHMENT_MIME_TYPES = (
@@ -45,6 +46,7 @@ class AppSettings:
     app_root: Path
     data_dir: Path
     config_dir: Path
+    runtime_config_dir: Path
     db_path: Path
     upload_dir: Path
     backup_dir: Path
@@ -73,6 +75,7 @@ def init_settings(app_root: Optional[Path] = None) -> AppSettings:
         app_root=app_root,
         data_dir=data_dir,
         config_dir=app_root / "config",
+        runtime_config_dir=data_dir / "config",
         db_path=data_dir / "database.sqlite",
         upload_dir=data_dir / "attachments",
         backup_dir=data_dir / "backups",
@@ -82,7 +85,7 @@ def init_settings(app_root: Optional[Path] = None) -> AppSettings:
     _settings.data_dir.mkdir(parents=True, exist_ok=True)
     _settings.upload_dir.mkdir(parents=True, exist_ok=True)
     _settings.backup_dir.mkdir(parents=True, exist_ok=True)
-    _settings.config_dir.mkdir(parents=True, exist_ok=True)
+    _settings.runtime_config_dir.mkdir(parents=True, exist_ok=True)
 
     return _settings
 

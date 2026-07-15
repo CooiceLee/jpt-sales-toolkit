@@ -38,10 +38,10 @@ const ApiClient = (function() {
     // ===== API Request =====
     async function request(endpoint, options = {}) {
         const token = getToken();
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers
-        };
+        const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+        const headers = { ...options.headers };
+        const hasContentType = Object.keys(headers).some(key => key.toLowerCase() === 'content-type');
+        if (!isFormData && !hasContentType) headers['Content-Type'] = 'application/json';
 
         if (token) {
             headers['Authorization'] = `Bearer ${token}`;
@@ -127,6 +127,130 @@ const ApiClient = (function() {
     async function listUsers(role = null) {
         const params = role ? `?role=${role}` : '';
         return request(`/auth/users${params}`);
+    }
+
+    async function getRuntimeStatus() {
+        return request('/health');
+    }
+
+    async function shutdownDesktop() {
+        return request('/desktop/shutdown', { method: 'POST' });
+    }
+
+    // ===== Offline Authorization API =====
+    function authorizationForm(fields) {
+        const formData = new FormData();
+        Object.entries(fields).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) formData.append(key, value);
+        });
+        return formData;
+    }
+
+    async function downloadAuthorizationFile(endpoint, options, fallbackFilename) {
+        const token = getToken();
+        const response = await fetch(API_BASE + endpoint, {
+            ...options,
+            headers: {
+                ...options.headers,
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            }
+        });
+        if (response.status === 401) {
+            clearAuth();
+            window.dispatchEvent(new CustomEvent('auth:logout'));
+            throw new ApiError('Session expired. Please login again.', 401);
+        }
+        if (!response.ok) {
+            const errorText = await response.text();
+            let message = errorText || `API Error: ${response.status}`;
+            try { message = JSON.parse(errorText).detail || message; } catch { /* plain text */ }
+            throw new ApiError(message, response.status);
+        }
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename\*?=(?:UTF-8''|["']?)([^"';]+)/i);
+        const filename = match ? decodeURIComponent(match[1].replace(/["']/g, '')) : fallbackFilename;
+        return { blob: await response.blob(), filename };
+    }
+
+    async function getAuthorizationStatus() {
+        return request('/authorization/status');
+    }
+
+    async function bootstrapAuthorizationLeader(data) {
+        return request('/authorization/bootstrap', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function recoverLeaderAuthorization(data) {
+        return request('/authorization/leader/recover', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function createDeviceRequest() {
+        return downloadAuthorizationFile('/authorization/device-request', { method: 'POST' }, 'device-request.jptreq');
+    }
+
+    async function activateAuthorization(file, password, issuerFingerprint) {
+        return request('/authorization/activate', {
+            method: 'POST',
+            body: authorizationForm({
+                authorization_file: file,
+                password,
+                issuer_fingerprint: issuerFingerprint
+            })
+        });
+    }
+
+    async function listAuthorizationMembers() {
+        return request('/authorization/members');
+    }
+
+    async function createAuthorizationMember(data) {
+        return request('/authorization/members', { method: 'POST', body: JSON.stringify(data) });
+    }
+
+    async function updateAuthorizationMember(memberId, data) {
+        return request(`/authorization/members/${memberId}`, { method: 'PATCH', body: JSON.stringify(data) });
+    }
+
+    async function deactivateAuthorizationMember(memberId) {
+        return request(`/authorization/members/${memberId}/deactivate`, { method: 'POST' });
+    }
+
+    async function reactivateAuthorizationMember(memberId) {
+        return request(`/authorization/members/${memberId}/reactivate`, { method: 'POST' });
+    }
+
+    async function initializeAuthorizationIssuer(passphrase) {
+        return request('/authorization/issuer/initialize', {
+            method: 'POST',
+            body: JSON.stringify({ passphrase })
+        });
+    }
+
+    async function renewLocalLeaderAuthorization(passphrase) {
+        return request('/authorization/issuer/renew-local', {
+            method: 'POST',
+            body: JSON.stringify({ passphrase })
+        });
+    }
+
+    async function issueAuthorization(memberId, requestFile, passphrase, days) {
+        const body = authorizationForm({
+            member_id: memberId,
+            request_file: requestFile,
+            passphrase,
+            days
+        });
+        return downloadAuthorizationFile('/authorization/issue', { method: 'POST', body }, 'member.jptauth');
+    }
+
+    async function listAuthorizationEvents() {
+        return request('/authorization/events');
     }
 
     // ===== Customer API =====
@@ -677,6 +801,24 @@ const ApiClient = (function() {
         logout,
         getMe,
         listUsers,
+        getRuntimeStatus,
+        shutdownDesktop,
+
+        // Offline Authorization
+        getAuthorizationStatus,
+        bootstrapAuthorizationLeader,
+        recoverLeaderAuthorization,
+        createDeviceRequest,
+        activateAuthorization,
+        listAuthorizationMembers,
+        createAuthorizationMember,
+        updateAuthorizationMember,
+        deactivateAuthorizationMember,
+        reactivateAuthorizationMember,
+        initializeAuthorizationIssuer,
+        renewLocalLeaderAuthorization,
+        issueAuthorization,
+        listAuthorizationEvents,
 
         // Customer
         createCustomer,

@@ -11,8 +11,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
 
 from ..services import LeadService, ActivityService
+from ..services.lead_service import InvalidLeadAssignmentError, mask_lead_for_role
 from ..repositories.base import ConflictError
 from .deps import get_current_user, require_role, get_actor_role_for_lead, get_attachment_service
+from .lead_attachment_permissions import (
+    filter_attachments_for_user,
+    forbid_tech_attachment_access,
+    forbid_tech_attachment_write,
+)
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -114,6 +120,15 @@ def get_activity_service() -> ActivityService:
     return ActivityService()
 
 
+def forbid_tech_activity_write(user: dict) -> None:
+    """Tech activity feeds are read-only; task endpoints own all Tech writes."""
+    if user["role"] == "tech":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Technical users cannot modify lead activities",
+        )
+
+
 @router.post("")
 async def create_lead(
     request: LeadCreate,
@@ -121,13 +136,21 @@ async def create_lead(
     service: LeadService = Depends(get_lead_service),
 ):
     """Create new lead."""
+    if user["role"] not in {"leader", "sales"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Technical users cannot create leads",
+        )
     if user["role"] != "leader" and request.owner_id != user["id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Non-leaders can only create leads assigned to themselves",
         )
     data = request.model_dump(exclude_none=True)
-    return service.create(data, user["id"])
+    try:
+        return service.create(data, user["id"])
+    except InvalidLeadAssignmentError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("")
@@ -178,7 +201,7 @@ async def get_lead(
             detail="Access denied",
         )
 
-    return lead
+    return mask_lead_for_role(lead, actor_role)
 
 
 @router.patch("/{lead_id}")
@@ -195,6 +218,12 @@ async def update_lead(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
+        )
+
+    if actor_role == "tech":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Technical users cannot edit lead sales fields",
         )
 
     if actor_role == "watcher":
@@ -220,6 +249,8 @@ async def update_lead(
             actor_role,
             request.row_version,
         )
+    except InvalidLeadAssignmentError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ConflictError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -355,6 +386,8 @@ async def create_activity(
             detail="Watchers can only add comments",
         )
 
+    forbid_tech_activity_write(user)
+
     if request.action_type == "follow_up":
         activity_id = service.add_follow_up(
             lead_id=lead_id,
@@ -401,6 +434,8 @@ async def update_activity(
             detail="Access denied",
         )
 
+    forbid_tech_activity_write(user)
+
     data = request.model_dump(exclude_unset=True)
     try:
         updated = service.update_follow_up(
@@ -440,6 +475,8 @@ async def archive_activity(
             detail="Access denied",
         )
 
+    forbid_tech_activity_write(user)
+
     try:
         success = service.archive(activity_id, lead_id, user["id"])
     except ValueError as e:
@@ -472,6 +509,8 @@ async def restore_activity(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+
+    forbid_tech_activity_write(user)
 
     try:
         success = service.restore(activity_id, lead_id, user["id"])
@@ -508,7 +547,7 @@ async def list_attachments(
             detail="Access denied",
         )
 
-    return service.list_for_lead(lead_id, category)
+    return filter_attachments_for_user(service.list_for_lead(lead_id, category), user)
 
 
 @router.post("/{lead_id}/attachments")
@@ -528,9 +567,10 @@ async def upload_attachment(
             detail="Access denied",
         )
 
+    forbid_tech_attachment_write(user)
     try:
         content = await file.read()
-        return service.upload(
+        attachment = service.upload(
             lead_id=lead_id,
             category=category,
             filename=file.filename,
@@ -538,6 +578,7 @@ async def upload_attachment(
             mime_type=file.content_type or "application/octet-stream",
             uploaded_by=user["id"],
         )
+        return attachment
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -561,6 +602,7 @@ async def archive_attachment(
             detail="Access denied",
         )
 
+    forbid_tech_attachment_write(user)
     try:
         success = service.archive(attachment_id, lead_id, user["id"])
         if not success:
@@ -593,6 +635,7 @@ async def update_attachment(
             detail="Access denied",
         )
 
+    forbid_tech_attachment_write(user)
     try:
         return service.update_metadata(
             attachment_id=attachment_id,
@@ -623,6 +666,7 @@ async def download_attachment(
             detail="Access denied",
         )
 
+    forbid_tech_attachment_access(user)
     attachment = service.get_by_id(attachment_id)
     if not attachment or attachment["lead_id"] != lead_id:
         raise HTTPException(

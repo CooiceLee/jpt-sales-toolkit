@@ -2,7 +2,7 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前内部试运行基线：`v0.9.0-internal`。当前启动、备份、回归、地图坐标、数据复盘、出差规划、拜访执行和数据治理入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。
+当前内部试运行基线：`v0.10.0-internal`。当前启动、账号授权、备份、回归、地图坐标、数据复盘、出差规划、拜访执行和数据治理入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。
 
 ## 功能概览
 
@@ -22,9 +22,15 @@
 
 ## 快速开始
 
+### 团队桌面安装包
+
+Windows 与 macOS 的内部测试安装包由 `.github/workflows/build-installers.yml` 在原生系统上构建。成员安装和设备激活见 [成员安装指南](docs/deployment/member-install-guide.md)，Leader 创建账号、签发、续期和恢复见 [Leader 授权指南](docs/deployment/leader-authorization-guide.md)。
+
+当前安装包为 `UNSIGNED-INTERNAL` 试运行版；完整签名和发布门槛见 [发布手册](docs/deployment/release-runbook.md)。
+
 ### 环境要求
 
-- Python 3.8+
+- Python 3.9+
 - 支持 Windows / macOS / Linux
 
 ### 启动应用
@@ -94,12 +100,14 @@ bash scripts/validate_v08.sh
 
 ```
 config/
-├── user.json       # 用户配置（ID、角色、区域等）
 ├── fields.json     # 字段定义（可自定义扩展）
 ├── regions.json    # 区域和国家配置
 ├── products.json   # 产品目录
-└── team.json       # 团队成员
+├── user.json       # 仅用于旧版迁移的空白模板，不进入安装包
+└── team.json       # 仅用于旧版迁移的三角色模板，不进入安装包
 ```
+
+账号、角色和设备授权的当前数据源是 SQLite 授权目录与 `.jptauth`，不是 `user.json` / `team.json`。
 
 ### 字段配置
 
@@ -132,6 +140,7 @@ data/
 ├── database.sqlite # v2 主数据库
 ├── attachments/    # 附件文件
 ├── backups/        # 全量备份 zip
+├── config/         # JWT 密钥、授权时钟及 Leader 加密签发密钥
 ├── exports/        # 导出文件
 └── imports/        # 导入暂存
 ```
@@ -146,7 +155,7 @@ data/
 
 **Q: 如何在多台电脑上使用？**
 
-A: 每台电脑独立运行，通过导出/导入功能同步数据。
+A: 每台电脑独立运行；Leader 创建成员，成员提交 `.jptreq`，Leader 返回设备绑定且固定 90 天的 `.jptauth`。业务数据仍通过导出/导入同步。
 
 **Q: 数据丢失怎么办？**
 
@@ -158,4 +167,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.9.0-internal*
+*JPT Sales Toolkit v0.10.0-internal*

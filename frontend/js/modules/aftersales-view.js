@@ -11,34 +11,35 @@ function renderAftersalesTab(inq) {
 
     const list = issues.map((issue, i) => {
         const color = statusColors[issue.status] || 'var(--ink-500)';
+        const manager = RoleCapabilities.canManageTaskRequests();
         return `
             <div class="followup-item" style="border-left: 3px solid ${color};">
                 <div class="followup-header">
                     <div class="followup-meta">
-                        <span class="followup-method">${issue.issue_type || 'Issue'}</span>
-                        <span class="stage-badge" style="background:${color};color:white;">${issue.status || 'Open'}</span>
+                        <span class="followup-method">${escapeHtml(issue.issue_type || 'Issue')}</span>
+                        <span class="stage-badge" style="background:${color};color:white;">${escapeHtml(issue.status || 'Open')}</span>
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="editAfterSales(${i})">Edit</button>
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="archiveAfterSales(${i})">Archive</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="editAfterSales(${i})">${manager ? 'Edit' : 'Update result'}</button>
+                        ${manager ? `<button type="button" class="btn btn-sm btn-secondary" onclick="archiveAfterSales(${i})">Archive</button>` : ''}
                     </div>
                 </div>
                 <div class="followup-dates">
                     <span>Date: ${formatDate(issue.issue_date)}</span>
-                    <span>${issue.technician ? `Tech: ${issue.technician}` : ''}</span>
+                    <span>${issue.technician ? `Tech: ${escapeHtml(issue.technician)}` : ''}</span>
                 </div>
-                <div class="followup-content">${issue.issue_description || ''}</div>
-                ${issue.solution ? `<div class="followup-feedback"><label>Solution</label>${issue.solution}</div>` : ''}
+                <div class="followup-content">${escapeHtml(issue.issue_description || '')}</div>
+                ${issue.solution ? `<div class="followup-feedback"><label>Solution</label>${escapeHtml(issue.solution)}</div>` : ''}
             </div>
         `;
     }).join('');
 
     return `
         ${list || '<div class="empty-state">No after-sales issues recorded.</div>'}
-        <button type="button" class="btn btn-secondary mt-4" onclick="showAfterSalesForm()">+ Log Issue</button>
+        ${RoleCapabilities.canManageTaskRequests() ? '<button type="button" class="btn btn-secondary mt-4" onclick="showAfterSalesForm()">+ Log Issue</button>' : ''}
         <div id="aftersales-form" class="hidden" style="margin-top:16px;padding:16px;background:var(--cream-100);border-radius:var(--radius-md);">
             <input type="hidden" id="as-index" value="-1">
-            <div class="form-row">
+            <div class="form-row ${RoleCapabilities.canManageTaskRequests() ? '' : 'hidden'}">
                 <div class="form-group">
                     <label class="form-label">Date</label>
                     <input type="datetime-local" id="as-date" class="form-input">
@@ -53,12 +54,12 @@ function renderAftersalesTab(inq) {
                     </select>
                 </div>
             </div>
-            <div class="form-group">
+            <div class="form-group ${RoleCapabilities.canManageTaskRequests() ? '' : 'hidden'}">
                 <label class="form-label">Description</label>
                 <textarea id="as-description" class="form-textarea" rows="2"></textarea>
             </div>
             <div class="form-row">
-                <div class="form-group">
+                <div class="form-group ${RoleCapabilities.canManageTaskRequests() ? '' : 'hidden'}">
                     <label class="form-label">Technician</label>
                     <input type="text" id="as-tech" class="form-input">
                 </div>
@@ -83,4 +84,3 @@ function renderAftersalesTab(inq) {
         </div>
     `;
 }
-

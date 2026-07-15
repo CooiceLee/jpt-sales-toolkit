@@ -1,5 +1,5 @@
 function canFilterByOwner() {
-    return ['leader', 'tech'].includes(State.user?.role);
+    return State.user?.role === 'leader';
 }
 
 function canFilterByTech() {
@@ -87,4 +87,3 @@ function bindStageFilterEvents(moduleKey) {
         });
     }
 }
-

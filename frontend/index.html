@@ -4,10 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JPT Sales Toolkit</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css?v=1.9.4" />
     <link rel="stylesheet" href="/static/css/style.css?v=4.4">
 </head>
 <body>
@@ -33,6 +30,72 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" onclick="handleLogin()" style="width:100%;">Sign In</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- First-run Offline Authorization -->
+    <div id="activation-modal" class="modal">
+        <div class="modal-content activation-modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="activation-modal-title">Activate JPT Sales Toolkit</h2>
+            </div>
+            <div class="modal-body">
+                <div id="activation-bootstrap-section" class="hidden">
+                    <p class="activation-intro">Create the first Leader on this computer. This one-time setup also creates the protected signing key used for all team authorizations.</p>
+                    <div class="activation-bootstrap-grid">
+                        <input type="text" class="form-input" id="bootstrap-username" placeholder="Leader username" autocomplete="username">
+                        <input type="text" class="form-input" id="bootstrap-display-name" placeholder="Display name" autocomplete="name">
+                        <input type="text" class="form-input" id="bootstrap-region" placeholder="Region (optional)" autocomplete="off">
+                        <span></span>
+                        <input type="password" class="form-input" id="bootstrap-password" placeholder="Login password (8+ characters)" autocomplete="new-password">
+                        <input type="password" class="form-input" id="bootstrap-password-confirm" placeholder="Confirm login password" autocomplete="new-password">
+                        <input type="password" class="form-input" id="bootstrap-issuer-passphrase" placeholder="Issuer passphrase (12+ characters)" autocomplete="new-password">
+                        <input type="password" class="form-input" id="bootstrap-issuer-confirm" placeholder="Confirm issuer passphrase" autocomplete="new-password">
+                    </div>
+                    <p class="authorization-help">Store the issuer passphrase separately. It is required whenever you sign or renew a member authorization.</p>
+                    <button type="button" class="btn btn-primary" id="bootstrap-submit-btn" onclick="bootstrapFirstLeader()">Create Leader & Initialize</button>
+                    <button type="button" class="btn btn-secondary" onclick="showMemberActivationFromSetup()">Join an Existing Team</button>
+                </div>
+                <div id="activation-member-section">
+                    <button type="button" class="text-link hidden" id="activation-back-to-setup" onclick="showLeaderSetupFromActivation()">← Set up a new team instead</button>
+                    <div id="activation-leader-recovery" class="activation-recovery hidden">
+                        <h3>Recover this Leader device</h3>
+                        <p>The local signing key is available. Use both Leader credentials to renew an expired authorization or bind a restored backup to this computer.</p>
+                        <div class="activation-bootstrap-grid">
+                            <input type="text" class="form-input" id="recovery-username" placeholder="Leader username" autocomplete="username">
+                            <input type="password" class="form-input" id="recovery-password" placeholder="Leader login password" autocomplete="current-password">
+                            <input type="password" class="form-input" id="recovery-issuer-passphrase" placeholder="Issuer passphrase" autocomplete="current-password">
+                        </div>
+                        <button type="button" class="btn btn-secondary" id="recovery-submit-btn" onclick="recoverLeaderAuthorization()">Recover Leader Authorization</button>
+                    </div>
+                    <p class="activation-intro">This installation needs a device-bound authorization from your Leader before you can sign in.</p>
+                    <div class="activation-identity">
+                        <div><span>Device</span><strong id="activation-device-id">Generated on request</strong></div>
+                        <div><span>Member</span><strong id="activation-member">No authorization imported</strong></div>
+                    </div>
+                    <div class="activation-step">
+                        <div class="activation-step-number">1</div>
+                        <div>
+                            <h3>Send your device request</h3>
+                            <p>Download the request and send the resulting <code>.jptreq</code> file to your Leader.</p>
+                            <button type="button" class="btn btn-secondary" id="activation-request-btn" onclick="downloadAuthorizationDeviceRequest()">Download Device Request</button>
+                        </div>
+                    </div>
+                    <div class="activation-step">
+                        <div class="activation-step-number">2</div>
+                        <div class="activation-form">
+                            <h3>Import your authorization</h3>
+                            <p>Select the <code>.jptauth</code> file returned by your Leader, verify the code through a separate channel, then create your local password.</p>
+                            <input type="file" class="form-input" id="activation-file" accept=".jptauth,application/json">
+                            <input type="text" class="form-input" id="activation-fingerprint" placeholder="Leader verification code" autocomplete="off">
+                            <input type="password" class="form-input" id="activation-password" placeholder="Create password" autocomplete="new-password">
+                            <input type="password" class="form-input" id="activation-password-confirm" placeholder="Confirm password" autocomplete="new-password">
+                            <button type="button" class="btn btn-primary" id="activation-submit-btn" onclick="activateAuthorization()">Activate This Device</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="activation-message" class="activation-message" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -125,6 +188,9 @@
             <button type="button" class="rail-btn" data-module="coordinate-review" title="Coordinate Review">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
             </button>
+            <button type="button" class="rail-btn authorization-leader-only hidden" data-module="authorization" title="Team & Authorization">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></svg>
+            </button>
             <button type="button" class="rail-btn" data-module="export" title="Export/Import">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </button>
@@ -205,6 +271,11 @@
                     <span class="nav-dot"></span>
                     <span class="nav-label">Export / Import</span>
                 </div>
+                <div class="nav-section authorization-leader-only hidden">Administration</div>
+                <div class="nav-item authorization-leader-only hidden" data-module="authorization">
+                    <span class="nav-dot"></span>
+                    <span class="nav-label">Team & Authorization</span>
+                </div>
             </nav>
             <div class="sidebar-footer" id="user-footer" style="position:relative;">
                 <div class="user-avatar" id="user-avatar">U</div>
@@ -215,6 +286,7 @@
                 <div class="user-menu" id="user-menu">
                     <div class="user-menu-item" onclick="switchAccount()">&#128100; Switch Account</div>
                     <div class="user-menu-item" onclick="logout()">&#128682; Logout</div>
+                    <button type="button" class="user-menu-item hidden" id="desktop-exit" onclick="exitApplication()">&#9209; Exit JPT</button>
                 </div>
             </div>
         </aside>
@@ -231,6 +303,7 @@
             </header>
 
             <div class="main-content">
+                <div id="authorization-expiry-banner" class="authorization-expiry-banner hidden"></div>
                 <!-- Dashboard Module -->
                 <div id="module-dashboard" class="module active">
                     <h1 class="module-title">Dashboard</h1>
@@ -659,6 +732,83 @@
                     <div id="coordinate-review-list"></div>
                 </div>
 
+                <!-- Team and Authorization Module -->
+                <div id="module-authorization" class="module">
+                    <h1 class="module-title">Team & Authorization</h1>
+                    <p class="authorization-lead">Create team identities, bind one device per member, and issue signed offline authorizations. Package roles are limited to Leader, Sales, and Tech.</p>
+                    <div id="authorization-center-message" class="activation-message" style="display:none;"></div>
+                    <div class="kpi-grid authorization-kpis">
+                        <div class="kpi-card"><div class="kpi-label">Mode</div><div class="authorization-kpi-text" id="authorization-mode">-</div></div>
+                        <div class="kpi-card"><div class="kpi-label">Active Members</div><div class="kpi-value" id="authorization-member-count">0</div></div>
+                        <div class="kpi-card"><div class="kpi-label">Bound Devices</div><div class="kpi-value" id="authorization-device-count">0</div></div>
+                        <div class="kpi-card"><div class="kpi-label">This Device</div><div class="authorization-kpi-text authorization-mono" id="authorization-current-device">-</div></div>
+                    </div>
+
+                    <div class="authorization-grid">
+                        <section class="review-panel" id="authorization-issuer-panel">
+                            <div class="card-title">Issuer Security</div>
+                            <div id="authorization-issuer-setup">
+                                <p class="authorization-help">Initialize this Leader device once. The signing key remains local and is protected by this passphrase.</p>
+                                <input type="password" class="form-input" id="authorization-issuer-passphrase" placeholder="Issuer passphrase (12+ characters)" autocomplete="new-password">
+                                <input type="password" class="form-input" id="authorization-issuer-confirm" placeholder="Confirm issuer passphrase" autocomplete="new-password">
+                                <button type="button" class="btn btn-primary" id="authorization-issuer-btn" onclick="initializeAuthorizationIssuer()">Initialize Issuer</button>
+                            </div>
+                            <div id="authorization-issuer-ready" class="hidden">
+                                <div class="authorization-status active">Issuer ready</div>
+                                <p class="authorization-help">Leader verification code</p>
+                                <div class="authorization-fingerprint" id="authorization-fingerprint">-</div>
+                                <input type="password" class="form-input" id="authorization-renew-passphrase" placeholder="Issuer passphrase" autocomplete="current-password">
+                                <button type="button" class="btn btn-secondary" id="authorization-renew-btn" onclick="renewLocalLeaderAuthorization()">Renew This Leader Device · 90 Days</button>
+                            </div>
+                            <div id="authorization-issuer-unavailable" class="hidden">
+                                <div class="authorization-status inactive">Signing key not on this device</div>
+                                <p class="authorization-help">Restore the Leader backup containing the issuer key to sign packages here.</p>
+                                <div class="authorization-fingerprint" id="authorization-trusted-fingerprint">-</div>
+                            </div>
+                        </section>
+
+                        <section class="review-panel" id="authorization-member-form">
+                            <div class="card-title" id="authorization-member-form-title">Add member</div>
+                            <div class="authorization-form-grid">
+                                <input type="text" class="form-input" id="authorization-member-username" placeholder="Username" autocomplete="off">
+                                <input type="text" class="form-input" id="authorization-member-name" placeholder="Display name" autocomplete="off">
+                                <select class="form-input" id="authorization-member-role">
+                                    <option value="sales">Sales</option>
+                                    <option value="tech">Tech</option>
+                                    <option value="leader">Leader</option>
+                                </select>
+                                <input type="text" class="form-input" id="authorization-member-region" placeholder="Region (optional)">
+                            </div>
+                            <div class="authorization-form-actions">
+                                <button type="button" class="btn btn-secondary hidden" id="authorization-member-cancel" onclick="cancelAuthorizationMemberEdit()">Cancel</button>
+                                <button type="button" class="btn btn-primary" id="authorization-member-save" onclick="saveAuthorizationMember()"><span id="authorization-member-save-label">Add member</span></button>
+                            </div>
+                        </section>
+
+                        <section class="review-panel" id="authorization-issue-panel">
+                            <div class="card-title">Issue Device Authorization</div>
+                            <p class="authorization-help">Import the member's device request. Reissuing for a replacement device supersedes the old device authorization.</p>
+                            <select class="form-input" id="authorization-issue-member"><option value="">Select member</option></select>
+                            <input type="file" class="form-input" id="authorization-request-file" accept=".jptreq,application/json">
+                            <div class="authorization-form-grid">
+                                <input type="password" class="form-input" id="authorization-issue-passphrase" placeholder="Issuer passphrase" autocomplete="current-password">
+                                <input type="number" class="form-input" id="authorization-issue-days" min="90" max="90" value="90" readonly aria-label="Authorization days">
+                            </div>
+                            <button type="button" class="btn btn-primary" id="authorization-issue-btn" onclick="issueMemberAuthorization()">Issue & Download .jptauth</button>
+                        </section>
+
+                        <section class="review-panel authorization-wide">
+                            <div class="authorization-panel-head"><div class="card-title">Team Members</div><button type="button" class="btn btn-secondary btn-sm" onclick="refreshAuthorizationCenter()">Refresh</button></div>
+                            <div id="authorization-members"><div class="loading-state">Loading members...</div></div>
+                        </section>
+
+                        <section class="review-panel authorization-wide">
+                            <div class="card-title">Authorization Audit</div>
+                            <div id="authorization-events"><div class="loading-state">Loading events...</div></div>
+                        </section>
+                    </div>
+                </div>
+
                 <!-- Export Module -->
                 <div id="module-export" class="module">
                     <h1 class="module-title">Export / Import</h1>
@@ -761,13 +911,25 @@
         </aside>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/vendor/leaflet/leaflet.js?v=1.9.4"></script>
     <script src="/static/js/api-client.js?v=3.3"></script>
     <script src="/static/js/shared/utils.js?v=1.0"></script>
     <script src="/static/js/shared/render.js?v=1.0"></script>
     <script src="/static/js/app.js?v=6.6"></script>
 
+    <!-- Offline authorization -->
+    <script src="/static/js/modules/authorization-model.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-activation.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-bootstrap.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-leader-recovery.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-session-notice.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-center.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-center-view.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-member-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/authorization-issuer-actions.js?v=1.0"></script>
+
     <!-- Shared workflow contracts -->
+    <script src="/static/js/modules/role-capabilities.js?v=1.0"></script>
     <script src="/static/js/modules/stage-filter-view.js?v=1.0"></script>
     <script src="/static/js/modules/stage-filter-data.js?v=1.0"></script>
     <script src="/static/js/modules/lead-navigation.js?v=1.0"></script>

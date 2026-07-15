@@ -66,6 +66,7 @@ def test_config_single_source_and_routes() -> None:
     }
     for name in ("fields", "products", "regions"):
         assert ("GET", f"/api/config/{name}") in routes
+    assert ("GET", "/api/health") in routes
 
     legacy_routes = {
         ("GET", "/api/config/user"),
@@ -81,6 +82,7 @@ def test_config_single_source_and_routes() -> None:
                 for name in ("fields", "products", "regions"):
                     response = client.get(f"/api/config/{name}")
                     assert response.status_code == 200
+                assert client.get("/api/health").json()["status"] == "ok"
                 assert client.get("/api/config/user").status_code == 404
 
 

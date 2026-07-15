@@ -69,6 +69,8 @@ class PreSalesTaskService:
         before = self.task_repo.get_by_id(task_id)
         if not before:
             raise ValueError(f"PreSalesTask {task_id} not found")
+        if before.get("archived_at"):
+            raise ValueError("Archived pre-sales tasks must be restored before editing")
 
         try:
             updated = self.task_repo.update(task_id, data, actor_id, row_version)
@@ -106,6 +108,7 @@ class PreSalesTaskService:
         scoped = dict(filters or {})
         if actor["role"] == "tech":
             scoped["assignee_id"] = actor["id"]
+            scoped["include_archived"] = False
         elif actor["role"] != "leader":
             scoped["visible_to_user_id"] = actor["id"]
         return self.task_repo.list(scoped)
@@ -233,6 +236,8 @@ class AfterSalesTaskService:
         before = self.task_repo.get_by_id(task_id)
         if not before:
             raise ValueError(f"AfterSalesTask {task_id} not found")
+        if before.get("archived_at"):
+            raise ValueError("Archived after-sales tasks must be restored before editing")
 
         try:
             updated = self.task_repo.update(task_id, data, actor_id, row_version)
@@ -271,6 +276,7 @@ class AfterSalesTaskService:
         scoped = dict(filters or {})
         if actor["role"] == "tech":
             scoped["assignee_id"] = actor["id"]
+            scoped["include_archived"] = False
         elif actor["role"] != "leader":
             scoped["visible_to_user_id"] = actor["id"]
         return self.task_repo.list(scoped)

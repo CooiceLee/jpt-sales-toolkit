@@ -10,9 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..services import IntakeService, GeocodeService
-from .deps import get_current_user
+from .deps import get_current_user, require_role
 
-router = APIRouter(prefix="/intake", tags=["intake"])
+router = APIRouter(
+    prefix="/intake",
+    tags=["intake"],
+    dependencies=[Depends(require_role("leader", "sales"))],
+)
 
 
 class ParseEmailRequest(BaseModel):

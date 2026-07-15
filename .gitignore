@@ -13,6 +13,8 @@ venv/
 .env
 *.env
 !*.env.example
+*.jptauth
+*.jptreq
 
 # Business and test data
 data/
@@ -22,6 +24,10 @@ data.sqlite
 *.sqlite-*
 *.db
 logs/
+build/
+dist/
+release/
+*.spec.bak
 
 # Generated regression artifacts
 test_*_data/

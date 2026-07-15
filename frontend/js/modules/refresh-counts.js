@@ -1,6 +1,11 @@
 // ===== Refresh All Counts =====
 async function refreshAllCounts() {
     try {
+        if (RoleCapabilities.isTech()) {
+            const active = document.querySelector('.module.active')?.id?.replace('module-', '');
+            if (active) await loadModuleData(active);
+            return;
+        }
         const stats = await ApiClient.getDashboard();
         applyNavigationCounts(stats);
 
@@ -14,4 +19,3 @@ async function refreshAllCounts() {
         console.error('Refresh counts error:', err);
     }
 }
-

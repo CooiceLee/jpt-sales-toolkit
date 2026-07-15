@@ -93,6 +93,10 @@ window.addEventListener('auth:logout', () => {
 
 async function init() {
     try {
+        // Offline installations must complete device activation before login.
+        if (typeof initAuthorizationActivation === 'function' && !(await initAuthorizationActivation())) {
+            return;
+        }
         // Check if already logged in
         if (ApiClient.isLoggedIn()) {
             try {
@@ -167,18 +171,23 @@ function startApp() {
 
     // Update user display
     updateUserDisplay();
+    initAuthorizationCenter();
+    applyAuthorizationSessionNotice();
+    RoleCapabilities.applyNavigation();
 
     // Initialize all modules
     initNavigation();
-    initMap();
-    initParser();
+    if (!RoleCapabilities.isTech()) {
+        initMap();
+        initParser();
+        initCustomerMerge();
+    }
     initFilters();
     initStageFilterControls();
     initUserMenu();
-    initCustomerMerge();
 
     // Load initial data
-    loadDashboard();
+    switchModule(RoleCapabilities.initialModule());
 }
 
 // ===== API Helper (Legacy compatibility wrapper) =====
@@ -222,6 +231,9 @@ function initNavigation() {
 
 function switchModule(module) {
     if (!module) return;
+    if (!RoleCapabilities.canAccessModule(module)) {
+        module = RoleCapabilities.initialModule();
+    }
     const previousModule = document.querySelector('.module.active')?.id?.replace('module-', '');
 
     // Close panel
@@ -253,6 +265,7 @@ function switchModule(module) {
         'data-review': 'Data Review',
         'trip-planner': 'Trip Planner',
         'coordinate-review': 'Coordinate Review',
+        authorization: 'Team & Authorization',
         export: 'Export / Import'
     };
     document.getElementById('breadcrumb-current').textContent = titles[module] || module;
@@ -284,6 +297,7 @@ async function loadModuleData(module) {
         case 'data-review': await loadDataReview(); break;
         case 'trip-planner': await loadTripPlanner(); break;
         case 'coordinate-review': await loadCoordinateReview(); break;
+        case 'authorization': await loadAuthorizationCenter(); break;
     }
 }
 

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..services import AuthService
-from .deps import get_auth_service, get_current_user
+from .deps import get_auth_service, get_current_user, require_role
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -74,7 +74,7 @@ async def switch_user(
 @router.get("/users")
 async def list_users(
     role: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_role("leader", "sales")),
     auth_service: AuthService = Depends(get_auth_service),
 ):
     """List active users (for assignment dropdowns)."""

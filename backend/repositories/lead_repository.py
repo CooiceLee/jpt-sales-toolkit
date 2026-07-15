@@ -41,6 +41,7 @@ class LeadRepository(BaseRepository):
 
     def create(self, data: dict, actor_id: str) -> str:
         """Create new lead. Returns lead ID."""
+        self._validate_commercial_assignment(data.get("owner_id"), "owner")
         lead_id = generate_uuid()
         display_id = self.generate_display_id()
         now = now_iso()
@@ -78,6 +79,9 @@ class LeadRepository(BaseRepository):
         current = self.get_by_id(lead_id)
         if not current:
             raise ValueError(f"Lead {lead_id} not found")
+
+        if "owner_id" in data:
+            self._validate_commercial_assignment(data["owner_id"], "owner")
 
         if current["row_version"] != row_version:
             raise ConflictError(
@@ -176,17 +180,9 @@ class LeadRepository(BaseRepository):
                           AND ast.assignee_id = ?
                           AND ast.archived_at IS NULL
                     )
-                    OR EXISTS (
-                        SELECT 1 FROM lead_assignments tla
-                        JOIN users tu ON tla.user_id = tu.id
-                        WHERE tla.lead_id = l.id
-                          AND tla.user_id = ?
-                          AND tu.role = 'tech'
-                          AND tla.archived_at IS NULL
-                    )
                 )
             """
-            params.extend([tech_id, tech_id, tech_id])
+            params.extend([tech_id, tech_id])
 
         if search:
             sql += """ AND (
@@ -241,6 +237,7 @@ class LeadRepository(BaseRepository):
         actor_id: str,
     ) -> str:
         """Add assignment to lead."""
+        self._validate_commercial_assignment(user_id, assignment_type)
         existing = self.conn.execute(
             """
             SELECT id FROM lead_assignments
@@ -268,6 +265,18 @@ class LeadRepository(BaseRepository):
             (assignment_id, lead_id, user_id, assignment_type, now_iso(), actor_id),
         )
         return assignment_id
+
+    def _validate_commercial_assignment(self, user_id: Optional[str], assignment_type: str) -> None:
+        """Defense in depth for importers and other repository callers."""
+        if not user_id or assignment_type not in {"owner", "collaborator"}:
+            return
+        member = self.conn.execute(
+            "SELECT role, is_active FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not member or not member["is_active"]:
+            raise ValueError("Lead assignee must be an active member")
+        if member["role"] == "tech":
+            raise ValueError("Technical users cannot be lead owners or collaborators")
 
     def get_assignment_by_id(self, assignment_id: str) -> Optional[dict]:
         """Get active assignment by ID."""
@@ -391,17 +400,9 @@ class LeadRepository(BaseRepository):
                           AND ast.assignee_id = ?
                           AND ast.archived_at IS NULL
                     )
-                    OR EXISTS (
-                        SELECT 1 FROM lead_assignments tla
-                        JOIN users tu ON tla.user_id = tu.id
-                        WHERE tla.lead_id = l.id
-                          AND tla.user_id = ?
-                          AND tu.role = 'tech'
-                          AND tla.archived_at IS NULL
-                    )
                 )
             """
-            params.extend([tech_id, tech_id, tech_id])
+            params.extend([tech_id, tech_id])
 
         if search:
             sql += """ AND (

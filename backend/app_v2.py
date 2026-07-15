@@ -6,6 +6,7 @@ New layered architecture with SQLite backend.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status
@@ -25,6 +26,8 @@ from .routers import (
     review_router,
     admin_router,
     data_exchange_router,
+    authorization_router,
+    desktop_router,
 )
 
 # Application root directory
@@ -33,6 +36,11 @@ APP_ROOT = Path(__file__).parent.parent
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
+    configured_origins = [
+        value.strip()
+        for value in os.environ.get("JPT_CORS_ORIGINS", "").split(",")
+        if value.strip()
+    ]
     app = FastAPI(
         title="JPT Sales Toolkit",
         version=APP_VERSION,
@@ -42,7 +50,8 @@ def create_app() -> FastAPI:
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=configured_origins,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -58,6 +67,16 @@ def create_app() -> FastAPI:
     app.include_router(review_router, prefix="/api")
     app.include_router(admin_router, prefix="/api")
     app.include_router(data_exchange_router, prefix="/api")
+    app.include_router(authorization_router, prefix="/api")
+    app.include_router(desktop_router, prefix="/api")
+
+    @app.get("/api/health", include_in_schema=False)
+    async def health_check():
+        return {
+            "status": "ok",
+            "version": APP_VERSION,
+            "desktop": callable(getattr(app.state, "desktop_shutdown", None)),
+        }
 
     # Startup event
     @app.on_event("startup")

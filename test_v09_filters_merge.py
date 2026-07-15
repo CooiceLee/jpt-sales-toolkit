@@ -84,7 +84,6 @@ def setup_test_db(test_dir: Path):
         "owner_id": sales2_id,
         "product_category": "QCW",
     }, sales2_id)
-    lead_repo.add_assignment(source_lead_id, tech1_id, "collaborator", leader_id)
     lead_repo.conn.commit()
 
     pre_sales_repo = PreSalesTaskRepository()

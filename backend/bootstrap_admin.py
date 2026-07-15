@@ -9,18 +9,13 @@ Creates the first leader account if no users exist.
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 import sys
 from pathlib import Path
 
 from .config import init_settings
-from .repositories import init_db, UserRepository
-
-
-def hash_password(password: str) -> str:
-    """Hash password using SHA-256."""
-    return hashlib.sha256(password.encode()).hexdigest()
+from .repositories import init_db, UserCredentialRepository, UserRepository
+from .services.password_service import hash_password
 
 
 def generate_password(length: int = 12) -> str:
@@ -58,18 +53,25 @@ def bootstrap():
         print("Please save this password securely!")
     else:
         password = input("Enter password: ").strip()
-        if len(password) < 6:
-            print("Error: Password must be at least 6 characters")
+        if len(password) < 8:
+            print("Error: Password must be at least 8 characters")
             return False
 
     # Create admin user
+    password_hash = hash_password(password)
     user_id = user_repo.create(
         username=username,
-        password_hash=hash_password(password),
+        password_hash=password_hash,
         display_name=display_name,
         role="leader",
         region=None,
     )
+    UserCredentialRepository().create({
+        "user_id": user_id,
+        "password_hash": password_hash,
+        "password_scheme": "pbkdf2_sha256",
+        "must_change_password": False,
+    })
 
     print(f"\n✓ Admin account created successfully!")
     print(f"  User ID: {user_id}")

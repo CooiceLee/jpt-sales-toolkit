@@ -47,6 +47,8 @@ class PreSalesTaskRepository(BaseRepository):
         current = self.get_by_id(task_id)
         if not current:
             raise ValueError(f"PreSalesTask {task_id} not found")
+        if current.get("archived_at"):
+            raise ValueError("Archived pre-sales tasks must be restored before editing")
 
         if current["row_version"] != row_version:
             raise ConflictError(
@@ -203,6 +205,8 @@ class AfterSalesTaskRepository(BaseRepository):
         current = self.get_by_id(task_id)
         if not current:
             raise ValueError(f"AfterSalesTask {task_id} not found")
+        if current.get("archived_at"):
+            raise ValueError("Archived after-sales tasks must be restored before editing")
 
         if current["row_version"] != row_version:
             raise ConflictError(

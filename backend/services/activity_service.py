@@ -8,6 +8,7 @@ import json
 from typing import Optional
 
 from ..repositories import ActivityRepository, LeadRepository, AuditRepository
+from .permission_policy import sanitize_activity_for_tech
 
 
 class ActivityService:
@@ -233,13 +234,17 @@ class ActivityService:
         else:
             visibility_filter = ["all"]
 
-        return self.activity_repo.list_for_lead(
+        activities = self.activity_repo.list_for_lead(
             lead_id=lead_id,
             limit=limit,
             offset=offset,
             action_type=action_type,
             visibility_filter=visibility_filter,
         )
+        if actor_role != "tech":
+            return activities
+        sanitized = [sanitize_activity_for_tech(item) for item in activities]
+        return [item for item in sanitized if item is not None]
 
     def get_due_follow_ups(
         self,

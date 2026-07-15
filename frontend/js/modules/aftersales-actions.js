@@ -1,6 +1,6 @@
 window.saveAfterSales = async function() {
     const desc = document.getElementById('as-description').value.trim();
-    if (!desc) {
+    if (!RoleCapabilities.isTech() && !desc) {
         alert('Please enter description');
         return;
     }
@@ -11,7 +11,7 @@ window.saveAfterSales = async function() {
         return;
     }
 
-    const data = {
+    const requestData = {
         issue_type: document.getElementById('as-type').value,
         issue_description: desc,
         status: document.getElementById('as-status').value,
@@ -24,6 +24,12 @@ window.saveAfterSales = async function() {
         const issue = Number.isInteger(index) && index >= 0
             ? State.currentInquiry?.after_sales?.[index]
             : null;
+        if (RoleCapabilities.isTech() && !issue?.id) {
+            throw new Error('Only an assigned issue result can be updated.');
+        }
+        const data = RoleCapabilities.isTech()
+            ? { status: requestData.status, solution: requestData.solution }
+            : requestData;
 
         if (issue?.id) {
             if (!issue.row_version) {
@@ -52,6 +58,7 @@ window.saveAfterSales = async function() {
 };
 
 window.archiveAfterSales = async function(index) {
+    if (!RoleCapabilities.canManageTaskRequests()) return;
     const issue = State.currentInquiry?.after_sales?.[index];
     if (!issue || !issue.id) return;
 
@@ -67,4 +74,3 @@ window.archiveAfterSales = async function(index) {
         alert('Error archiving issue: ' + (err.message || 'Unknown error'));
     }
 };
-

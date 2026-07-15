@@ -3,6 +3,10 @@ function initUserMenu() {
     const footer = document.getElementById('user-footer');
     if (!footer) return;
 
+    ApiClient.getRuntimeStatus()
+        .then(status => document.getElementById('desktop-exit')?.classList.toggle('hidden', !status.desktop))
+        .catch(error => console.debug('Runtime status unavailable:', error));
+
     footer.addEventListener('click', (e) => {
         if (e.target.closest('.user-menu')) return;
         document.getElementById('user-menu').classList.toggle('show');
@@ -20,6 +24,16 @@ window.switchAccount = function() {
     State.user = null;
     document.getElementById('app').style.display = 'none';
     showModal('login-modal');
+};
+
+window.exitApplication = async function() {
+    if (!confirm('Exit JPT Sales Toolkit on this computer?')) return;
+    try {
+        await ApiClient.shutdownDesktop();
+        document.body.innerHTML = '<main class="desktop-exit-message"><h1>JPT has stopped</h1><p>You can close this window safely.</p></main>';
+    } catch (error) {
+        alert(error.message || 'Unable to exit JPT.');
+    }
 };
 
 window.logout = async function() {
@@ -48,13 +62,9 @@ function updateUserDisplay() {
     setText('user-name', displayName);
 
     const roleLabels = {
-        leader: 'Sales Leader',
+        leader: 'Leader',
         sales: 'Sales',
-        assistant: 'Assistant',
-        tech: 'Technical',
-        pre_sales: 'Pre-sales',
-        after_sales: 'After-sales'
+        tech: 'Tech'
     };
     setText('user-role', roleLabels[State.user.role] || State.user.role || 'Sales');
 }
-

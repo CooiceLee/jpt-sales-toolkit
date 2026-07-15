@@ -14,6 +14,10 @@ from .activity_repository import ActivityRepository
 from .task_repository import PreSalesTaskRepository, AfterSalesTaskRepository
 from .attachment_repository import AttachmentRepository
 from .audit_repository import AuditRepository
+from .authorization_event_repository import AuthorizationEventRepository
+from .device_authorization_repository import DeviceAuthorizationRepository
+from .organization_repository import OrganizationRepository
+from .user_credential_repository import UserCredentialRepository
 
 __all__ = [
     "BaseRepository",
@@ -29,4 +33,8 @@ __all__ = [
     "AfterSalesTaskRepository",
     "AttachmentRepository",
     "AuditRepository",
+    "OrganizationRepository",
+    "UserCredentialRepository",
+    "DeviceAuthorizationRepository",
+    "AuthorizationEventRepository",
 ]

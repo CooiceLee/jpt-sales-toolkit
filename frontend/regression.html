@@ -209,8 +209,9 @@
 
         async function run() {
             const params = new URLSearchParams(location.search);
-            const username = params.get('username') || 'Li';
-            const password = params.get('password') || 'LiJPT2026';
+            const username = params.get('username');
+            const password = params.get('password');
+            if (!username || !password) throw new Error('Pass test credentials with ?username=...&password=...');
             const mode = params.get('mode') || 'full';
             const dialogs = [];
 

@@ -22,9 +22,13 @@ from ..repositories.task_repository import AfterSalesTaskRepository
 from ..repositories.user_repository import UserRepository
 from ..repositories.base import get_transaction
 from ..services import CountryService, CustomerService, LeadService
-from .deps import get_actor_role_for_lead, get_current_user
+from .deps import get_actor_role_for_lead, get_current_user, require_role
 
-router = APIRouter(prefix="/data", tags=["data_exchange"])
+router = APIRouter(
+    prefix="/data",
+    tags=["data_exchange"],
+    dependencies=[Depends(require_role("leader", "sales"))],
+)
 
 
 class ExportRequest(BaseModel):

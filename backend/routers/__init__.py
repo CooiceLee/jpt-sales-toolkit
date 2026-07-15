@@ -13,6 +13,8 @@ from .tasks import router as tasks_router
 from .review import router as review_router
 from .admin import router as admin_router
 from .data_exchange import router as data_exchange_router
+from .authorization import router as authorization_router
+from .desktop import router as desktop_router
 
 __all__ = [
     "auth_router",
@@ -24,4 +26,6 @@ __all__ = [
     "review_router",
     "admin_router",
     "data_exchange_router",
+    "authorization_router",
+    "desktop_router",
 ]

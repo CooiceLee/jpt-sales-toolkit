@@ -11,9 +11,13 @@ from pydantic import BaseModel, Field
 
 from ..repositories.base import ConflictError
 from ..services import ReviewService
-from .deps import get_current_user
+from .deps import get_current_user, require_role
 
-router = APIRouter(prefix="/review", tags=["review"])
+router = APIRouter(
+    prefix="/review",
+    tags=["review"],
+    dependencies=[Depends(require_role("leader", "sales"))],
+)
 
 SalesStage = Literal["New", "Assigned", "Following", "Quoted", "Won", "Lost"]
 Region = Literal["EU", "SEA", "AM", "RIMEA"]

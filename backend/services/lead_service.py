@@ -10,6 +10,7 @@ from typing import Optional
 from ..repositories import LeadRepository, ActivityRepository, AuditRepository, CustomerRepository
 from ..repositories.base import ConflictError
 from .lead_extra_fields import expose_extra_fields, merge_extra_fields
+from .permission_policy import mask_lead_for_tech
 
 # Collaborator allowed fields (from docs/v0.5-page-api-matrix.md)
 COLLABORATOR_ALLOWED_FIELDS = {
@@ -49,6 +50,16 @@ STAGE_ORDER = {
     "Won": 5,
     "Lost": 6,
 }
+
+class InvalidLeadAssignmentError(ValueError):
+    """Raised when a member cannot hold a commercial lead assignment."""
+
+
+def mask_lead_for_role(lead: dict, actor_role: str) -> dict:
+    """Remove sales-sensitive fields from task-scoped technical views."""
+    if actor_role != "tech":
+        return lead
+    return mask_lead_for_tech(lead)
 
 
 class LeadService:
@@ -159,6 +170,7 @@ class LeadService:
 
     def create(self, data: dict, actor_id: str) -> dict:
         """Create new lead."""
+        self._validate_commercial_assignee(data.get("owner_id"), "owner")
         data = merge_extra_fields(data)
         lead_id = self.lead_repo.create(data, actor_id)
 
@@ -220,6 +232,8 @@ class LeadService:
         if not before:
             raise ValueError(f"Lead {lead_id} not found")
 
+        if "owner_id" in data:
+            self._validate_commercial_assignee(data["owner_id"], "owner")
         data = merge_extra_fields(data, before.get("extra_json"))
 
         if "owner_id" in data and actor_role != "leader":
@@ -313,8 +327,18 @@ class LeadService:
                 tech_id=tech_id,
                 search=search,
             )
+        elif actor_role == "tech":
+            leads = self.lead_repo.list(
+                limit=limit,
+                offset=offset,
+                owner_id=owner_id,
+                customer_id=customer_id,
+                sales_stage=sales_stage,
+                tech_id=actor_id,
+                search=search,
+            )
         else:
-            owner_filter = owner_id if actor_role == "tech" else None
+            owner_filter = None
             tech_filter = tech_id if actor_role == "sales" else None
             # Others see only related leads (with same filtering options)
             leads = self.lead_repo.get_leads_for_user(
@@ -328,7 +352,7 @@ class LeadService:
                 search=search,
             )
 
-        return self._enrich_leads(leads)
+        return [mask_lead_for_role(lead, actor_role) for lead in self._enrich_leads(leads)]
 
     def add_assignment(
         self,
@@ -340,6 +364,8 @@ class LeadService:
         """Add assignment (leader only for owner changes)."""
         if assignment_type not in {"owner", "collaborator", "watcher"}:
             raise ValueError(f"Invalid assignment type: {assignment_type}")
+
+        self._validate_commercial_assignee(user_id, assignment_type)
 
         lead = self.lead_repo.get_by_id(lead_id)
         if not lead:
@@ -380,6 +406,20 @@ class LeadService:
         )
 
         return assignment_id
+
+    def _validate_commercial_assignee(self, user_id: Optional[str], assignment_type: str) -> None:
+        """Keep Tech accounts out of owner and collaborator relationships."""
+        if not user_id or assignment_type not in {"owner", "collaborator"}:
+            return
+        member = self.lead_repo.conn.execute(
+            "SELECT role, is_active FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not member or not member["is_active"]:
+            raise InvalidLeadAssignmentError("Lead assignee must be an active member")
+        if member["role"] == "tech":
+            raise InvalidLeadAssignmentError(
+                "Technical users cannot be lead owners or collaborators"
+            )
 
     def remove_assignment(
         self,

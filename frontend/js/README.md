@@ -22,6 +22,7 @@ Do not add feature CRUD, detail forms, data governance, trip-planning, or coordi
 - Governance and analysis: `customer-merge-*`, `data-transfer`, `data-governance`, `data-review*`
 - Trip planning: `trip-*`, plus `lead-navigation`
 - Coordinates: `coordinate-*`, `batch-geocode`
+- Offline authorization: `authorization-*` (first-run activation and Leader-only member/device lifecycle)
 - App chrome: `user-menu`, `refresh-counts`, `legacy-actions`
 
 ## Runtime contract
@@ -36,6 +37,11 @@ When adding a module:
 4. Add the script once in `frontend/index.html` after `app.js`.
 5. Extend `test_frontend_module_contract.py` when introducing a new public browser API.
 6. Run `bash scripts/validate_v08.sh` and complete a browser smoke test with temporary data.
+
+The authorization boundary is deliberately provider-neutral in the UI. It consumes the
+`/api/authorization/*` contract and keeps role choices limited to `leader`, `sales`, and
+`tech`; Lead-level `owner`, `collaborator`, and `watcher` relationships remain business
+assignments rather than installation roles.
 
 ## Future migration boundary
 

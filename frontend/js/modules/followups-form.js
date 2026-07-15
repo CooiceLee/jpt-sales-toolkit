@@ -37,12 +37,13 @@ window.editFollowUp = function(index) {
 };
 
 async function refreshCurrentInquiryData(leadId) {
+    const taskOnly = RoleCapabilities.isTech();
     const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
         ApiClient.getLead(leadId),
-        ApiClient.listActivities(leadId).catch(() => []),
+        taskOnly ? [] : ApiClient.listActivities(leadId).catch(() => []),
         ApiClient.listPreSalesTasks({ lead_id: leadId, include_archived: true }).catch(() => []),
         ApiClient.listAfterSalesTasks({ lead_id: leadId }).catch(() => []),
-        ApiClient.listAttachments(leadId).catch(() => [])
+        taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
     ]);
 
     const parsePayload = (a) => {
@@ -88,4 +89,3 @@ async function refreshCurrentInquiryData(leadId) {
         row_version: t.row_version
     }));
 }
-

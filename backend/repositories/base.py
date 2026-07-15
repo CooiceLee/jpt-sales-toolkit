@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Any, Generator, Optional, Union
 from uuid import uuid4
 
+from .authorization_schema import (
+    DEFAULT_ORGANIZATION_ID,
+    apply_authorization_schema_migration,
+)
+
 # Database connection singleton
 _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
@@ -54,6 +59,7 @@ def _apply_runtime_migrations(conn: sqlite3.Connection) -> None:
     _repair_followup_stage_from_activities(conn)
     _repair_service_status_from_tasks(conn)
     _ensure_trip_planning_tables(conn)
+    apply_authorization_schema_migration(conn)
     conn.commit()
 
 
@@ -296,18 +302,17 @@ def init_db(db_path: Union[Path, str]) -> None:
     global _db_path
     _db_path = Path(db_path)
 
-    # Create schema if database doesn't exist
-    if not _db_path.exists():
-        conn = sqlite3.connect(str(_db_path))
-        schema_path = Path(__file__).parent.parent / "schema.sql"
-        if schema_path.exists():
-            with open(schema_path, "r", encoding="utf-8") as f:
-                conn.executescript(f.read())
+    is_new_database = not _db_path.exists()
+    conn = sqlite3.connect(str(_db_path))
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        if is_new_database:
+            schema_path = Path(__file__).parent.parent / "schema.sql"
+            if schema_path.exists():
+                with open(schema_path, "r", encoding="utf-8") as f:
+                    conn.executescript(f.read())
         _apply_runtime_migrations(conn)
-        conn.close()
-    else:
-        conn = sqlite3.connect(str(_db_path))
-        _apply_runtime_migrations(conn)
+    finally:
         conn.close()
 
 
