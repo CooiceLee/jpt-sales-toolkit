@@ -47,6 +47,7 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_authorization_security_regressions.py
 "$PYTHON_BIN" test_desktop_packaging_contract.py
 "$PYTHON_BIN" test_version_contract.py
+"$PYTHON_BIN" test_windows_path_contract.py
 "$PYTHON_BIN" test_permissions.py
 "$PYTHON_BIN" test_role_permissions.py
 "$PYTHON_BIN" test_contact_validation.py
