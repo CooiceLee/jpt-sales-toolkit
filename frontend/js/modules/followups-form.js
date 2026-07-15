@@ -46,11 +46,6 @@ async function refreshCurrentInquiryData(leadId) {
         taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
     ]);
 
-    const parsePayload = (a) => {
-        try { return a.payload_json ? JSON.parse(a.payload_json) : {}; }
-        catch { return {}; }
-    };
-
     State.currentInquiry._lead = lead;
     State.currentInquiry._customer = lead.customer;
     State.currentInquiry.row_version = lead.row_version;
@@ -62,30 +57,6 @@ async function refreshCurrentInquiryData(leadId) {
     State.currentInquiry.sample_tasks = preSalesTasks.map(task => SamplingModule.toView(task));
     State.currentInquiry.follow_ups = activities
         .filter(a => a.action_type === 'follow_up')
-        .map(a => {
-            const payload = parsePayload(a);
-            return {
-                id: a.id,
-                method: payload.method || 'Follow-up',
-                content: payload.content || a.summary || '',
-                date: a.created_at,
-                response_date: payload.response_date || null,
-                customer_feedback: payload.customer_feedback || '',
-                next_action: payload.next_action || '',
-                next_action_date: payload.next_action_date || '',
-                status: payload.status || 'completed',
-                actor_name: a.actor_name || ''
-            };
-        });
-    State.currentInquiry.after_sales = afterSalesTasks.map(t => ({
-        id: t.id,
-        issue_type: t.issue_type || 'Technical',
-        issue_description: t.issue_description || t.summary || '',
-        issue_date: t.created_at,
-        status: t.status || 'Open',
-        assignee_id: t.assignee_id || '',
-        technician: t.assignee_name || '',
-        solution: t.solution || '',
-        row_version: t.row_version
-    }));
+        .map(mapFollowUpActivity);
+    State.currentInquiry.after_sales = afterSalesTasks.map(mapAfterSalesTask);
 }

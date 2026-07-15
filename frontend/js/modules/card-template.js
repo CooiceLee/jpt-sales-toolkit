@@ -63,6 +63,8 @@
                         <span>${value(item.inquiry_id)}</span>
                         <span>${escapeHtml(formatDate(item.inquiry_date || item.created_at))}</span>
                     </div>
+                    <span class="quality-badge ${item.quality_issue_count ? '' : 'hidden'}"
+                          title="Imported fields requiring review">${Number(item.quality_issue_count) || 0} to review</span>
                     <div class="grade-badge grade-${gradeClass}">${escapeHtml(grade)}</div>
                 </div>
                 <div class="card-company">${value(item.company_name || 'Unknown Company')}</div>

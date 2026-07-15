@@ -69,9 +69,11 @@ www.staubli.com"""
 
     intake_source = Path("frontend/js/modules/intake-submit.js").read_text(encoding="utf-8")
     form_source = Path("frontend/js/modules/inquiry-form.js").read_text(encoding="utf-8")
+    renderer_source = Path("frontend/js/modules/inquiry-field-renderer.js").read_text(encoding="utf-8")
     assert "contact: buildContact(fields)" in intake_source
     assert "inquiry_date: fields.inquiry_date" in intake_source
-    assert "const safeValue = escapeHtml(value);" in form_source
+    assert "const safeValue = escapeHtml(value);" in renderer_source
+    assert "escapeHtml(value || '-')" in form_source
     close_db()
     TEST_DIR.cleanup()
     print("PASS: intake parser, contact persistence, owner boundary and form escaping contracts")

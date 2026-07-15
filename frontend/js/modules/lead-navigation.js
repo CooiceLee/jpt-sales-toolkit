@@ -67,11 +67,17 @@ window.focusReviewMapCustomer = async function(customerId) {
 };
 
 function leadToCardItem(lead, extra = {}) {
+    const primaryContact = getLeadPrimaryContact(lead);
+    const userId = State.user?.id;
+    const canReviewQuality = State.user?.role === 'leader' || lead.owner_id === userId
+        || (lead.assignments || []).some(item =>
+            item.user_id === userId && item.assignment_type === 'collaborator'
+        );
     return {
         id: lead.id,
         inquiry_id: lead.display_id,
         company_name: lead.customer?.display_name || '',
-        contact_name: lead.customer?.contacts?.[0]?.name || '',
+        contact_name: primaryContact?.name || '',
         country: lead.customer?.country || '',
         city: lead.customer?.city || '',
         stage: lead.sales_stage,
@@ -85,8 +91,8 @@ function leadToCardItem(lead, extra = {}) {
         quotation_id: lead.quotation_id || '',
         po_number: lead.po_number || '',
         lost_reason_text: lead.lost_reason_text || '',
+        quality_issue_count: canReviewQuality ? (lead.quality_issue_count || 0) : 0,
         _lead: lead,
         ...extra
     };
 }
-

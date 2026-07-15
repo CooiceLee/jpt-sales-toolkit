@@ -30,6 +30,9 @@ function renderAftersalesTab(inq) {
                 </div>
                 <div class="followup-content">${escapeHtml(issue.issue_description || '')}</div>
                 ${issue.solution ? `<div class="followup-feedback"><label>Solution</label>${escapeHtml(issue.solution)}</div>` : ''}
+                ${issue.customer_satisfaction ? `<div class="followup-feedback"><label>Customer satisfaction</label>${escapeHtml(issue.customer_satisfaction)}</div>` : ''}
+                ${issue.lessons_learned ? `<div class="followup-feedback"><label>Lessons learned</label>${escapeHtml(issue.lessons_learned)}</div>` : ''}
+                ${issue.remarks ? `<div class="followup-feedback"><label>Remarks</label>${escapeHtml(issue.remarks)}</div>` : ''}
             </div>
         `;
     }).join('');
@@ -76,6 +79,18 @@ function renderAftersalesTab(inq) {
             <div class="form-group">
                 <label class="form-label">Solution</label>
                 <textarea id="as-solution" class="form-textarea" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Customer satisfaction</label>
+                <textarea id="as-satisfaction" class="form-textarea" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Lessons learned</label>
+                <textarea id="as-lessons" class="form-textarea" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Remarks</label>
+                <textarea id="as-remarks" class="form-textarea" rows="2"></textarea>
             </div>
             <div style="display:flex;gap:8px;margin-top:12px;">
                 <button type="button" id="as-save-btn" class="btn btn-primary" onclick="saveAfterSales()">Save</button>

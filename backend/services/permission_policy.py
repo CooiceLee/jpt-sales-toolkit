@@ -16,10 +16,17 @@ TECH_SENSITIVE_LEAD_FIELDS = frozenset({
     "po_date",
     "lost_reason_code",
     "lost_reason_text",
+    "quality_issue_count",
 })
 TECH_RESTRICTED_ATTACHMENT_CATEGORIES = frozenset({"quotation"})
 TECH_PRE_SALES_UPDATE_FIELDS = frozenset({"status", "result_json"})
-TECH_AFTER_SALES_UPDATE_FIELDS = frozenset({"status", "solution"})
+TECH_AFTER_SALES_UPDATE_FIELDS = frozenset({
+    "status",
+    "solution",
+    "customer_satisfaction",
+    "lessons_learned",
+    "remarks",
+})
 
 
 def mask_lead_for_tech(lead: dict) -> dict:

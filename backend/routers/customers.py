@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from ..services import CustomerService
 from ..repositories.base import ConflictError
+from .customer_aliases import router as customer_aliases_router
+from .customer_merge import router as customer_merge_router
 from .deps import can_access_customer, get_current_user, require_role
 
 router = APIRouter(prefix="/customers", tags=["customers"])
@@ -58,13 +60,6 @@ class CustomerUpdate(BaseModel):
 class CustomerMatch(BaseModel):
     email: Optional[str] = None
     company_name: Optional[str] = None
-
-
-class CustomerMergeRequest(BaseModel):
-    source_customer_id: str
-    target_customer_id: str
-    source_row_version: Optional[int] = None
-    target_row_version: Optional[int] = None
 
 
 class CustomerContactCreate(BaseModel):
@@ -214,39 +209,6 @@ async def match_customers(
     return service.match(request.email, request.company_name)
 
 
-@router.post("/merge")
-async def merge_customers(
-    request: CustomerMergeRequest,
-    user: dict = Depends(require_role("leader")),
-    service: CustomerService = Depends(get_customer_service),
-):
-    """Merge a duplicate source customer into a target customer."""
-    try:
-        return service.merge_customers(
-            source_customer_id=request.source_customer_id,
-            target_customer_id=request.target_customer_id,
-            actor_id=user["id"],
-            source_row_version=request.source_row_version,
-            target_row_version=request.target_row_version,
-        )
-    except ConflictError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "conflict",
-                "current_version": e.current_version,
-                "your_version": e.your_version,
-                "current_data": e.current_data,
-                "message": "此记录已被他人修改，请刷新后重试",
-            },
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
-
-
 @router.post("/{customer_id}/contacts")
 async def create_customer_contact(
     customer_id: str,
@@ -313,3 +275,7 @@ async def archive_customer_contact(
             detail="Contact not found or already archived",
         )
     return {"status": "archived"}
+
+
+router.include_router(customer_aliases_router)
+router.include_router(customer_merge_router)

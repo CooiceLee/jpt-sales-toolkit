@@ -35,6 +35,9 @@ class AfterSalesTaskCreate(BaseModel):
     issue_description: str
     status: Optional[str] = None
     solution: Optional[str] = None
+    customer_satisfaction: Optional[str] = None
+    lessons_learned: Optional[str] = None
+    remarks: Optional[str] = None
     due_date: Optional[str] = None
     created_at: Optional[str] = None
 
@@ -45,6 +48,9 @@ class AfterSalesTaskUpdate(BaseModel):
     issue_description: Optional[str] = None
     status: Optional[str] = None
     solution: Optional[str] = None
+    customer_satisfaction: Optional[str] = None
+    lessons_learned: Optional[str] = None
+    remarks: Optional[str] = None
     due_date: Optional[str] = None
     created_at: Optional[str] = None
     row_version: int

@@ -1,7 +1,48 @@
+function getLeadPrimaryContact(lead, customer = lead?.customer) {
+    const contacts = customer?.contacts || [];
+    if (lead?.primary_contact_id) {
+        return contacts.find(contact => contact.id === lead.primary_contact_id) || null;
+    }
+    return contacts.find(contact => contact.is_primary) || null;
+}
+
+function renderPrimaryContactSelect(value) {
+    const contacts = State.currentInquiry?._customer?.contacts || [];
+    return `
+        <select class="form-select" name="primary_contact_id">
+            <option value="">Select contact...</option>
+            ${contacts.map(contact => {
+                const label = contact.name || contact.email || contact.id;
+                return `<option value="${escapeHtml(contact.id)}" ${value === contact.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            }).join('')}
+        </select>
+    `;
+}
+
+function setupPrimaryContactSelection(container) {
+    const select = container.querySelector('select[name="primary_contact_id"]');
+    if (!select) return;
+    select.addEventListener('change', () => {
+        const contacts = State.currentInquiry?._customer?.contacts || [];
+        const contact = contacts.find(item => item.id === select.value) || {};
+        const values = {
+            contact_name: contact.name,
+            contact_position: contact.position,
+            email: contact.email,
+            phone: contact.phone,
+        };
+        Object.entries(values).forEach(([name, value]) => {
+            const field = container.querySelector(`[name="${name}"]`);
+            if (field) field.value = value || '';
+        });
+    });
+}
+
 function getFieldValue(inq, fieldName) {
     // Map field names to lead/customer properties
     const lead = inq._lead;
     const customer = inq._customer;
+    const primaryContact = getLeadPrimaryContact(lead, customer);
 
     // Field name mappings
     const fieldMap = {
@@ -13,11 +54,12 @@ function getFieldValue(inq, fieldName) {
         'assigned_sales': (lead?.assignments || []).find(a => a.assignment_type === 'owner')?.user_name || lead?.owner_name || lead?.owner_id,
 
         // Customer fields - from customer object
-        'contact_name': customer?.contacts?.[0]?.name,
-        'contact_position': customer?.contacts?.[0]?.position,
+        'primary_contact_id': primaryContact?.id || lead?.primary_contact_id,
+        'contact_name': primaryContact?.name,
+        'contact_position': primaryContact?.position,
         'company_name': customer?.display_name,
-        'email': customer?.contacts?.[0]?.email,
-        'phone': customer?.contacts?.[0]?.phone,
+        'email': primaryContact?.email,
+        'phone': primaryContact?.phone,
         'address': customer?.address,
         'city': customer?.city,
         'postal_code': customer?.postal_code,
@@ -39,6 +81,7 @@ function getFieldValue(inq, fieldName) {
         'wavelength': lead?.wavelength,
         'application': lead?.application,
         'material': lead?.material,
+        'quantity_text': lead?.quantity_text,
         'special_requirements': lead?.special_requirements,
         'potential_needs': lead?.potential_needs,
 
@@ -64,4 +107,3 @@ function getFieldValue(inq, fieldName) {
 
     return fieldMap[fieldName] ?? '';
 }
-

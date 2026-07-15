@@ -11,14 +11,17 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..repositories.activity_repository import ActivityRepository
 from ..repositories.audit_repository import AuditRepository
 from ..repositories.attachment_repository import AttachmentRepository
 from ..repositories.customer_repository import CustomerRepository
 from ..repositories.lead_repository import LeadRepository
-from ..repositories.task_repository import AfterSalesTaskRepository
+from ..repositories.task_repository import (
+    AfterSalesTaskRepository,
+    PreSalesTaskRepository,
+)
 from ..repositories.user_repository import UserRepository
 from ..repositories.base import get_transaction
 from ..services import CountryService, CustomerService, LeadService
@@ -45,10 +48,13 @@ class ImportReport(BaseModel):
     updated_leads: int
     merged_activities: int = 0
     merged_tasks: int = 0
+    merged_pre_sales_tasks: int = 0
+    merged_after_sales_tasks: int = 0
     merged_contacts: int = 0
     attachments_skipped: int = 0
     skipped_records: int
     errors: List[str]
+    warnings: List[str] = Field(default_factory=list)
 
 
 class BatchRepairRequest(BaseModel):
@@ -83,6 +89,7 @@ async def export_data(
     lead_repo = LeadRepository()
     customer_repo = CustomerRepository()
     activity_repo = ActivityRepository()
+    pre_sales_repo = PreSalesTaskRepository()
     after_sales_repo = AfterSalesTaskRepository()
     attachment_repo = AttachmentRepository()
 
@@ -125,7 +132,8 @@ async def export_data(
         # Get full activity history. The default list endpoint is paginated.
         activities = activity_repo.list_all_for_lead(lead["id"])
 
-        # Get after-sales tasks
+        # Get pre-sales and after-sales tasks.
+        pre_sales = pre_sales_repo.list({"lead_id": lead["id"], "limit": 100000})
         after_sales = after_sales_repo.list({"lead_id": lead["id"], "limit": 100000})
 
         # Get attachment metadata (not file content)
@@ -134,6 +142,7 @@ async def export_data(
         lead_export = {
             "lead": lead,
             "activities": activities,
+            "pre_sales_tasks": pre_sales,
             "after_sales_tasks": after_sales,
             "attachments": [
                 {
@@ -324,15 +333,19 @@ async def import_data(
         "updated_leads": 0,
         "merged_activities": 0,
         "merged_tasks": 0,
+        "merged_pre_sales_tasks": 0,
+        "merged_after_sales_tasks": 0,
         "merged_contacts": 0,
         "attachments_skipped": 0,
         "skipped_records": 0,
-        "errors": []
+        "errors": [],
+        "warnings": [],
     }
     report["snapshot_before"] = _data_snapshot()
 
     customer_service = CustomerService()
     lead_service = LeadService()
+    user_repo = UserRepository()
 
     with get_transaction():
         # STEP 0: Pre-filter leads by permission to determine allowed customers
@@ -351,6 +364,27 @@ async def import_data(
             if existing_lead:
                 target_role = get_actor_role_for_lead(existing_lead["id"], user)
                 if not _can_import_existing_lead(target_role):
+                    report["skipped_records"] += 1
+                    continue
+                _warn_if_invalid_owner_reference(
+                    user_repo,
+                    lead_data.get("owner_id"),
+                    _lead_label(lead_data),
+                    report["warnings"],
+                )
+            else:
+                owner_id, owner_error = _resolve_active_user(
+                    user_repo,
+                    lead_data.get("owner_id"),
+                    allowed_roles={"leader", "sales"},
+                )
+                if owner_error:
+                    report["errors"].append(
+                        f"Lead {_lead_label(lead_data)}: owner_id {owner_error}"
+                    )
+                    report["skipped_records"] += 1
+                    continue
+                if user_role != "leader" and owner_id != user_id:
                     report["skipped_records"] += 1
                     continue
 
@@ -484,17 +518,23 @@ async def import_data(
                     merged_activities = _merge_activities(
                         existing_lead["id"],
                         lead_item.get("activities", []),
-                        user_id
+                        report["warnings"],
                     )
                     report["merged_activities"] += merged_activities
 
-                    # FIX: Merge after-sales tasks for existing lead (was missing before)
-                    merged_tasks = _merge_after_sales_tasks(
+                    merged_pre_sales = _merge_pre_sales_tasks(
+                        existing_lead["id"],
+                        lead_item.get("pre_sales_tasks", []),
+                        user_id,
+                        report["warnings"],
+                    )
+                    merged_after_sales = _merge_after_sales_tasks(
                         existing_lead["id"],
                         lead_item.get("after_sales_tasks", []),
-                        user_id
+                        user_id,
+                        report["warnings"],
                     )
-                    report["merged_tasks"] += merged_tasks
+                    _add_task_counts(report, merged_pre_sales, merged_after_sales)
 
                 else:
                     # Create new lead
@@ -518,8 +558,16 @@ async def import_data(
                             },
                         )
 
-                    # Ensure owner is current user for new leads
-                    lead_data["owner_id"] = user_id
+                    # Preserve a valid source owner. Sales imports have already
+                    # been restricted to their own identity in STEP 0.
+                    owner_id, owner_error = _resolve_active_user(
+                        user_repo,
+                        lead_data.get("owner_id"),
+                        allowed_roles={"leader", "sales"},
+                    )
+                    if owner_error:
+                        raise ValueError(f"owner_id {owner_error}")
+                    lead_data["owner_id"] = owner_id
 
                     new_lead = lead_service.create(lead_data, user_id)
                     report["new_leads"] += 1
@@ -528,17 +576,23 @@ async def import_data(
                     merged_activities = _merge_activities(
                         new_lead["id"],
                         lead_item.get("activities", []),
-                        user_id
+                        report["warnings"],
                     )
                     report["merged_activities"] += merged_activities
 
-                    # Import after-sales tasks for new lead
-                    merged_tasks = _merge_after_sales_tasks(
+                    merged_pre_sales = _merge_pre_sales_tasks(
+                        new_lead["id"],
+                        lead_item.get("pre_sales_tasks", []),
+                        user_id,
+                        report["warnings"],
+                    )
+                    merged_after_sales = _merge_after_sales_tasks(
                         new_lead["id"],
                         lead_item.get("after_sales_tasks", []),
-                        user_id
+                        user_id,
+                        report["warnings"],
                     )
-                    report["merged_tasks"] += merged_tasks
+                    _add_task_counts(report, merged_pre_sales, merged_after_sales)
 
                 report["attachments_skipped"] += len(lead_item.get("attachments", []))
 
@@ -583,6 +637,7 @@ def _build_preflight_report(import_data: dict, user: dict) -> dict:
     customer_service = CustomerService()
     lead_service = LeadService()
     country_service = CountryService()
+    user_repo = UserRepository()
     issues: list[dict] = []
     duplicate_customers: list[dict] = []
     permission_skipped = 0
@@ -658,6 +713,32 @@ def _build_preflight_report(import_data: dict, user: dict) -> dict:
             if not _can_import_existing_lead(role):
                 permission_skipped += 1
                 continue
+            _, owner_error = _resolve_active_user(
+                user_repo,
+                lead.get("owner_id"),
+                allowed_roles={"leader", "sales"},
+            )
+            if owner_error:
+                issues.append(_issue(
+                    "warning",
+                    "invalid_owner_reference",
+                    entity,
+                    f"Source owner_id {owner_error}; the existing local owner will be retained",
+                ))
+        else:
+            _, owner_error = _resolve_active_user(
+                user_repo,
+                lead.get("owner_id"),
+                allowed_roles={"leader", "sales"},
+            )
+            if owner_error:
+                issues.append(_issue(
+                    "error",
+                    "invalid_owner_reference",
+                    entity,
+                    f"Source owner_id {owner_error}; a new lead cannot be imported",
+                ))
+                continue
         allowed_leads.append(lead_item)
 
         for field in ("customer_id", "title", "owner_id", "sales_stage"):
@@ -671,6 +752,7 @@ def _build_preflight_report(import_data: dict, user: dict) -> dict:
             issues.append(_issue("warning", "missing_currency", entity, "Quoted/Won lead is missing currency"))
         if lead.get("sales_stage") == "Won" and not lead.get("deal_amount"):
             issues.append(_issue("warning", "missing_amount", entity, "Won lead is missing deal_amount"))
+        _append_related_identity_issues(issues, entity, lead_item, user_repo)
 
     predicted = _predict_import_counts(import_data, allowed_leads, customer_service, lead_service)
     return {
@@ -681,6 +763,9 @@ def _build_preflight_report(import_data: dict, user: dict) -> dict:
         "source_snapshot": {
             "customers": len(import_data.get("customers") or {}),
             "leads": len(import_data.get("leads") or []),
+            "activities": sum(len(item.get("activities") or []) for item in import_data.get("leads") or []),
+            "pre_sales_tasks": sum(len(item.get("pre_sales_tasks") or []) for item in import_data.get("leads") or []),
+            "after_sales_tasks": sum(len(item.get("after_sales_tasks") or []) for item in import_data.get("leads") or []),
         },
         "permission": {
             "allowed_leads": len(allowed_leads),
@@ -750,6 +835,12 @@ def _data_snapshot() -> dict:
         "customers": conn.execute("SELECT COUNT(*) FROM customers WHERE archived_at IS NULL").fetchone()[0],
         "leads": conn.execute("SELECT COUNT(*) FROM leads WHERE archived_at IS NULL").fetchone()[0],
         "activities": conn.execute("SELECT COUNT(*) FROM lead_activities WHERE archived_at IS NULL").fetchone()[0],
+        "pre_sales_tasks": conn.execute(
+            "SELECT COUNT(*) FROM pre_sales_tasks WHERE archived_at IS NULL"
+        ).fetchone()[0],
+        "after_sales_tasks": conn.execute(
+            "SELECT COUNT(*) FROM after_sales_tasks WHERE archived_at IS NULL"
+        ).fetchone()[0],
         "attachments": conn.execute("SELECT COUNT(*) FROM attachments WHERE archived_at IS NULL").fetchone()[0],
     }
 
@@ -949,14 +1040,91 @@ def _is_recreated_system_activity(activity: dict) -> bool:
     )
 
 
-def _resolve_user_id(user_repo: UserRepository, candidate_id: Optional[str], fallback_id: str) -> str:
-    """Use imported user references only when they exist locally."""
-    if candidate_id and user_repo.get_by_id(candidate_id):
-        return candidate_id
-    return fallback_id
+def _resolve_active_user(
+    user_repo: UserRepository,
+    candidate_id: Optional[str],
+    allowed_roles: Optional[set[str]] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve a local active identity without substituting another person."""
+    if not candidate_id:
+        return None, "is missing"
+    member = user_repo.get_by_id(candidate_id)
+    if not member:
+        return None, f"'{candidate_id}' does not exist locally"
+    if not member.get("is_active"):
+        return None, f"'{candidate_id}' is inactive"
+    if allowed_roles and member.get("role") not in allowed_roles:
+        roles = "/".join(sorted(allowed_roles))
+        return None, f"'{candidate_id}' must have role {roles}"
+    return candidate_id, None
 
 
-def _merge_activities(lead_id: str, activities: list, user_id: str) -> int:
+def _lead_label(lead_data: dict) -> str:
+    return str(lead_data.get("display_id") or lead_data.get("id") or "unknown")
+
+
+def _append_warning(warnings: list[str], message: str) -> None:
+    if message not in warnings:
+        warnings.append(message)
+
+
+def _warn_if_invalid_owner_reference(
+    user_repo: UserRepository,
+    owner_id: Optional[str],
+    lead_label: str,
+    warnings: list[str],
+) -> None:
+    _, error = _resolve_active_user(
+        user_repo,
+        owner_id,
+        allowed_roles={"leader", "sales"},
+    )
+    if error:
+        _append_warning(
+            warnings,
+            f"Lead {lead_label}: source owner_id {error}; local owner retained",
+        )
+
+
+def _append_related_identity_issues(
+    issues: list[dict],
+    entity: str,
+    lead_item: dict,
+    user_repo: UserRepository,
+) -> None:
+    for activity in lead_item.get("activities") or []:
+        if _is_recreated_system_activity(activity):
+            continue
+        _, error = _resolve_active_user(user_repo, activity.get("actor_id"))
+        if error:
+            issues.append(_issue(
+                "warning",
+                "unresolved_activity_actor",
+                entity,
+                f"Activity actor_id {error}; it will be imported as null",
+            ))
+
+    task_groups = (
+        ("pre-sales", lead_item.get("pre_sales_tasks") or []),
+        ("after-sales", lead_item.get("after_sales_tasks") or []),
+    )
+    for task_type, tasks in task_groups:
+        for task in tasks:
+            _, error = _resolve_active_user(
+                user_repo,
+                task.get("assignee_id"),
+                allowed_roles={"tech"},
+            )
+            if error:
+                issues.append(_issue(
+                    "warning",
+                    "unresolved_task_assignee",
+                    entity,
+                    f"{task_type} task assignee_id {error}; it will be unassigned",
+                ))
+
+
+def _merge_activities(lead_id: str, activities: list, warnings: list[str]) -> int:
     """Merge activities into a lead, avoiding source and content duplicates.
 
     Returns the number of activities added.
@@ -978,15 +1146,29 @@ def _merge_activities(lead_id: str, activities: list, user_id: str) -> int:
         if _is_recreated_system_activity(activity):
             continue
 
-        sig = _activity_signature(activity)
+        actor_id, actor_error = _resolve_active_user(
+            user_repo,
+            activity.get("actor_id"),
+        )
+        if actor_error:
+            _append_warning(
+                warnings,
+                f"Lead {lead_id}: activity {activity.get('id') or 'without id'} "
+                f"actor_id {actor_error}; imported as null",
+            )
+        resolved_activity = {**activity, "actor_id": actor_id}
+        candidate_signatures = {
+            _activity_signature(activity),
+            _activity_signature(resolved_activity),
+        }
 
         # Skip if this activity already exists
-        if sig in existing_signatures:
+        if candidate_signatures & existing_signatures:
             continue
 
         activity_repo.create(
             lead_id=lead_id,
-            actor_id=_resolve_user_id(user_repo, activity.get("actor_id"), user_id),
+            actor_id=actor_id,
             action_type=activity.get("action_type", "comment"),
             summary=activity.get("summary", ""),
             payload_json=_merge_payload_source(activity.get("payload_json"), activity.get("id")),
@@ -997,23 +1179,125 @@ def _merge_activities(lead_id: str, activities: list, user_id: str) -> int:
             after_value=activity.get("after_value"),
             created_at=activity.get("created_at"),
         )
-        existing_signatures.add(sig)
+        existing_signatures.add(_activity_signature(resolved_activity))
         added += 1
 
     return added
 
 
-def _task_signature(task: dict) -> tuple:
+def _after_sales_task_signature(task: dict) -> tuple:
     """Build a stable after-sales task signature for deduplication."""
     return (
         task.get("created_at"),
         task.get("assignee_id"),
         task.get("issue_type", ""),
         task.get("issue_description", ""),
+        task.get("due_date"),
     )
 
 
-def _merge_after_sales_tasks(lead_id: str, tasks: list, user_id: str) -> int:
+def _pre_sales_task_signature(task: dict) -> tuple:
+    return (
+        task.get("created_at"),
+        task.get("assignee_id"),
+        task.get("status", "Open"),
+        _json_signature(task.get("request_json")),
+        _json_signature(task.get("result_json")),
+        task.get("due_date"),
+    )
+
+
+def _json_signature(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return str(value or "")
+
+
+def _json_storage_value(value: Any) -> Optional[str]:
+    if value is None or isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _resolve_task_assignee(
+    user_repo: UserRepository,
+    task: dict,
+    task_type: str,
+    lead_id: str,
+    warnings: list[str],
+) -> Optional[str]:
+    assignee_id, error = _resolve_active_user(
+        user_repo,
+        task.get("assignee_id"),
+        allowed_roles={"tech"},
+    )
+    if error:
+        _append_warning(
+            warnings,
+            f"Lead {lead_id}: {task_type} task {task.get('id') or 'without id'} "
+            f"assignee_id {error}; imported as unassigned",
+        )
+    return assignee_id
+
+
+def _merge_pre_sales_tasks(
+    lead_id: str,
+    tasks: list,
+    user_id: str,
+    warnings: list[str],
+) -> int:
+    """Merge pre-sales tasks with stable timestamps and identity-safe assignees."""
+    if not tasks:
+        return 0
+
+    task_repo = PreSalesTaskRepository()
+    user_repo = UserRepository()
+    existing_signatures = {
+        _pre_sales_task_signature(task)
+        for task in task_repo.list_for_lead(lead_id)
+    }
+    added = 0
+    for task in tasks:
+        assignee_id = _resolve_task_assignee(
+            user_repo, task, "pre-sales", lead_id, warnings
+        )
+        resolved_task = {**task, "assignee_id": assignee_id}
+        candidate_signatures = {
+            _pre_sales_task_signature(task),
+            _pre_sales_task_signature(resolved_task),
+        }
+        if candidate_signatures & existing_signatures:
+            continue
+
+        task_id = task_repo.create(lead_id, {
+            "assignee_id": assignee_id,
+            "status": task.get("status", "Open"),
+            "request_json": _json_storage_value(task.get("request_json")),
+            "result_json": _json_storage_value(task.get("result_json")),
+            "due_date": task.get("due_date"),
+        }, user_id)
+        if task.get("created_at") or task.get("updated_at"):
+            task_repo.conn.execute(
+                "UPDATE pre_sales_tasks SET created_at = ?, updated_at = ? WHERE id = ?",
+                (
+                    task.get("created_at") or task_repo.get_by_id(task_id)["created_at"],
+                    task.get("updated_at") or task.get("created_at")
+                    or task_repo.get_by_id(task_id)["updated_at"],
+                    task_id,
+                ),
+            )
+            task_repo.conn.commit()
+        existing_signatures.add(_pre_sales_task_signature(resolved_task))
+        added += 1
+    return added
+
+
+def _merge_after_sales_tasks(
+    lead_id: str,
+    tasks: list,
+    user_id: str,
+    warnings: list[str],
+) -> int:
     """Merge after-sales tasks into a lead, avoiding timestamp/content duplicates.
 
     Returns the number of tasks added.
@@ -1028,24 +1312,39 @@ def _merge_after_sales_tasks(lead_id: str, tasks: list, user_id: str) -> int:
     # Build a set of existing task signatures for deduplication
     existing_signatures = set()
     for task in existing_tasks:
-        existing_signatures.add(_task_signature(task))
+        existing_signatures.add(_after_sales_task_signature(task))
 
     added = 0
     for task in tasks:
-        sig = _task_signature(task)
+        assignee_id = _resolve_task_assignee(
+            user_repo, task, "after-sales", lead_id, warnings
+        )
+        resolved_task = {**task, "assignee_id": assignee_id}
+        candidate_signatures = {
+            _after_sales_task_signature(task),
+            _after_sales_task_signature(resolved_task),
+        }
 
         # Skip if this task already exists
-        if sig in existing_signatures:
+        if candidate_signatures & existing_signatures:
             continue
 
         task_data = {
-            'assignee_id': _resolve_user_id(user_repo, task.get("assignee_id"), user_id),
-            'issue_type': task.get("issue_type", "Other"),
-            'status': task.get("status", "Open"),
-            'issue_description': task.get("issue_description", ""),
-            'solution': task.get("solution"),
-            'due_date': task.get("due_date")
+            "assignee_id": assignee_id,
+            "issue_type": task.get("issue_type", "Other"),
+            "status": task.get("status", "Open"),
+            "issue_description": task.get("issue_description", ""),
+            "solution": task.get("solution"),
+            "due_date": task.get("due_date"),
         }
+        columns = {
+            row[1] for row in after_sales_repo.conn.execute(
+                "PRAGMA table_info(after_sales_tasks)"
+            ).fetchall()
+        }
+        for field in ("customer_satisfaction", "lessons_learned", "remarks"):
+            if field in columns and field in task:
+                task_data[field] = task.get(field)
 
         after_sales_repo.create(
             lead_id,
@@ -1054,7 +1353,17 @@ def _merge_after_sales_tasks(lead_id: str, tasks: list, user_id: str) -> int:
             created_at=task.get("created_at"),
             updated_at=task.get("updated_at"),
         )
-        existing_signatures.add(sig)
+        existing_signatures.add(_after_sales_task_signature(resolved_task))
         added += 1
 
     return added
+
+
+def _add_task_counts(
+    report: dict,
+    merged_pre_sales: int,
+    merged_after_sales: int,
+) -> None:
+    report["merged_pre_sales_tasks"] += merged_pre_sales
+    report["merged_after_sales_tasks"] += merged_after_sales
+    report["merged_tasks"] += merged_pre_sales + merged_after_sales

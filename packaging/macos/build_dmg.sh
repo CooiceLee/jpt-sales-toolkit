@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="${1:-0.10.0-internal}"
+VERSION="${1:-$(< "$ROOT_DIR/VERSION")}"
 ARCH="${2:-$(uname -m)}"
 APP_PATH="${3:-$ROOT_DIR/dist/JPT Sales Toolkit.app}"
 OUTPUT_DIR="${4:-$ROOT_DIR/release}"

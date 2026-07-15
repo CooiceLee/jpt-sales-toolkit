@@ -23,6 +23,11 @@ function renderPanelContent(tabId) {
         return;
     }
 
+    if (tabId === 'quality') {
+        DataQualityModule.render(inq.id);
+        return;
+    }
+
     // Get fields for this tab
     const fieldGroup = State.config.fields?.field_groups?.[tabId];
     if (!fieldGroup) {
@@ -48,7 +53,7 @@ function renderPanelContent(tabId) {
         return `
             <div class="form-group">
                 <label class="form-label">${def.label}</label>
-                ${editable ? renderFormField(name, def, value) : `<div class="form-static">${value || '-'}</div>`}
+                ${editable ? renderFormField(name, def, value) : `<div class="form-static">${escapeHtml(value || '-')}</div>`}
                 ${helpText}
                 <div class="form-error" id="error-${name}" style="display:none;"></div>
             </div>
@@ -74,60 +79,6 @@ function renderPanelContent(tabId) {
     // Add contact validation for customer tab
     if (tabId === 'customer') {
         setupContactValidation();
+        setupPrimaryContactSelection(container);
     }
 }
-
-function renderFormField(name, def, value) {
-    const type = def.type;
-    const safeValue = escapeHtml(value);
-
-    if (type === 'select' && def.options) {
-        return `
-            <select class="form-select" name="${name}">
-                <option value="">Select...</option>
-                ${def.options.map(o => `<option value="${escapeHtml(o)}" ${value === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
-            </select>
-        `;
-    }
-
-    if (type === 'text') {
-        return `<textarea class="form-textarea" name="${name}" rows="3">${safeValue}</textarea>`;
-    }
-
-    if (type === 'boolean') {
-        return `
-            <select class="form-select" name="${name}">
-                <option value="">Select...</option>
-                <option value="true" ${value === true ? 'selected' : ''}>Yes</option>
-                <option value="false" ${value === false ? 'selected' : ''}>No</option>
-            </select>
-        `;
-    }
-
-    if (type === 'date') {
-        let dateVal = '';
-        if (value) {
-            try { dateVal = new Date(value).toISOString().split('T')[0]; } catch {}
-        }
-        return `<input type="date" class="form-input" name="${name}" value="${dateVal}">`;
-    }
-
-    if (type === 'datetime') {
-        let dtVal = '';
-        if (value) {
-            try { dtVal = new Date(value).toISOString().slice(0, 16); } catch {}
-        }
-        return `<input type="datetime-local" class="form-input" name="${name}" value="${dtVal}">`;
-    }
-
-    if (type === 'number') {
-        return `<input type="number" class="form-input" name="${name}" value="${safeValue}" step="any">`;
-    }
-
-    if (type === 'email') {
-        return `<input type="email" class="form-input" name="${name}" value="${safeValue}" placeholder="example@company.com">`;
-    }
-
-    return `<input type="text" class="form-input" name="${name}" value="${safeValue}">`;
-}
-

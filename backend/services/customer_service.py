@@ -8,8 +8,10 @@ import json
 from typing import Optional
 
 from ..repositories import CustomerRepository, AuditRepository
-from ..repositories.base import ConflictError, now_iso, generate_uuid
+from ..repositories.base import ConflictError
+from ..repositories.customer_alias_repository import CustomerAliasRepository
 from .country_service import CountryService
+from .customer_merge_service import CustomerMergeService
 
 
 def normalize_name(name: str) -> str:
@@ -60,6 +62,7 @@ class CustomerService:
     ):
         self.customer_repo = customer_repo or CustomerRepository()
         self.audit_repo = audit_repo or AuditRepository()
+        self.alias_repo = CustomerAliasRepository(self.customer_repo.conn)
         self.country_service = CountryService()
 
     def create(self, data: dict, actor_id: str) -> dict:
@@ -91,6 +94,7 @@ class CustomerService:
         # Add related data
         customer["domains"] = self.customer_repo.get_domains(customer_id)
         customer["contacts"] = self.customer_repo.get_contacts(customer_id)
+        customer["aliases"] = self.alias_repo.list_for_customer(customer_id)
 
         return customer
 
@@ -198,222 +202,10 @@ class CustomerService:
         target_row_version: Optional[int] = None,
     ) -> dict:
         """Merge duplicate source customer into target customer."""
-        if source_customer_id == target_customer_id:
-            raise ValueError("Source and target customer must be different")
-
-        source = self.customer_repo.get_by_id(source_customer_id)
-        target = self.customer_repo.get_by_id(target_customer_id)
-        if not source or source.get("archived_at"):
-            raise ValueError("Source customer not found")
-        if not target or target.get("archived_at"):
-            raise ValueError("Target customer not found")
-
-        if source_row_version is not None and source["row_version"] != source_row_version:
-            raise ConflictError(
-                current_version=source["row_version"],
-                your_version=source_row_version,
-                current_data={"id": source_customer_id, "updated_at": source["updated_at"]},
-            )
-        if target_row_version is not None and target["row_version"] != target_row_version:
-            raise ConflictError(
-                current_version=target["row_version"],
-                your_version=target_row_version,
-                current_data={"id": target_customer_id, "updated_at": target["updated_at"]},
-            )
-
-        conn = self.customer_repo.conn
-        now = now_iso()
-        moved_contacts = 0
-        archived_contacts = 0
-        moved_domains = 0
-        skipped_domains = 0
-        moved_aliases = 0
-        skipped_aliases = 0
-        target_updates = {}
-
-        mergeable_fields = (
-            "website",
-            "industry",
-            "customer_type",
-            "company_size",
-            "language",
-            "country",
-            "city",
-            "postal_code",
-            "address",
-            "region",
-            "lat",
-            "lng",
-            "normalized_address",
-            "geocode_source",
-            "geocode_confidence",
-            "geocode_locked",
-            "company_description",
+        return CustomerMergeService(self.customer_repo).merge(
+            source_customer_id, target_customer_id, actor_id,
+            source_row_version, target_row_version,
         )
-        for field in mergeable_fields:
-            if not target.get(field) and source.get(field) not in (None, ""):
-                target_updates[field] = source.get(field)
-
-        try:
-            lead_cursor = conn.execute(
-                """
-                UPDATE leads
-                SET customer_id = ?, updated_at = ?, updated_by = ?, row_version = row_version + 1
-                WHERE customer_id = ? AND archived_at IS NULL
-                """,
-                (target_customer_id, now, actor_id, source_customer_id),
-            )
-
-            contacts = conn.execute(
-                """
-                SELECT * FROM customer_contacts
-                WHERE customer_id = ? AND archived_at IS NULL
-                ORDER BY is_primary DESC, created_at ASC
-                """,
-                (source_customer_id,),
-            ).fetchall()
-            for contact in contacts:
-                email = (contact["email"] or "").strip().lower()
-                duplicate = None
-                if email:
-                    duplicate = conn.execute(
-                        """
-                        SELECT id FROM customer_contacts
-                        WHERE customer_id = ?
-                          AND lower(email) = ?
-                          AND archived_at IS NULL
-                        LIMIT 1
-                        """,
-                        (target_customer_id, email),
-                    ).fetchone()
-                if duplicate:
-                    conn.execute(
-                        """
-                        UPDATE customer_contacts
-                        SET archived_at = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (now, now, contact["id"]),
-                    )
-                    archived_contacts += 1
-                else:
-                    conn.execute(
-                        """
-                        UPDATE customer_contacts
-                        SET customer_id = ?, updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (target_customer_id, now, contact["id"]),
-                    )
-                    moved_contacts += 1
-
-            domains = conn.execute(
-                "SELECT * FROM customer_domains WHERE customer_id = ?",
-                (source_customer_id,),
-            ).fetchall()
-            for domain in domains:
-                duplicate = conn.execute(
-                    """
-                    SELECT id FROM customer_domains
-                    WHERE customer_id = ? AND lower(domain) = lower(?)
-                    LIMIT 1
-                    """,
-                    (target_customer_id, domain["domain"]),
-                ).fetchone()
-                if duplicate:
-                    conn.execute("DELETE FROM customer_domains WHERE id = ?", (domain["id"],))
-                    skipped_domains += 1
-                else:
-                    conn.execute(
-                        "UPDATE customer_domains SET customer_id = ? WHERE id = ?",
-                        (target_customer_id, domain["id"]),
-                    )
-                    moved_domains += 1
-
-            alias_candidates = [(source.get("display_name") or "").strip()]
-            existing_aliases = conn.execute(
-                "SELECT alias_name FROM customer_aliases WHERE customer_id = ?",
-                (source_customer_id,),
-            ).fetchall()
-            alias_candidates.extend(row["alias_name"] for row in existing_aliases if row["alias_name"])
-
-            for alias_name in alias_candidates:
-                normalized_alias = normalize_name(alias_name)
-                if not normalized_alias:
-                    continue
-                duplicate = conn.execute(
-                    """
-                    SELECT 1 FROM customer_aliases
-                    WHERE customer_id = ? AND normalized_alias = ?
-                    LIMIT 1
-                    """,
-                    (target_customer_id, normalized_alias),
-                ).fetchone()
-                if duplicate or normalize_name(target.get("display_name")) == normalized_alias:
-                    skipped_aliases += 1
-                    continue
-                conn.execute(
-                    """
-                    INSERT INTO customer_aliases (id, customer_id, alias_name, normalized_alias, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (generate_uuid(), target_customer_id, alias_name, normalized_alias, now),
-                )
-                moved_aliases += 1
-
-            conn.execute("DELETE FROM customer_aliases WHERE customer_id = ?", (source_customer_id,))
-
-            conn.execute(
-                """
-                UPDATE customers
-                SET archived_at = ?, updated_at = ?, updated_by = ?, row_version = row_version + 1
-                WHERE id = ? AND archived_at IS NULL
-                """,
-                (now, now, actor_id, source_customer_id),
-            )
-            target_sets = ["updated_at = ?", "updated_by = ?", "row_version = row_version + 1"]
-            target_params = [now, actor_id]
-            for field, value in target_updates.items():
-                target_sets.append(f"{field} = ?")
-                target_params.append(value)
-            target_params.append(target_customer_id)
-            conn.execute(
-                f"""
-                UPDATE customers
-                SET {", ".join(target_sets)}
-                WHERE id = ? AND archived_at IS NULL
-                """,
-                target_params,
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-
-        result = {
-            "source_customer_id": source_customer_id,
-            "target_customer_id": target_customer_id,
-            "moved_leads": lead_cursor.rowcount,
-            "moved_contacts": moved_contacts,
-            "archived_duplicate_contacts": archived_contacts,
-            "moved_domains": moved_domains,
-            "skipped_duplicate_domains": skipped_domains,
-            "moved_aliases": moved_aliases,
-            "skipped_aliases": skipped_aliases,
-            "target_updates": target_updates,
-        }
-        self.audit_repo.log(
-            entity_type="customer",
-            entity_id=target_customer_id,
-            event_type="merge_customer",
-            actor_id=actor_id,
-            before_json=json.dumps({
-                "source": dict(source),
-                "target": dict(target),
-            }),
-            after_json=json.dumps(result),
-        )
-        return result
 
     def match(self, email: Optional[str], company_name: Optional[str]) -> list[dict]:
         """
@@ -454,12 +246,16 @@ class CustomerService:
             normalized = normalize_name(company_name)
             if normalized:
                 customer_id = self.customer_repo.find_by_normalized_name(normalized)
+                match_type = "name"
+                if not customer_id:
+                    customer_id = self.alias_repo.find_active_customer(normalized)
+                    match_type = "alias"
                 if customer_id and not any(c["id"] == customer_id for c in candidates):
                     customer = self.get(customer_id)
                     if customer:
                         candidates.append({
                             **customer,
-                            "match_type": "name",
+                            "match_type": match_type,
                             "confidence": "medium",
                         })
 

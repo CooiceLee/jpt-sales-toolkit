@@ -773,6 +773,53 @@ const ApiClient = (function() {
         return response.json();
     }
 
+    async function spreadsheetImportRequest(path, file, fields = {}) {
+        const token = getToken();
+        const formData = new FormData();
+        formData.append('file', file);
+        Object.entries(fields).forEach(([key, value]) => {
+            if (value === undefined || value === null) return;
+            formData.append(key, typeof value === 'string' ? value : JSON.stringify(value));
+        });
+        const response = await fetch(`${API_BASE}${path}`, {
+            method: 'POST',
+            headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+            body: formData
+        });
+        if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            const message = payload?.detail?.message || payload?.detail || payload?.message;
+            throw new ApiError(message || `Spreadsheet import failed: ${response.status}`, response.status);
+        }
+        return response.json();
+    }
+
+    async function preflightSpreadsheetImport(file, resolutions = {}) {
+        return spreadsheetImportRequest('/data/spreadsheet/preflight', file, { resolutions });
+    }
+
+    async function commitSpreadsheetImport(file, resolutions, expectedSourceHash) {
+        return spreadsheetImportRequest('/data/spreadsheet/import', file, {
+            resolutions,
+            expected_source_hash: expectedSourceHash
+        });
+    }
+
+    async function listDataQualityIssues(filters = {}) {
+        const params = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') params.set(key, value);
+        });
+        const suffix = params.toString() ? `?${params}` : '';
+        return request(`/data/quality-issues${suffix}`);
+    }
+
+    async function updateDataQualityIssue(issueId, data) {
+        return request(`/data/quality-issues/${encodeURIComponent(issueId)}`, {
+            method: 'PATCH', body: JSON.stringify(data)
+        });
+    }
+
     async function normalizeCountries() {
         return request('/data/governance/normalize-countries', { method: 'POST' });
     }
@@ -896,6 +943,10 @@ const ApiClient = (function() {
         exportData,
         importData,
         preflightImportData,
+        preflightSpreadsheetImport,
+        commitSpreadsheetImport,
+        listDataQualityIssues,
+        updateDataQualityIssue,
         normalizeCountries,
         getCoordinateAudit,
         batchRepair,

@@ -15,6 +15,8 @@ from .admin import router as admin_router
 from .data_exchange import router as data_exchange_router
 from .authorization import router as authorization_router
 from .desktop import router as desktop_router
+from .spreadsheet_import import router as spreadsheet_import_router
+from .data_quality_issues import router as data_quality_issues_router
 
 __all__ = [
     "auth_router",
@@ -28,4 +30,6 @@ __all__ = [
     "data_exchange_router",
     "authorization_router",
     "desktop_router",
+    "spreadsheet_import_router",
+    "data_quality_issues_router",
 ]

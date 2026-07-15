@@ -21,11 +21,20 @@
         if (isTech()) {
             document.querySelectorAll('.nav-section, .rail-separator').forEach(item => item.classList.add('hidden'));
         }
+        const spreadsheetAllowed = State.user?.role === 'leader';
+        document.querySelectorAll('[data-leader-spreadsheet]').forEach(item => {
+            item.classList.toggle('hidden', !spreadsheetAllowed);
+        });
+        const importInput = document.getElementById('import-file');
+        if (importInput) importInput.accept = spreadsheetAllowed
+            ? '.json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            : '.json,application/json';
     }
 
     window.RoleCapabilities = {
         isTech,
         canAccessModule,
+        canImportSpreadsheet: () => State.user?.role === 'leader',
         initialModule,
         applyNavigation,
         canManageTaskRequests: () => !isTech()

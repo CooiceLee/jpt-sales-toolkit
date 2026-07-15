@@ -2,7 +2,7 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前内部试运行基线：`v0.10.0-internal`。当前启动、账号授权、备份、回归、地图坐标、数据复盘、出差规划、拜访执行和数据治理入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。
+当前内部试运行基线：`v0.11.0-internal`。当前启动、账号授权、备份、回归、地图坐标、数据复盘、出差规划、拜访执行和数据治理入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。
 
 ## 功能概览
 
@@ -30,8 +30,9 @@ Windows 与 macOS 的内部测试安装包由 `.github/workflows/build-installer
 
 ### 环境要求
 
-- Python 3.9+
-- 支持 Windows / macOS / Linux
+- 安装包支持 Windows 10/11 x64
+- 安装包支持 macOS Apple Silicon arm64 与 Intel x86_64
+- Linux 不属于产品支持和发布范围
 
 ### 启动应用
 
@@ -96,6 +97,10 @@ bash scripts/validate_v08.sh
 - 权限限制：非 Leader 只能导入自己有权限的 leads
 - 附件限制：JSON 导出只包含附件元数据，不包含附件文件本体
 
+### Excel 历史数据导入
+
+程序安装和 Excel 数据导入是两条独立链路。Leader 在程序安装、账号激活和基础功能验收完成后，使用单独分发的 `JPT-XLSX-1.0` 标准模板或外部工作簿，按“上传 → 预检 → 人工修正 → 正式提交”导入。安装包不内置 XLSX、业务数据或成员授权文件。XLSX 不创建账号；来源人员必须匹配到现有 Leader / Sales / Tech 成员。字段、外部键、客户别名和重复导入口径见 [标准导入格式](docs/import-workbook-standard.md)。
+
 ## 配置文件说明
 
 ```
@@ -149,7 +154,7 @@ data/
 
 - **后端**: Python + FastAPI
 - **前端**: HTML/CSS/JavaScript + Leaflet 地图
-- **数据**: SQLite 本地数据库 + JSON 导出/导入
+- **数据**: SQLite 本地数据库 + JSON 数据交换 + 受控 XLSX 导入
 
 ## 常见问题
 
@@ -167,4 +172,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.10.0-internal*
+*JPT Sales Toolkit v0.11.0-internal*

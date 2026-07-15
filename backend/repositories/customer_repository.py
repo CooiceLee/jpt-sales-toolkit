@@ -107,8 +107,14 @@ class CustomerRepository(BaseRepository):
             params.append(region)
 
         if search:
-            sql += " AND (normalized_name LIKE ? OR display_name LIKE ?)"
-            params.extend([f"%{search.lower()}%", f"%{search}%"])
+            alias_active = "AND ca.archived_at IS NULL" if self._has_column("customer_aliases", "archived_at") else ""
+            normalized_search = search.lower().replace(",", "").replace(".", "")
+            sql += f""" AND (normalized_name LIKE ? OR display_name LIKE ? OR EXISTS (
+                SELECT 1 FROM customer_aliases ca
+                WHERE ca.customer_id = customers.id {alias_active}
+                  AND ca.normalized_alias LIKE ?
+            ))"""
+            params.extend([f"%{normalized_search}%", f"%{search}%", f"%{normalized_search}%"])
 
         sql += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
@@ -120,28 +126,51 @@ class CustomerRepository(BaseRepository):
     def add_domain(self, customer_id: str, domain: str, is_primary: bool = False) -> str:
         """Add domain to customer."""
         domain_id = generate_uuid()
-        self.conn.execute(
-            """
-            INSERT INTO customer_domains (id, customer_id, domain, is_primary, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (domain_id, customer_id, domain.lower(), 1 if is_primary else 0, now_iso()),
-        )
+        now = now_iso()
+        if self._has_column("customer_domains", "archived_at"):
+            existing = self.conn.execute(
+                "SELECT id, archived_at FROM customer_domains WHERE customer_id = ? AND domain = ?",
+                (customer_id, domain.lower()),
+            ).fetchone()
+            if existing and existing["archived_at"]:
+                domain_id = existing["id"]
+                self.conn.execute(
+                    """UPDATE customer_domains SET archived_at = NULL, is_primary = ?,
+                       updated_at = ?, updated_by = NULL WHERE id = ?""",
+                    (1 if is_primary else 0, now, domain_id),
+                )
+            else:
+                self.conn.execute(
+                    """INSERT INTO customer_domains
+                       (id, customer_id, domain, is_primary, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (domain_id, customer_id, domain.lower(), 1 if is_primary else 0, now, now),
+                )
+        else:
+            self.conn.execute(
+                """INSERT INTO customer_domains (id, customer_id, domain, is_primary, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (domain_id, customer_id, domain.lower(), 1 if is_primary else 0, now),
+            )
         self.conn.commit()
         return domain_id
 
     def get_domains(self, customer_id: str) -> list[dict]:
         """Get all domains for customer."""
+        active = " AND archived_at IS NULL" if self._has_column("customer_domains", "archived_at") else ""
         cursor = self.conn.execute(
-            "SELECT * FROM customer_domains WHERE customer_id = ? ORDER BY is_primary DESC",
+            f"SELECT * FROM customer_domains WHERE customer_id = ?{active} ORDER BY is_primary DESC",
             (customer_id,),
         )
         return [dict(row) for row in cursor.fetchall()]
 
     def find_by_domain(self, domain: str) -> Optional[str]:
         """Find customer ID by domain."""
+        active = "AND d.archived_at IS NULL" if self._has_column("customer_domains", "archived_at") else ""
         cursor = self.conn.execute(
-            "SELECT customer_id FROM customer_domains WHERE domain = ?",
+            f"""SELECT d.customer_id FROM customer_domains d
+                JOIN customers c ON c.id = d.customer_id AND c.archived_at IS NULL
+                WHERE lower(d.domain) = ? {active} LIMIT 1""",
             (domain.lower(),),
         )
         row = cursor.fetchone()
@@ -258,3 +287,7 @@ class CustomerRepository(BaseRepository):
         )
         row = cursor.fetchone()
         return row["id"] if row else None
+
+    def _has_column(self, table_name: str, column_name: str) -> bool:
+        rows = self.conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        return any(row[1] == column_name for row in rows)

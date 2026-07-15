@@ -16,7 +16,6 @@ function panelTabForContext(context) {
 window.openInquiryPanel = async function(leadId, targetContext = null) {
     try {
         const taskOnly = RoleCapabilities.isTech();
-        // Load lead and related panel data in parallel
         const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
             ApiClient.getLead(leadId),
             taskOnly ? [] : ApiClient.listActivities(leadId).catch(() => []),
@@ -25,52 +24,20 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
             taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
         ]);
 
-        // Parse payload_json from activities
-        const parsePayload = (a) => {
-            try {
-                return a.payload_json ? JSON.parse(a.payload_json) : {};
-            } catch { return {}; }
-        };
-
-        // Map activities to follow_ups format
         const followUps = activities
             .filter(a => a.action_type === 'follow_up')
-            .map(a => {
-                const payload = parsePayload(a);
-                return {
-                    id: a.id,
-                    method: payload.method || 'Follow-up',
-                    content: payload.content || a.summary || '',
-                    date: a.created_at,
-                    response_date: payload.response_date || null,
-                    customer_feedback: payload.customer_feedback || '',
-                    next_action: payload.next_action || '',
-                    next_action_date: payload.next_action_date || null,
-                    status: payload.status || 'completed',
-                    actor_name: a.actor_name || ''
-                };
-            });
+            .map(mapFollowUpActivity);
+        const afterSales = afterSalesTasks.map(mapAfterSalesTask);
 
-        // Map after-sales tasks to legacy format
-        const afterSales = afterSalesTasks.map(t => ({
-            id: t.id,
-            issue_type: t.issue_type || 'Technical',
-            issue_description: t.issue_description || t.summary || '',
-            issue_date: t.created_at,
-            status: t.status || 'Open',
-            technician: t.assignee_name || '',
-            solution: t.solution || '',
-            row_version: t.row_version
-        }));
+        const primaryContact = getLeadPrimaryContact(lead);
 
-        // Map lead to legacy inquiry format for panel compatibility
         State.currentInquiry = {
             id: lead.id,
             inquiry_id: lead.display_id,
             company_name: lead.customer?.display_name || '',
-            contact_name: lead.customer?.contacts?.[0]?.name || '',
-            email: lead.customer?.contacts?.[0]?.email || '',
-            phone: lead.customer?.contacts?.[0]?.phone || '',
+            contact_name: primaryContact?.name || '',
+            email: primaryContact?.email || '',
+            phone: primaryContact?.phone || '',
             country: lead.customer?.country || '',
             city: lead.customer?.city || '',
             stage: lead.sales_stage,
@@ -90,13 +57,8 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
             _attachments: attachments
         };
 
-        // Set title
         setText('panel-title', lead.display_id || leadId);
-
-        // Render tabs using the module context that opened the card.
         renderPanelTabs(panelTabForContext(targetContext));
-
-        // Show panel
         document.getElementById('detail-panel').classList.add('open');
         document.getElementById('app')?.classList.add('detail-open');
     } catch (err) {
@@ -122,11 +84,16 @@ function renderPanelTabs(activeTabId = 'basic') {
         { id: 'fulfillment', label: 'Fulfillment' },
         { id: 'followup', label: 'Follow-ups' },
         { id: 'aftersales', label: 'After-sales' },
+        { id: 'quality', label: 'Data Quality' },
         { id: 'files', label: 'Files' }
     ];
+    const lead = State.currentInquiry?._lead;
+    const qualityVisible = State.user?.role === 'leader' || lead?.owner_id === State.user?.id
+        || (lead?.assignments || []).some(item =>
+            item.user_id === State.user?.id && item.assignment_type === 'collaborator');
     const tabs = RoleCapabilities.isTech()
         ? allTabs.filter(tab => ['sample', 'aftersales'].includes(tab.id))
-        : allTabs;
+        : allTabs.filter(tab => tab.id !== 'quality' || qualityVisible);
     const validActiveTab = tabs.some(t => t.id === activeTabId) ? activeTabId : 'basic';
 
     const tabsContainer = document.getElementById('panel-tabs');
@@ -135,7 +102,6 @@ function renderPanelTabs(activeTabId = 'basic') {
         `<button type="button" class="panel-tab ${t.id === validActiveTab ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>`
     ).join('');
 
-    // Add click handlers
     tabsContainer.querySelectorAll('.panel-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             tabsContainer.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
@@ -145,11 +111,10 @@ function renderPanelTabs(activeTabId = 'basic') {
         });
     });
 
-    // Render context tab
     renderPanelContent(validActiveTab);
 }
 
 function togglePanelSaveButton(tabId) {
-    const actionTabs = ['sample', 'followup', 'aftersales', 'files'];
+    const actionTabs = ['sample', 'followup', 'aftersales', 'quality', 'files'];
     document.getElementById('panel-save-btn')?.classList.toggle('hidden', actionTabs.includes(tabId));
 }

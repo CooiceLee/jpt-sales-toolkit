@@ -15,6 +15,7 @@
     "customer": {
       "label": "客户信息",
       "fields": {
+        "primary_contact_id": {"type": "contact_select", "label": "询盘主联系人"},
         "contact_name": {"type": "string", "label": "联系人姓名"},
         "contact_position": {"type": "string", "label": "职位"},
         "company_name": {"type": "string", "label": "公司名称"},
@@ -45,6 +46,7 @@
         "wavelength": {"type": "string", "label": "波长需求"},
         "application": {"type": "string", "label": "应用场景"},
         "material": {"type": "string", "label": "加工材料"},
+        "quantity_text": {"type": "string", "label": "数量需求"},
         "special_requirements": {"type": "text", "label": "特殊要求"},
         "potential_needs": {"type": "text", "label": "潜在需求挖掘"}
       }
@@ -97,6 +99,9 @@
         "issue_description": {"type": "text", "label": "问题描述"},
         "technician": {"type": "string", "label": "售后技术人员"},
         "solution": {"type": "text", "label": "解决方案"},
+        "customer_satisfaction": {"type": "text", "label": "客户满意度"},
+        "lessons_learned": {"type": "text", "label": "经验总结"},
+        "remarks": {"type": "text", "label": "备注"},
         "status": {"type": "select", "label": "状态", "options": ["Open", "In Progress", "Resolved", "Closed"]}
       }
     }

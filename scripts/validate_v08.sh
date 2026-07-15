@@ -12,7 +12,7 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3}"
 fi
 
-echo "JPT Sales Toolkit v0.10 validation"
+echo "JPT Sales Toolkit v0.11 validation"
 echo "----------------------------------"
 
 echo
@@ -34,6 +34,7 @@ echo "Step 2/4: Python compile"
   backend/repositories/*.py \
   backend/migration/*.py \
   test_*.py
+"$PYTHON_BIN" -m compileall -q backend/services/importing backend/services/spreadsheet_import
 
 echo
 echo "Step 3/4: core regression tests"
@@ -56,8 +57,19 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_backup_runtime_config.py
 "$PYTHON_BIN" test_backup_api_cleanup.py
 "$PYTHON_BIN" test_roundtrip_export_import.py
+"$PYTHON_BIN" test_import_identity_schema.py
+"$PYTHON_BIN" test_member_identity_service.py
+"$PYTHON_BIN" test_spreadsheet_importing.py
+"$PYTHON_BIN" test_spreadsheet_import.py
+"$PYTHON_BIN" test_spreadsheet_import_frontend_contract.py
+"$PYTHON_BIN" test_data_quality_issue_service.py
+"$PYTHON_BIN" test_data_quality_issue_api.py
+"$PYTHON_BIN" test_data_quality_frontend_contract.py
+"$PYTHON_BIN" test_operational_field_roundtrip.py
+"$PYTHON_BIN" test_operational_field_frontend_contract.py
 "$PYTHON_BIN" test_v07_review_trip.py
 "$PYTHON_BIN" test_v09_filters_merge.py
+"$PYTHON_BIN" test_customer_merge_integrity.py
 "$PYTHON_BIN" test_runtime_contracts.py
 "$PYTHON_BIN" test_pre_sales_crud.py
 "$PYTHON_BIN" test_sampling_frontend_contract.py
@@ -67,4 +79,4 @@ echo "Step 3/4: core regression tests"
 
 echo
 echo "Step 4/4: validation summary"
-echo "PASS: v0.10 validation completed"
+echo "PASS: v0.11 validation completed"

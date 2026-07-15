@@ -11,7 +11,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
 
 from ..services import LeadService, ActivityService
-from ..services.lead_service import InvalidLeadAssignmentError, mask_lead_for_role
+from ..services.lead_service import (
+    InvalidLeadAssignmentError,
+    InvalidLeadContactError,
+    mask_lead_for_role,
+)
 from ..repositories.base import ConflictError
 from .deps import get_current_user, require_role, get_actor_role_for_lead, get_attachment_service
 from .lead_attachment_permissions import (
@@ -27,6 +31,7 @@ class LeadCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     customer_id: str
+    primary_contact_id: Optional[str] = None
     owner_id: str
     title: str
     source_channel: Optional[str] = None
@@ -39,12 +44,14 @@ class LeadCreate(BaseModel):
     special_requirements: Optional[str] = None
     potential_needs: Optional[str] = None
     products_detail: Optional[str] = None
+    quantity_text: Optional[str] = None
 
 
 class LeadUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     owner_id: Optional[str] = None
+    primary_contact_id: Optional[str] = None
     title: Optional[str] = None
     source_channel: Optional[str] = None
     original_email: Optional[str] = None
@@ -71,6 +78,7 @@ class LeadUpdate(BaseModel):
     special_requirements: Optional[str] = None
     potential_needs: Optional[str] = None
     products_detail: Optional[str] = None
+    quantity_text: Optional[str] = None
     lost_reason_code: Optional[str] = None
     lost_reason_text: Optional[str] = None
     row_version: int
@@ -149,7 +157,7 @@ async def create_lead(
     data = request.model_dump(exclude_none=True)
     try:
         return service.create(data, user["id"])
-    except InvalidLeadAssignmentError as e:
+    except (InvalidLeadAssignmentError, InvalidLeadContactError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -249,7 +257,7 @@ async def update_lead(
             actor_role,
             request.row_version,
         )
-    except InvalidLeadAssignmentError as e:
+    except (InvalidLeadAssignmentError, InvalidLeadContactError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ConflictError as e:
         raise HTTPException(

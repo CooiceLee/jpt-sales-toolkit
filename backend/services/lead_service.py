@@ -8,6 +8,7 @@ import json
 from typing import Optional
 
 from ..repositories import LeadRepository, ActivityRepository, AuditRepository, CustomerRepository
+from ..repositories.data_quality_issue_repository import DataQualityIssueRepository
 from ..repositories.base import ConflictError
 from .lead_extra_fields import expose_extra_fields, merge_extra_fields
 from .permission_policy import mask_lead_for_tech
@@ -55,6 +56,10 @@ class InvalidLeadAssignmentError(ValueError):
     """Raised when a member cannot hold a commercial lead assignment."""
 
 
+class InvalidLeadContactError(ValueError):
+    """Raised when a lead contact is missing, archived or owned by another customer."""
+
+
 def mask_lead_for_role(lead: dict, actor_role: str) -> dict:
     """Remove sales-sensitive fields from task-scoped technical views."""
     if actor_role != "tech":
@@ -71,11 +76,13 @@ class LeadService:
         activity_repo: Optional[ActivityRepository] = None,
         audit_repo: Optional[AuditRepository] = None,
         customer_repo: Optional[CustomerRepository] = None,
+        quality_issue_repo: Optional[DataQualityIssueRepository] = None,
     ):
         self.lead_repo = lead_repo or LeadRepository()
         self.activity_repo = activity_repo or ActivityRepository()
         self.audit_repo = audit_repo or AuditRepository()
         self.customer_repo = customer_repo or CustomerRepository()
+        self.quality_issue_repo = quality_issue_repo or DataQualityIssueRepository()
 
     def _enrich_with_customer(self, lead: dict) -> dict:
         """Add nested customer data to lead."""
@@ -86,6 +93,9 @@ class LeadService:
 
         if lead.get("id"):
             lead["follow_ups_count"] = self.activity_repo.count_follow_ups_for_lead(lead["id"])
+            lead["quality_issue_count"] = self.quality_issue_repo.open_counts_for_leads(
+                [lead["id"]]
+            ).get(lead["id"], 0)
 
         customer = self.customer_repo.get_by_id(lead["customer_id"])
         if customer:
@@ -123,12 +133,16 @@ class LeadService:
         follow_up_counts = self.activity_repo.count_follow_ups_by_lead(
             [lead["id"] for lead in leads if lead.get("id")]
         )
+        quality_counts = self.quality_issue_repo.open_counts_for_leads(
+            [lead["id"] for lead in leads if lead.get("id")]
+        )
 
         # Collect unique customer IDs
         customer_ids = {l["customer_id"] for l in leads if l.get("customer_id")}
         if not customer_ids:
             for lead in leads:
                 lead["follow_ups_count"] = follow_up_counts.get(lead.get("id"), 0)
+                lead["quality_issue_count"] = quality_counts.get(lead.get("id"), 0)
             return leads
 
         # Batch fetch customers
@@ -143,6 +157,7 @@ class LeadService:
         # Enrich leads
         for lead in leads:
             lead["follow_ups_count"] = follow_up_counts.get(lead.get("id"), 0)
+            lead["quality_issue_count"] = quality_counts.get(lead.get("id"), 0)
             cid = lead.get("customer_id")
             if cid and cid in customers:
                 c = customers[cid]
@@ -171,6 +186,7 @@ class LeadService:
     def create(self, data: dict, actor_id: str) -> dict:
         """Create new lead."""
         self._validate_commercial_assignee(data.get("owner_id"), "owner")
+        self._validate_primary_contact(data["customer_id"], data.get("primary_contact_id"))
         data = merge_extra_fields(data)
         lead_id = self.lead_repo.create(data, actor_id)
 
@@ -234,6 +250,8 @@ class LeadService:
 
         if "owner_id" in data:
             self._validate_commercial_assignee(data["owner_id"], "owner")
+        if "primary_contact_id" in data:
+            self._validate_primary_contact(before["customer_id"], data["primary_contact_id"])
         data = merge_extra_fields(data, before.get("extra_json"))
 
         if "owner_id" in data and actor_role != "leader":
@@ -419,6 +437,18 @@ class LeadService:
         if member["role"] == "tech":
             raise InvalidLeadAssignmentError(
                 "Technical users cannot be lead owners or collaborators"
+            )
+
+    def _validate_primary_contact(
+        self, customer_id: str, contact_id: Optional[str]
+    ) -> None:
+        """Require a selected contact to be active and owned by the lead customer."""
+        if contact_id is None:
+            return
+        contact = self.customer_repo.get_contact_by_id(contact_id)
+        if not contact or contact["customer_id"] != customer_id:
+            raise InvalidLeadContactError(
+                "Lead primary contact must be an active contact of the lead customer"
             )
 
     def remove_assignment(

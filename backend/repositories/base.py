@@ -15,6 +15,8 @@ from .authorization_schema import (
     DEFAULT_ORGANIZATION_ID,
     apply_authorization_schema_migration,
 )
+from .import_governance_schema import apply_import_governance_schema
+from .member_identity_schema import apply_member_identity_schema
 
 # Database connection singleton
 _db_path: Optional[Path] = None
@@ -60,6 +62,8 @@ def _apply_runtime_migrations(conn: sqlite3.Connection) -> None:
     _repair_service_status_from_tasks(conn)
     _ensure_trip_planning_tables(conn)
     apply_authorization_schema_migration(conn)
+    apply_member_identity_schema(conn)
+    apply_import_governance_schema(conn)
     conn.commit()
 
 

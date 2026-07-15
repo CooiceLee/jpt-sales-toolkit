@@ -16,6 +16,9 @@ window.saveAfterSales = async function() {
         issue_description: desc,
         status: document.getElementById('as-status').value,
         solution: document.getElementById('as-solution').value || null,
+        customer_satisfaction: document.getElementById('as-satisfaction').value || null,
+        lessons_learned: document.getElementById('as-lessons').value || null,
+        remarks: document.getElementById('as-remarks').value || null,
         created_at: document.getElementById('as-date').value || null
     };
 
@@ -28,7 +31,13 @@ window.saveAfterSales = async function() {
             throw new Error('Only an assigned issue result can be updated.');
         }
         const data = RoleCapabilities.isTech()
-            ? { status: requestData.status, solution: requestData.solution }
+            ? {
+                status: requestData.status,
+                solution: requestData.solution,
+                customer_satisfaction: requestData.customer_satisfaction,
+                lessons_learned: requestData.lessons_learned,
+                remarks: requestData.remarks
+            }
             : requestData;
 
         if (issue?.id) {

@@ -73,8 +73,11 @@ jobs:
           $installDir = "$pwd\installed"
           $installProcess = Start-Process -Wait -PassThru -FilePath $installer.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$installDir"
           if ($installProcess.ExitCode -ne 0) { throw "Installer failed with exit code $($installProcess.ExitCode)" }
-          foreach ($name in @("user.json", "team.json", "regression.html", "smoke-v09.html")) {
+          foreach ($name in @("user.json", "team.json", "regression.html", "smoke-v09.html", "database.sqlite")) {
             if (Get-ChildItem $installDir -Recurse -Filter $name) { throw "Prohibited packaged asset: $name" }
+          }
+          foreach ($pattern in @("*.xlsx", "*.jptauth", "*.jptreq")) {
+            if (Get-ChildItem $installDir -Recurse -Filter $pattern) { throw "Prohibited packaged asset: $pattern" }
           }
           python scripts/smoke_frozen.py "$installDir\JPT Sales Toolkit.exe"
           $uninstallProcess = Start-Process -Wait -PassThru -FilePath "$installDir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
@@ -143,9 +146,15 @@ jobs:
             hdiutil detach -force "$mount_dir"
           }
           trap cleanup_mount EXIT
-          for name in user.json team.json regression.html smoke-v09.html; do
+          for name in user.json team.json regression.html smoke-v09.html database.sqlite; do
             if find "$mount_dir/JPT Sales Toolkit.app" -name "$name" -print -quit | grep -q .; then
               echo "Prohibited packaged asset: $name" >&2
+              exit 1
+            fi
+          done
+          for pattern in '*.xlsx' '*.jptauth' '*.jptreq'; do
+            if find "$mount_dir/JPT Sales Toolkit.app" -name "$pattern" -print -quit | grep -q .; then
+              echo "Prohibited packaged asset: $pattern" >&2
               exit 1
             fi
           done

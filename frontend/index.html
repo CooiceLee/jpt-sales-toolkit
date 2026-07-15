@@ -828,14 +828,15 @@
                         </div>
                         <div class="kpi-card">
                             <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">Import & Merge</h3>
-                            <p style="color:var(--ink-600);margin-bottom:16px;">Import data files from team members.</p>
+                            <p style="color:var(--ink-600);margin-bottom:12px;">JSON keeps the existing member exchange flow. XLSX uses Leader-controlled preflight, correction and commit.</p>
+                            <p class="import-template-link" data-leader-spreadsheet>JPT-XLSX-1.0 templates and source workbooks are distributed separately from the application installer.</p>
                             <div style="background:var(--warn-light,#fff3cd);border-left:4px solid var(--warn,#ffc107);padding:12px;margin-bottom:16px;border-radius:4px;">
                                 <strong style="color:var(--warn-dark,#856404);">Note:</strong>
                                 <span style="color:var(--warn-dark,#856404);font-size:14px;">Import only merges data records. Attachment files must be transferred separately. For complete backup/restore, ask the administrator to use the server backup/restore procedure.</span>
                             </div>
-                            <input type="file" id="import-file" accept=".json" style="margin-bottom:12px;">
+                            <input type="file" id="import-file" accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="onImportFileChanged()" style="margin-bottom:12px;">
                             <button type="button" class="btn btn-secondary" onclick="preflightImportData()">Preflight Check</button>
-                            <button type="button" class="btn btn-primary" onclick="importData()">Import & Merge</button>
+                            <button type="button" class="btn btn-primary" id="import-commit-btn" onclick="importData()">Import & Merge</button>
                             <div id="import-preflight-result" style="margin-top:16px;"></div>
                             <div id="import-result" style="margin-top:16px;"></div>
                         </div>
@@ -955,6 +956,7 @@
     <script src="/static/js/modules/assignment-users.js?v=1.0"></script>
     <script src="/static/js/modules/lead-closure.js?v=1.0"></script>
     <script src="/static/js/modules/followups-view.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-task-mappers.js?v=1.0"></script>
     <script src="/static/js/modules/followups-form.js?v=1.0"></script>
     <script src="/static/js/modules/followups-actions.js?v=1.0"></script>
     <script src="/static/js/modules/aftersales-view.js?v=1.0"></script>
@@ -966,6 +968,8 @@
     <script src="/static/js/modules/inquiry-save-errors.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-save.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-fields.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-field-renderer.js?v=1.0"></script>
+    <script src="/static/js/modules/data-quality-view.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-form.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-panel.js?v=1.0"></script>
 
@@ -973,6 +977,9 @@
     <script src="/static/js/modules/customer-merge-view.js?v=1.0"></script>
     <script src="/static/js/modules/customer-merge-action.js?v=1.0"></script>
     <script src="/static/js/modules/data-transfer.js?v=1.0"></script>
+    <script src="/static/js/modules/spreadsheet-import-state.js?v=1.0"></script>
+    <script src="/static/js/modules/spreadsheet-import-view.js?v=1.0"></script>
+    <script src="/static/js/modules/spreadsheet-import-actions.js?v=1.0"></script>
     <script src="/static/js/modules/data-governance.js?v=1.0"></script>
     <script src="/static/js/modules/data-review-tables.js?v=1.0"></script>
     <script src="/static/js/modules/data-review.js?v=1.0"></script>

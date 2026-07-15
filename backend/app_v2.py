@@ -28,6 +28,8 @@ from .routers import (
     data_exchange_router,
     authorization_router,
     desktop_router,
+    spreadsheet_import_router,
+    data_quality_issues_router,
 )
 
 # Application root directory
@@ -69,6 +71,8 @@ def create_app() -> FastAPI:
     app.include_router(data_exchange_router, prefix="/api")
     app.include_router(authorization_router, prefix="/api")
     app.include_router(desktop_router, prefix="/api")
+    app.include_router(spreadsheet_import_router, prefix="/api")
+    app.include_router(data_quality_issues_router, prefix="/api")
 
     @app.get("/api/health", include_in_schema=False)
     async def health_check():

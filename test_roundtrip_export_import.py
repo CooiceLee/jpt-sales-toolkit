@@ -24,8 +24,16 @@ from backend.repositories.base import init_db, _connection, _db_path
 from backend.repositories.customer_repository import CustomerRepository
 from backend.repositories.lead_repository import LeadRepository
 from backend.repositories.activity_repository import ActivityRepository
-from backend.repositories.task_repository import AfterSalesTaskRepository
-from backend.routers.data_exchange import export_data, import_data, ExportRequest
+from backend.repositories.task_repository import (
+    AfterSalesTaskRepository,
+    PreSalesTaskRepository,
+)
+from backend.routers.data_exchange import (
+    ExportRequest,
+    export_data,
+    import_data,
+    preflight_import,
+)
 from backend.services import CustomerService, LeadService
 import backend.repositories.base as base_module
 
@@ -103,6 +111,10 @@ def setup_test_database(db_path):
         INSERT INTO users (id, username, password_hash, display_name, role, is_active, created_at)
         VALUES ('user-2', 'collab1', 'hash2', 'Collaborator One', 'sales', 1, datetime('now'))
     """)
+    conn.execute("""
+        INSERT INTO users (id, username, password_hash, display_name, role, is_active, created_at)
+        VALUES ('user-tech', 'tech1', 'hash3', 'Tech One', 'tech', 1, datetime('now'))
+    """)
 
     conn.commit()
 
@@ -115,6 +127,7 @@ def setup_test_database(db_path):
     )
     activity_repo = ActivityRepository(conn)
     task_repo = AfterSalesTaskRepository(conn)
+    pre_sales_repo = PreSalesTaskRepository(conn)
 
     # Customer 1
     customer1 = customer_service.create({
@@ -159,12 +172,24 @@ def setup_test_database(db_path):
     task_repo.create(
         lead_id=lead1_id,
         data={
-            'assignee_id': 'user-1',
+            'assignee_id': 'user-tech',
             'issue_type': 'Technical',
             'status': 'Open',
             'issue_description': 'Installation support needed'
         },
         actor_id='user-1'
+    )
+
+    pre_sales_repo.create(
+        lead_id=lead1_id,
+        data={
+            'assignee_id': 'user-tech',
+            'status': 'In Progress',
+            'request_json': json.dumps({'sample': 'fiber'}),
+            'result_json': json.dumps({'result': 'pending'}),
+            'due_date': '2026-08-01',
+        },
+        actor_id='user-1',
     )
 
     # Customer 2
@@ -224,7 +249,8 @@ def get_database_snapshot(db_path):
         'customers': [],
         'leads': [],
         'activities': [],
-        'tasks': []
+        'tasks': [],
+        'pre_sales_tasks': [],
     }
 
     # Customers
@@ -259,6 +285,14 @@ def get_database_snapshot(db_path):
             'issue_type': row['issue_type'],
             'issue_description': row['issue_description'],
             'status': row['status']
+        })
+
+    for row in conn.execute("SELECT * FROM pre_sales_tasks WHERE archived_at IS NULL ORDER BY id"):
+        snapshot['pre_sales_tasks'].append({
+            'status': row['status'],
+            'request_json': row['request_json'],
+            'result_json': row['result_json'],
+            'due_date': row['due_date'],
         })
 
     conn.close()
@@ -328,6 +362,10 @@ async def test_roundtrip():
         INSERT OR IGNORE INTO users (id, username, password_hash, display_name, role, is_active, created_at)
         VALUES ('user-2', 'collab1', 'hash2', 'Collaborator One', 'sales', 1, datetime('now'))
     """)
+    conn2.execute("""
+        INSERT OR IGNORE INTO users (id, username, password_hash, display_name, role, is_active, created_at)
+        VALUES ('user-tech', 'tech1', 'hash3', 'Tech One', 'tech', 1, datetime('now'))
+    """)
     conn2.commit()
     conn2.close()
 
@@ -389,6 +427,8 @@ async def test_roundtrip():
         "Customer count mismatch between exports"
     assert len(export1_data['leads']) == len(export2_data['leads']), \
         "Lead count mismatch between exports"
+    assert len(snapshot2['pre_sales_tasks']) == 1, \
+        "Pre-sales tasks should survive export/import"
 
     # Compare customer display names
     export1_customers = sorted([c['display_name'] for c in export1_data['customers'].values()])
@@ -1033,6 +1073,253 @@ async def test_customer_contact_merge(test_dir):
     print("\n✅ Customer contact merge test PASSED")
 
 
+async def test_identity_and_pre_sales_hardening(test_dir):
+    """Verify source owners, nullable history identities, task roles, and idempotency."""
+    print("\n" + "="*60)
+    print("TEST 10: Identity-safe import and pre-sales round-trip")
+    print("="*60)
+
+    db_path = test_dir / "test_db_identity_hardening.sqlite"
+    import_path = test_dir / "identity_hardening_import.json"
+    export_path = test_dir / "identity_hardening_export.json"
+    if db_path.exists():
+        db_path.unlink()
+
+    reset_db_connection()
+    init_db(db_path)
+    conn = sqlite3.connect(str(db_path))
+    users = (
+        ("leader-local", "leader", "Local Leader", "leader", 1),
+        ("sales-source", "sales", "Source Sales", "sales", 1),
+        ("tech-active", "tech", "Active Tech", "tech", 1),
+        ("sales-inactive", "inactive", "Inactive Sales", "sales", 0),
+        ("tech-inactive", "inactive-tech", "Inactive Tech", "tech", 0),
+    )
+    conn.executemany(
+        """
+        INSERT INTO users (
+            id, username, password_hash, display_name, role, is_active, created_at
+        ) VALUES (?, ?, 'hash', ?, ?, ?, datetime('now'))
+        """,
+        users,
+    )
+    conn.commit()
+    conn.close()
+
+    def lead_item(source_id, customer_id, owner_id, title, related=False):
+        item = {
+            "lead": {
+                "id": source_id,
+                "display_id": f"EXT-{source_id}",
+                "customer_id": customer_id,
+                "title": title,
+                "sales_stage": "Following",
+                "owner_id": owner_id,
+            },
+            "activities": [],
+            "pre_sales_tasks": [],
+            "after_sales_tasks": [],
+            "attachments": [],
+        }
+        if not related:
+            return item
+        item["activities"] = [
+            {
+                "id": "activity-unknown",
+                "actor_id": "missing-actor",
+                "action_type": "comment",
+                "summary": "Unknown historical actor",
+                "created_at": "2026-01-01T09:00:00",
+            },
+            {
+                "id": "activity-inactive",
+                "actor_id": "tech-inactive",
+                "action_type": "comment",
+                "summary": "Inactive historical actor",
+                "created_at": "2026-01-01T09:05:00",
+            },
+        ]
+        item["pre_sales_tasks"] = [
+            {
+                "id": "pre-valid",
+                "assignee_id": "tech-active",
+                "status": "In Progress",
+                "request_json": {"sample": "A"},
+                "result_json": {"result": "pending"},
+                "due_date": "2026-02-01",
+                "created_at": "2026-01-01T10:00:00",
+                "updated_at": "2026-01-02T10:00:00",
+            },
+            {
+                "id": "pre-sales-role",
+                "assignee_id": "sales-source",
+                "status": "Open",
+                "request_json": {"sample": "B"},
+                "created_at": "2026-01-01T10:05:00",
+            },
+            {
+                "id": "pre-inactive",
+                "assignee_id": "tech-inactive",
+                "status": "Open",
+                "request_json": {"sample": "C"},
+                "created_at": "2026-01-01T10:10:00",
+            },
+            {
+                "id": "pre-unknown",
+                "assignee_id": "missing-tech",
+                "status": "Open",
+                "request_json": {"sample": "D"},
+                "created_at": "2026-01-01T10:15:00",
+            },
+        ]
+        item["after_sales_tasks"] = [
+            {
+                "id": "after-valid",
+                "assignee_id": "tech-active",
+                "issue_type": "Technical",
+                "status": "Open",
+                "issue_description": "Valid technical owner",
+                "created_at": "2026-01-01T11:00:00",
+            },
+            {
+                "id": "after-unknown",
+                "assignee_id": "missing-tech",
+                "issue_type": "Other",
+                "status": "Open",
+                "issue_description": "Unknown technical owner",
+                "created_at": "2026-01-01T11:05:00",
+            },
+        ]
+        return item
+
+    customer_specs = {
+        "customer-valid": "Identity Valid Customer",
+        "customer-tech-owner": "Identity Tech Owner Customer",
+        "customer-inactive-owner": "Identity Inactive Owner Customer",
+        "customer-unknown-owner": "Identity Unknown Owner Customer",
+    }
+    payload = {
+        "export_time": "2026-01-03T00:00:00",
+        "exported_by": "source-system",
+        "exporter_name": "Source System",
+        "version": "v2.0",
+        "customers": {
+            key: {"id": key, "display_name": name, "contacts": []}
+            for key, name in customer_specs.items()
+        },
+        "leads": [
+            lead_item(
+                "lead-valid", "customer-valid", "sales-source",
+                "Valid source owner", related=True,
+            ),
+            lead_item(
+                "lead-tech-owner", "customer-tech-owner", "tech-active",
+                "Tech cannot own lead",
+            ),
+            lead_item(
+                "lead-inactive-owner", "customer-inactive-owner", "sales-inactive",
+                "Inactive sales cannot own lead",
+            ),
+            lead_item(
+                "lead-unknown-owner", "customer-unknown-owner", "missing-sales",
+                "Unknown sales cannot own lead",
+            ),
+        ],
+    }
+    import_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    leader = MockUser("leader-local", "leader", "Local Leader", "leader")
+    preflight = await preflight_import(
+        MockUploadFile(str(import_path)),
+        leader.user_dict,
+    )
+    assert preflight["permission"]["allowed_leads"] == 1
+    assert preflight["summary"]["errors"] == 3
+    assert preflight["source_snapshot"]["pre_sales_tasks"] == 4
+    assert preflight["source_snapshot"]["after_sales_tasks"] == 2
+
+    first = await import_data(MockUploadFile(str(import_path)), leader.user_dict)
+    assert first["new_leads"] == 1, "Only the valid source owner lead should import"
+    assert first["skipped_records"] == 3, "Invalid owners must block their leads"
+    assert first["merged_pre_sales_tasks"] == 4
+    assert first["merged_after_sales_tasks"] == 2
+    assert first["merged_tasks"] == 6
+    assert first["snapshot_delta"]["pre_sales_tasks"] == 4
+    assert first["snapshot_delta"]["after_sales_tasks"] == 2
+    assert len(first["errors"]) == 3
+    assert any("must have role leader/sales" in error for error in first["errors"])
+    assert any("is inactive" in error for error in first["errors"])
+    assert any("does not exist locally" in error for error in first["errors"])
+    assert any("imported as null" in warning for warning in first["warnings"])
+    assert any("imported as unassigned" in warning for warning in first["warnings"])
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    imported_lead = dict(conn.execute(
+        "SELECT id, owner_id FROM leads WHERE title = 'Valid source owner'"
+    ).fetchone())
+    assert imported_lead["owner_id"] == "sales-source", \
+        "Leader import must preserve a valid source commercial owner"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM customers WHERE archived_at IS NULL"
+    ).fetchone()[0] == 1, "Blocked leads must not pollute customers"
+
+    activity_actors = {
+        row["summary"]: row["actor_id"]
+        for row in conn.execute(
+            "SELECT summary, actor_id FROM lead_activities WHERE lead_id = ?",
+            (imported_lead["id"],),
+        )
+    }
+    assert activity_actors["Unknown historical actor"] is None
+    assert activity_actors["Inactive historical actor"] is None
+
+    pre_assignees = [row[0] for row in conn.execute(
+        "SELECT assignee_id FROM pre_sales_tasks WHERE lead_id = ? ORDER BY created_at",
+        (imported_lead["id"],),
+    )]
+    after_assignees = [row[0] for row in conn.execute(
+        "SELECT assignee_id FROM after_sales_tasks WHERE lead_id = ? ORDER BY created_at",
+        (imported_lead["id"],),
+    )]
+    assert pre_assignees == ["tech-active", None, None, None]
+    assert after_assignees == ["tech-active", None]
+    conn.close()
+
+    try:
+        LeadRepository().add_assignment(
+            imported_lead["id"],
+            "tech-active",
+            "collaborator",
+            "leader-local",
+        )
+    except ValueError as exc:
+        assert "cannot be lead owners or collaborators" in str(exc)
+    else:
+        raise AssertionError("Tech must not be accepted as a lead collaborator")
+
+    second = await import_data(MockUploadFile(str(import_path)), leader.user_dict)
+    assert second["new_leads"] == 0
+    assert second["merged_activities"] == 0
+    assert second["merged_pre_sales_tasks"] == 0
+    assert second["merged_after_sales_tasks"] == 0
+
+    response = await export_data(
+        MockRequest([imported_lead["id"]]),
+        leader.user_dict,
+    )
+    exported = await write_streaming_response(response, export_path)
+    exported_lead = exported["leads"][0]
+    assert len(exported_lead["pre_sales_tasks"]) == 4
+    assert len(exported_lead["after_sales_tasks"]) == 2
+    assert any(
+        task["assignee_id"] == "tech-active"
+        for task in exported_lead["pre_sales_tasks"]
+    )
+
+    print("\n✅ Identity-safe import and pre-sales round-trip test PASSED")
+
+
 async def main():
     """Run all tests."""
     print("\n" + "="*60)
@@ -1066,6 +1353,9 @@ async def main():
 
         # Test 9: Customer contact merge
         await test_customer_contact_merge(test_dir)
+
+        # Test 10: Identity-safe import and pre-sales round-trip
+        await test_identity_and_pre_sales_hardening(test_dir)
 
         print("\n" + "="*60)
         print("✅ ALL TESTS PASSED")
