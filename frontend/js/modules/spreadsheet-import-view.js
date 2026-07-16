@@ -1,12 +1,15 @@
 /** Rendering for spreadsheet preflight, mappings, exclusions, and commit state. */
 (function() {
     const safe = value => escapeHtml(String(value ?? ''));
+    const tr = text => window.I18n?.t(text) || text;
     const asList = (value, keyName) => Array.isArray(value) ? value : Object.entries(value || {}).map(
         ([key, item]) => item && typeof item === 'object' ? { [keyName]: key, ...item } : { [keyName]: key }
     );
 
     function candidateOptions(items, selected, type) {
-        const first = type === 'customer' ? '<option value="__CREATE__">Create new customer</option>' : '<option value="">Select account</option>';
+        const first = type === 'customer'
+            ? `<option value="__CREATE__">${tr('Create new customer')}</option>`
+            : `<option value="">${tr('Select account')}</option>`;
         const choices = items || [];
         const selectedAvailable = choices.some(item =>
             (item.user_id || item.customer_id || item.id || '') === selected
@@ -30,7 +33,7 @@
             const selected = SpreadsheetImportState.resolutions().member_mappings[name]
                 || item.user_id || '';
             return `<label class="import-resolution-row">
-                <span><strong>${safe(name)}</strong><small>${safe(item.purpose || '')} · ${safe(item.status || item.matched_by || 'unresolved')}</small></span>
+                <span><strong>${safe(name)}</strong><small>${safe(item.purpose || '')} · ${safe(tr(item.status || item.matched_by || 'unresolved'))}</small></span>
                 <select class="form-input" data-member-key="${safe(name)}">${candidateOptions(item.candidates || defaults, selected, 'member')}</select>
             </label>`;
         }).join('');
@@ -42,7 +45,7 @@
             const selected = SpreadsheetImportState.resolutions().customer_mappings[key]
                 || item.customer_id || '__CREATE__';
             return `<label class="import-resolution-row">
-                <span><strong>${safe(item.display_name || key)}</strong><small>${safe(item.status || item.match_type || 'new customer')}</small></span>
+                <span><strong>${safe(item.display_name || key)}</strong><small>${safe(tr(item.status || item.match_type || 'new customer'))}</small></span>
                 <select class="form-input" data-customer-key="${safe(key)}">${candidateOptions(item.candidates, selected, 'customer')}</select>
             </label>`;
         }).join('');
@@ -56,7 +59,7 @@
                 && item.entity_type !== 'member' && key;
             return `<li class="import-issue import-issue-${safe(item.severity || 'info')}">
                 <span><strong>${safe((item.severity || 'info').toUpperCase())}</strong> · ${safe(item.code || item.issue_code)} · ${safe(item.message)}</span>
-                ${canExclude ? `<label><input type="checkbox" data-exclude-key="${safe(key)}" ${excluded.has(key) ? 'checked' : ''}> Exclude record</label>` : ''}
+                ${canExclude ? `<label><input type="checkbox" data-exclude-key="${safe(key)}" ${excluded.has(key) ? 'checked' : ''}> ${tr('Exclude record')}</label>` : ''}
             </li>`;
         }).join('');
     }
@@ -73,18 +76,18 @@
         const customers = customerRows(report);
         document.getElementById('import-preflight-result').innerHTML = `
             <div class="governance-report spreadsheet-preflight">
-                <div class="import-report-head"><h4>Spreadsheet Preflight</h4><span>${safe(report.format)} · ${safe(report.dataset_id)}</span></div>
+                <div class="import-report-head"><h4>${tr('Spreadsheet Preflight')}</h4><span>${safe(report.format)} · ${safe(report.dataset_id)}</span></div>
                 <div class="governance-kpis">
-                    <span>Source rows <strong>${sourceRows}</strong></span>
-                    <span>Entities <strong>${entityTotal}</strong></span>
-                    <span>Errors <strong>${summary.error_count ?? summary.errors ?? summary.blockers ?? 0}</strong></span>
-                    <span>Warnings <strong>${summary.warning_count ?? summary.warnings ?? 0}</strong></span>
+                    <span>${tr('Source rows')} <strong>${sourceRows}</strong></span>
+                    <span>${tr('Entities')} <strong>${entityTotal}</strong></span>
+                    <span>${tr('Errors')} <strong>${summary.error_count ?? summary.errors ?? summary.blockers ?? 0}</strong></span>
+                    <span>${tr('Warnings')} <strong>${summary.warning_count ?? summary.warnings ?? 0}</strong></span>
                 </div>
-                ${members ? `<section class="import-resolution"><h5>Member account mapping</h5>${members}</section>` : ''}
-                ${customers ? `<section class="import-resolution"><h5>Customer matching</h5>${customers}</section>` : ''}
-                <section class="import-resolution"><h5>Issues and exclusions</h5><ul class="import-issue-list">${issueRows(report) || '<li>No issues found</li>'}</ul></section>
-                <button type="button" class="btn btn-secondary" onclick="recheckSpreadsheetImport()">Apply corrections & recheck</button>
-                <span class="import-commit-state">${report.can_commit ? 'Ready to import' : 'Resolve or exclude all blockers before import'}</span>
+                ${members ? `<section class="import-resolution"><h5>${tr('Member account mapping')}</h5>${members}</section>` : ''}
+                ${customers ? `<section class="import-resolution"><h5>${tr('Customer matching')}</h5>${customers}</section>` : ''}
+                <section class="import-resolution"><h5>${tr('Issues and exclusions')}</h5><ul class="import-issue-list">${issueRows(report) || `<li>${tr('No issues found')}</li>`}</ul></section>
+                <button type="button" class="btn btn-secondary" onclick="recheckSpreadsheetImport()">${tr('Apply corrections & recheck')}</button>
+                <span class="import-commit-state">${tr(report.can_commit ? 'Ready to import' : 'Resolve or exclude all blockers before import')}</span>
             </div>`;
         bindResolutionInputs();
         syncCommitButton();

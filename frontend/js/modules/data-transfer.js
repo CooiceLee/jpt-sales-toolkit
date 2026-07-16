@@ -24,6 +24,24 @@ window.exportData = async function() {
     }
 };
 
+window.createFullBackup = async function() {
+    const tr = text => window.I18n?.t(text) || text;
+    const result = document.getElementById('backup-result');
+    const button = document.getElementById('create-backup-btn');
+    try {
+        button.disabled = true;
+        result.style.display = 'block';
+        result.textContent = tr('Creating full backup...');
+        const report = await ApiClient.createFullBackup();
+        result.innerHTML = `<strong>${escapeHtml(tr('Full backup created'))}</strong><br><code>${escapeHtml(report.backup_path || '')}</code>`;
+    } catch (err) {
+        console.error('Backup error:', err);
+        result.textContent = `${tr('Backup failed')}: ${err.message || tr('Unknown error')}`;
+    } finally {
+        button.disabled = false;
+    }
+};
+
 window.LegacyImportView = {
     renderImport(report) {
         const errors = report.errors || [];

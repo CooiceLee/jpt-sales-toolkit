@@ -107,6 +107,23 @@ def test_frontend_is_locally_bootstrapped() -> None:
     assert "LeaderJPT2026" not in smoke
 
 
+def test_frontend_language_and_backup_controls() -> None:
+    index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    i18n = (ROOT / "frontend" / "js" / "i18n.js").read_text(encoding="utf-8")
+    api = (ROOT / "frontend" / "js" / "api-client.js").read_text(encoding="utf-8")
+    transfer = (ROOT / "frontend" / "js" / "modules" / "data-transfer.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'id="language-toggle"' in index
+    assert index.index("/static/js/i18n.js") < index.index("/static/js/app.js")
+    assert "jpt_ui_language" in i18n
+    assert "MutationObserver" in i18n
+    assert "Spreadsheet Preflight" in i18n and "Excel 预检" in i18n
+    assert 'id="create-backup-btn"' in index
+    assert "createFullBackup" in api
+    assert "ApiClient.createFullBackup()" in transfer
+
+
 def test_authenticated_desktop_shutdown() -> None:
     stopped = threading.Event()
     app = create_app()
@@ -127,6 +144,7 @@ def main() -> None:
         test_single_instance_lock,
         test_packaging_sources,
         test_frontend_is_locally_bootstrapped,
+        test_frontend_language_and_backup_controls,
         test_authenticated_desktop_shutdown,
     ):
         test()

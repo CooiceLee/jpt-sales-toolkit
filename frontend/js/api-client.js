@@ -703,6 +703,10 @@ const ApiClient = (function() {
         return request('/admin/system-info');
     }
 
+    async function createFullBackup() {
+        return request('/admin/backup', { method: 'POST' });
+    }
+
     // ===== Data Exchange API =====
     async function exportData(leadIds = null) {
         const token = getToken();
@@ -938,6 +942,7 @@ const ApiClient = (function() {
 
         // Admin
         getSystemInfo,
+        createFullBackup,
 
         // Data Exchange
         exportData,

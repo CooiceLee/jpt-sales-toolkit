@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/static/css/style.css?v=4.4">
 </head>
 <body>
+    <button type="button" id="language-toggle" class="language-toggle" onclick="I18n.toggle()" aria-label="Switch to 中文">中</button>
     <!-- Login Modal -->
     <div id="login-modal" class="modal">
         <div class="modal-content" style="max-width:400px;">
@@ -825,6 +826,12 @@
                                 <p style="color:var(--success);margin-bottom:8px;">Export successful!</p>
                                 <a id="export-link" href="#" class="btn btn-secondary">Download File</a>
                             </div>
+                            <div data-leader-spreadsheet style="border-top:1px solid var(--cream-200);margin-top:20px;padding-top:18px;">
+                                <h4 style="font-size:14px;margin-bottom:8px;">Full Backup Before Import</h4>
+                                <p style="color:var(--ink-600);font-size:13px;margin-bottom:12px;">Includes the database, attachments and runtime authorization configuration. Keep the displayed backup path for rollback.</p>
+                                <button type="button" class="btn btn-secondary" id="create-backup-btn" onclick="createFullBackup()">Create Full Backup</button>
+                                <div id="backup-result" style="display:none;margin-top:12px;font-size:13px;overflow-wrap:anywhere;"></div>
+                            </div>
                         </div>
                         <div class="kpi-card">
                             <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">Import & Merge</h3>
@@ -913,6 +920,7 @@
     </div>
 
     <script src="/static/vendor/leaflet/leaflet.js?v=1.9.4"></script>
+    <script src="/static/js/i18n.js?v=1.0"></script>
     <script src="/static/js/api-client.js?v=3.3"></script>
     <script src="/static/js/shared/utils.js?v=1.0"></script>
     <script src="/static/js/shared/render.js?v=1.0"></script>
