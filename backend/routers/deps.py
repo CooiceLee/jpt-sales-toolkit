@@ -17,8 +17,8 @@ def get_app_settings() -> AppSettings:
     return get_settings()
 
 
-def get_auth_service() -> AuthService:
-    """Dependency for auth service."""
+async def get_auth_service() -> AuthService:
+    """Construct auth services on the event-loop thread that uses the database."""
     return AuthService()
 
 

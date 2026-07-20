@@ -3,17 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store, max-age=0">
     <title>JPT Sales Toolkit</title>
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css?v=1.9.4" />
-    <link rel="stylesheet" href="/static/css/style.css?v=4.4">
+    <link rel="stylesheet" href="/static/css/style.css?v=4.9">
 </head>
 <body>
-    <button type="button" id="language-toggle" class="language-toggle" onclick="I18n.toggle()" aria-label="Switch to 中文">中</button>
     <!-- Login Modal -->
     <div id="login-modal" class="modal">
         <div class="modal-content" style="max-width:400px;">
             <div class="modal-header">
                 <h2 class="modal-title">JPT Sales Toolkit</h2>
+                <button type="button" class="language-toggle" data-language-toggle onclick="I18n.toggle()" aria-label="Switch to 中文">中</button>
             </div>
             <div class="modal-body">
                 <p style="margin-bottom:20px;color:var(--ink-600);">Sign in to continue</p>
@@ -40,6 +41,7 @@
         <div class="modal-content activation-modal-content">
             <div class="modal-header">
                 <h2 class="modal-title" id="activation-modal-title">Activate JPT Sales Toolkit</h2>
+                <button type="button" class="language-toggle" data-language-toggle onclick="I18n.toggle()" aria-label="Switch to 中文">中</button>
             </div>
             <div class="modal-body">
                 <div id="activation-bootstrap-section" class="hidden">
@@ -47,7 +49,14 @@
                     <div class="activation-bootstrap-grid">
                         <input type="text" class="form-input" id="bootstrap-username" placeholder="Leader username" autocomplete="username">
                         <input type="text" class="form-input" id="bootstrap-display-name" placeholder="Display name" autocomplete="name">
-                        <input type="text" class="form-input" id="bootstrap-region" placeholder="Region (optional)" autocomplete="off">
+                        <select class="form-input" id="bootstrap-region" title="Business region" required>
+                            <option value="" selected>Select business region</option>
+                            <option value="GLOBAL">GLOBAL</option>
+                            <option value="EU">Europe</option>
+                            <option value="NA_CA_AU">North America / Canada / Australia</option>
+                            <option value="RU_TR_ME">Russia / Turkey / Middle East</option>
+                            <option value="SEA">Southeast Asia</option>
+                        </select>
                         <span></span>
                         <input type="password" class="form-input" id="bootstrap-password" placeholder="Login password (8+ characters)" autocomplete="new-password">
                         <input type="password" class="form-input" id="bootstrap-password-confirm" placeholder="Confirm login password" autocomplete="new-password">
@@ -151,6 +160,10 @@
 
     <!-- Main App -->
     <div id="app" class="app" style="display:none;">
+        <div id="install-location-warning" class="install-location-warning hidden">
+            <strong>Finish installing JPT</strong>
+            <span>This app is running from the DMG. Quit JPT, drag it to Applications, eject the DMG, then open it from Applications.</span>
+        </div>
         <!-- Icon Rail -->
         <aside class="rail">
             <div class="rail-logo">J</div>
@@ -166,7 +179,7 @@
             <button type="button" class="rail-btn" data-module="followup" title="Follow-up">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
             </button>
-            <button type="button" class="rail-btn" data-module="sampling" title="Sampling">
+            <button type="button" class="rail-btn" data-module="sampling" title="Pre-sales / Sampling">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
             </button>
             <button type="button" class="rail-btn" data-module="deal" title="Deal">
@@ -235,7 +248,7 @@
                 </div>
                 <div class="nav-item" data-module="sampling">
                     <span class="nav-step">04</span>
-                    <span class="nav-label">Sampling</span>
+                    <span class="nav-label">Pre-sales / Sampling</span>
                     <span class="nav-counts"><span class="nav-count-total" id="nav-sampling-total">0</span></span>
                 </div>
                 <div class="nav-item" data-module="deal">
@@ -300,7 +313,10 @@
                     <span class="breadcrumb-sep">/</span>
                     <span class="breadcrumb-current" id="breadcrumb-current">Dashboard</span>
                 </nav>
-                <div class="header-actions" id="header-actions"></div>
+                <div class="header-actions" id="header-actions">
+                    <span class="runtime-version" id="runtime-version" title="Running version">v—</span>
+                    <button type="button" id="language-toggle" class="language-toggle" data-language-toggle onclick="I18n.toggle()" aria-label="Switch to 中文">中</button>
+                </div>
             </header>
 
             <div class="main-content">
@@ -341,7 +357,7 @@
                         <div class="map-card">
                             <div class="map-header">
                                 <div>
-                                    <div class="card-title">Review Map</div>
+                                    <div class="card-title">Customer Location Map</div>
                                     <div class="map-summary" id="map-summary">Loading map data...</div>
                                 </div>
                                 <div class="map-controls">
@@ -360,17 +376,17 @@
                                         <option value="won">Won</option>
                                         <option value="lost">Lost</option>
                                     </select>
-                                    <select class="filter-select" id="map-region-filter" title="Region">
-                                        <option value="">All regions</option>
+                                    <select class="filter-select" id="map-region-filter" title="Customer geographic region" aria-label="Customer geographic region">
+                                        <option value="">All customer geographies</option>
                                         <option value="EU">Europe</option>
                                         <option value="SEA">Southeast Asia</option>
                                         <option value="AM">Americas</option>
                                         <option value="RIMEA">Russia/India/ME</option>
                                     </select>
                                     <select class="filter-select" id="map-quality-filter" title="Coordinate quality">
-                                        <option value="">All coordinates</option>
+                                        <option value="">All mapped coordinates</option>
                                         <option value="exact">Exact only</option>
-                                        <option value="needs_geocode">Needs geocode</option>
+                                        <option value="needs_geocode">Approximate only</option>
                                     </select>
                                     <button type="button" class="btn btn-secondary btn-sm" onclick="batchGeocode()" title="Re-geocode customers without precise coordinates" id="batch-geocode-btn" style="white-space:nowrap;">
                                         Batch Geocode
@@ -431,13 +447,6 @@
                             <option value="Won">Won</option>
                             <option value="Lost">Lost</option>
                         </select>
-                        <select class="filter-select" id="filter-region">
-                            <option value="">All regions</option>
-                            <option value="EU">Europe</option>
-                            <option value="SEA">Southeast Asia</option>
-                            <option value="AM">Americas</option>
-                            <option value="RIMEA">Russia/India/ME</option>
-                        </select>
                         <input type="text" class="form-input" id="search-inquiry" placeholder="Search company, ID, country..." style="max-width:250px;">
                         <span class="filter-spacer"></span>
                         <span id="inquiry-count" style="color:var(--ink-500);font-size:13px;">0 inquiries</span>
@@ -454,32 +463,53 @@
                             <button type="button" class="filter-tab active" data-filter="all">All Active</button>
                             <button type="button" class="filter-tab" data-filter="overdue">Overdue</button>
                             <button type="button" class="filter-tab" data-filter="today">Due today</button>
-                            <button type="button" class="filter-tab" data-filter="week">This week</button>
+                            <button type="button" class="filter-tab" data-filter="week">Next 7 days</button>
                         </div>
-                        <select class="filter-select" id="followup-region">
-                            <option value="">All regions</option>
-                        </select>
                         <span class="filter-spacer"></span>
                         <span id="followup-count" style="color:var(--ink-500);font-size:13px;">0 active</span>
                         <button type="button" class="btn btn-primary" onclick="logFollowUp()">+ Log follow-up</button>
+                    </div>
+                    <div class="followup-activity-bar">
+                        <label for="followup-activity-filter">Last activity</label>
+                        <select class="filter-select" id="followup-activity-filter">
+                            <option value="all">Any activity time</option>
+                            <option value="never">Never formally followed up</option>
+                            <option value="7">Inactive 7+ days</option>
+                            <option value="14">Inactive 14+ days</option>
+                            <option value="30">Inactive 30+ days</option>
+                            <option value="60">Inactive 60+ days</option>
+                            <option value="90">Inactive 90+ days</option>
+                            <option value="custom">Custom activity dates</option>
+                        </select>
+                        <div class="followup-custom-dates hidden" id="followup-custom-dates" aria-hidden="true">
+                            <label>
+                                <span>From</span>
+                                <input type="date" class="form-input" id="followup-activity-from" aria-label="Last activity from">
+                            </label>
+                            <label>
+                                <span>Through</span>
+                                <input type="date" class="form-input" id="followup-activity-to" aria-label="Last activity through">
+                            </label>
+                        </div>
+                        <span class="followup-filter-help">Uses the latest formal follow-up; otherwise the inquiry or creation date.</span>
                     </div>
                     <div class="cards-grid" id="followup-cards"></div>
                 </div>
 
                 <!-- Sampling Module -->
                 <div id="module-sampling" class="module">
-                    <h1 class="module-title">Step 04 · Sample Manager</h1>
+                    <h1 class="module-title">Step 04 · Pre-sales / Sampling</h1>
                     <div class="filters-bar">
                         <div class="filter-tabs" id="sampling-tabs">
-                            <button type="button" class="filter-tab active" data-filter="all">All sampling</button>
+                            <button type="button" class="filter-tab active" data-filter="all">All tasks</button>
                             <button type="button" class="filter-tab" data-filter="Open">Open</button>
-                            <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
+                            <button type="button" class="filter-tab" data-filter="In Progress">In Progress</button>
                             <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
                             <button type="button" class="filter-tab" data-filter="Cancelled">Cancelled</button>
                         </div>
                         <span class="filter-spacer"></span>
-                        <span id="sampling-count" style="color:var(--ink-500);font-size:13px;">0 samples</span>
-                        <button type="button" class="btn btn-primary" onclick="newSampleRequest()">+ New sample request</button>
+                        <span id="sampling-count" style="color:var(--ink-500);font-size:13px;">0 leads · 0 tasks</span>
+                        <button type="button" class="btn btn-primary" data-task-manager onclick="newSampleRequest()">+ New pre-sales task</button>
                     </div>
                     <div class="cards-grid" id="sampling-cards"></div>
                 </div>
@@ -619,8 +649,8 @@
                 <div id="module-trip-planner" class="module">
                     <h1 class="module-title">Trip Planner</h1>
                     <div class="filters-bar">
-                        <select class="filter-select" id="trip-region">
-                            <option value="">All regions</option>
+                        <select class="filter-select" id="trip-region" title="Customer geographic region" aria-label="Customer geographic region">
+                            <option value="">All customer geographies</option>
                             <option value="EU">Europe</option>
                             <option value="SEA">Southeast Asia</option>
                             <option value="AM">Americas</option>
@@ -778,7 +808,14 @@
                                     <option value="tech">Tech</option>
                                     <option value="leader">Leader</option>
                                 </select>
-                                <input type="text" class="form-input" id="authorization-member-region" placeholder="Region (optional)">
+                                <select class="form-input" id="authorization-member-region" title="Business region" required>
+                                    <option value="">Select business region</option>
+                                    <option value="GLOBAL">GLOBAL</option>
+                                    <option value="EU">Europe</option>
+                                    <option value="NA_CA_AU">North America / Canada / Australia</option>
+                                    <option value="RU_TR_ME">Russia / Turkey / Middle East</option>
+                                    <option value="SEA">Southeast Asia</option>
+                                </select>
                             </div>
                             <div class="authorization-form-actions">
                                 <button type="button" class="btn btn-secondary hidden" id="authorization-member-cancel" onclick="cancelAuthorizationMemberEdit()">Cancel</button>
@@ -810,96 +847,93 @@
                     </div>
                 </div>
 
-                <!-- Export Module -->
+                <!-- Data transfer and governed import -->
                 <div id="module-export" class="module">
-                    <h1 class="module-title">Export / Import</h1>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
-                        <div class="kpi-card">
-                            <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">Export Data</h3>
-                            <p style="color:var(--ink-600);margin-bottom:16px;">Export your inquiries to share with your leader.</p>
-                            <div style="background:var(--warn-light,#fff3cd);border-left:4px solid var(--warn,#ffc107);padding:12px;margin-bottom:16px;border-radius:4px;">
-                                <strong style="color:var(--warn-dark,#856404);">Note:</strong>
-                                <span style="color:var(--warn-dark,#856404);font-size:14px;">Attachment files are NOT included in JSON export (metadata only).</span>
-                            </div>
-                            <button type="button" class="btn btn-primary" onclick="exportData()">Export My Data</button>
-                            <div id="export-result" style="margin-top:16px;display:none;">
-                                <p style="color:var(--success);margin-bottom:8px;">Export successful!</p>
-                                <a id="export-link" href="#" class="btn btn-secondary">Download File</a>
-                            </div>
-                            <div data-leader-spreadsheet style="border-top:1px solid var(--cream-200);margin-top:20px;padding-top:18px;">
-                                <h4 style="font-size:14px;margin-bottom:8px;">Full Backup Before Import</h4>
-                                <p style="color:var(--ink-600);font-size:13px;margin-bottom:12px;">Includes the database, attachments and runtime authorization configuration. Keep the displayed backup path for rollback.</p>
-                                <button type="button" class="btn btn-secondary" id="create-backup-btn" onclick="createFullBackup()">Create Full Backup</button>
-                                <div id="backup-result" style="display:none;margin-top:12px;font-size:13px;overflow-wrap:anywhere;"></div>
-                            </div>
-                        </div>
-                        <div class="kpi-card">
-                            <h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">Import & Merge</h3>
-                            <p style="color:var(--ink-600);margin-bottom:12px;">JSON keeps the existing member exchange flow. XLSX uses Leader-controlled preflight, correction and commit.</p>
-                            <p class="import-template-link" data-leader-spreadsheet>JPT-XLSX-1.0 templates and source workbooks are distributed separately from the application installer.</p>
-                            <div style="background:var(--warn-light,#fff3cd);border-left:4px solid var(--warn,#ffc107);padding:12px;margin-bottom:16px;border-radius:4px;">
-                                <strong style="color:var(--warn-dark,#856404);">Note:</strong>
-                                <span style="color:var(--warn-dark,#856404);font-size:14px;">Import only merges data records. Attachment files must be transferred separately. For complete backup/restore, ask the administrator to use the server backup/restore procedure.</span>
-                            </div>
-                            <input type="file" id="import-file" accept=".json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="onImportFileChanged()" style="margin-bottom:12px;">
-                            <button type="button" class="btn btn-secondary" onclick="preflightImportData()">Preflight Check</button>
-                            <button type="button" class="btn btn-primary" id="import-commit-btn" onclick="importData()">Import & Merge</button>
-                            <div id="import-preflight-result" style="margin-top:16px;"></div>
-                            <div id="import-result" style="margin-top:16px;"></div>
-                        </div>
+                    <div class="transfer-page-head">
+                        <div><h1 class="module-title">Export / Import</h1><p>Excel import, JSON exchange and data governance are separated so each workflow can be tested independently.</p></div>
                     </div>
-                    <div class="review-panel" style="margin-top:24px;">
-                        <div class="card-title">Data Governance</div>
-                        <div class="governance-actions">
-                            <button type="button" class="btn btn-secondary" onclick="normalizeCountries()">Normalize Countries / Regions</button>
-                            <button type="button" class="btn btn-secondary" onclick="loadCoordinateAudit()">Load Coordinate Audit</button>
-                        </div>
-                        <div class="governance-batch-grid">
-                            <textarea class="form-input" id="gov-customer-ids" rows="2" placeholder="Customer IDs, one per line"></textarea>
-                            <textarea class="form-input" id="gov-lead-ids" rows="2" placeholder="Lead IDs, one per line"></textarea>
-                            <input type="text" class="form-input" id="gov-country" placeholder="Country">
-                            <input type="text" class="form-input" id="gov-region" placeholder="Region">
-                            <input type="number" step="0.000001" class="form-input" id="gov-lat" placeholder="Latitude">
-                            <input type="number" step="0.000001" class="form-input" id="gov-lng" placeholder="Longitude">
-                            <input type="text" class="form-input" id="gov-owner-id" placeholder="Owner ID">
-                            <input type="text" class="form-input" id="gov-product" placeholder="Product category">
-                            <input type="text" class="form-input" id="gov-application" placeholder="Application">
-                            <button type="button" class="btn btn-primary" onclick="runBatchRepair()">Run Batch Repair</button>
-                        </div>
-                        <div id="governance-result" style="margin-top:16px;"></div>
+                    <div class="transfer-tabs" role="tablist" aria-label="Data transfer workspace">
+                        <button type="button" class="transfer-tab active" data-transfer-target="spreadsheet" data-leader-spreadsheet onclick="showTransferWorkspace('spreadsheet')">Excel Import</button>
+                        <button type="button" class="transfer-tab" data-transfer-target="json" onclick="showTransferWorkspace('json')">JSON Exchange</button>
+                        <button type="button" class="transfer-tab" data-transfer-target="governance" data-leader-spreadsheet onclick="showTransferWorkspace('governance')">Data Governance</button>
+                        <button type="button" class="transfer-tab" data-transfer-target="merge" data-leader-spreadsheet onclick="showTransferWorkspace('merge')">Customer Merge</button>
                     </div>
-                    <div class="review-panel" style="margin-top:24px;">
-                        <div class="card-title">Customer Merge</div>
-                        <p style="color:var(--ink-600);margin-bottom:12px;">Select a duplicate source customer and merge it into the target customer that should remain active.</p>
-                        <div class="customer-merge-grid">
-                            <div class="customer-merge-column">
-                                <div class="customer-merge-head">
-                                    <strong>Source duplicate</strong>
-                                    <div class="customer-merge-search">
-                                        <input type="search" class="form-input" id="merge-source-search" placeholder="Search source customer">
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="searchMergeCustomers('source')">Search</button>
-                                    </div>
+
+                    <section id="transfer-spreadsheet" class="transfer-workspace active" data-leader-spreadsheet>
+                        <div class="import-wizard">
+                            <div class="wizard-progress" aria-label="Excel import progress">
+                                <div class="wizard-progress-step" data-wizard-step="backup"><b>1</b><span>Full backup</span></div>
+                                <div class="wizard-progress-step active" data-wizard-step="file"><b>2</b><span>Select workbook</span></div>
+                                <div class="wizard-progress-step" data-wizard-step="preflight"><b>3</b><span>Preflight & correct</span></div>
+                                <div class="wizard-progress-step" data-wizard-step="commit"><b>4</b><span>Commit & verify</span></div>
+                            </div>
+
+                            <details class="wizard-setup-details" id="import-setup-details" open>
+                                <summary><span>Preparation & workbook</span><strong id="import-setup-summary">No workbook selected</strong></summary>
+                                <div class="wizard-setup-grid">
+                                    <article class="wizard-card">
+                                        <div class="wizard-card-number">1</div>
+                                        <div><h3>Full Backup Before Import</h3><p>Back up the database, attachments and authorization configuration before writing any workbook data.</p>
+                                            <button type="button" class="btn btn-secondary" id="create-backup-btn" onclick="createFullBackup()">Create Full Backup</button>
+                                            <div id="backup-result" class="wizard-inline-result" style="display:none;"></div>
+                                        </div>
+                                    </article>
+                                    <article class="wizard-card">
+                                        <div class="wizard-card-number">2</div>
+                                        <div><h3>Select JPT-XLSX-1.0 Workbook</h3><p>Leader-only · .xlsx · up to 25 MB. Preflight reads the file without writing business data.</p>
+                                            <label class="workbook-picker" for="import-file"><span>Choose workbook</span><strong id="import-file-name">No workbook selected</strong></label>
+                                            <input type="file" id="import-file" class="visually-hidden" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="onImportFileChanged()">
+                                            <button type="button" class="btn btn-primary" id="import-preflight-btn" onclick="preflightImportData()" disabled>Run Preflight</button>
+                                        </div>
+                                    </article>
                                 </div>
-                                <div id="merge-source-selected" class="customer-merge-selected"></div>
-                                <div id="merge-source-results"></div>
-                            </div>
-                            <div class="customer-merge-column">
-                                <div class="customer-merge-head">
-                                    <strong>Target customer</strong>
-                                    <div class="customer-merge-search">
-                                        <input type="search" class="form-input" id="merge-target-search" placeholder="Search target customer">
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="searchMergeCustomers('target')">Search</button>
-                                    </div>
+                            </details>
+
+                            <article class="wizard-review-card">
+                                <div class="wizard-review-head"><div><span class="wizard-card-number">3</span><div><h3>Preflight & Corrections</h3><p>Mappings and issues stay inside this review window. Expand only the group you need.</p></div></div><small>Changes are not written until commit.</small></div>
+                                <div id="import-preflight-result" class="import-preflight-scroll">
+                                    <div class="wizard-empty-state">Select a workbook and run preflight to review rows, account mappings, customer matches and issues.</div>
                                 </div>
-                                <div id="merge-target-selected" class="customer-merge-selected"></div>
-                                <div id="merge-target-results"></div>
+                                <div class="wizard-action-bar">
+                                    <button type="button" class="btn btn-secondary" id="import-recheck-btn" onclick="recheckSpreadsheetImport()" disabled>Apply corrections & recheck</button>
+                                    <span class="import-commit-state" id="import-commit-state" role="status" aria-live="polite">Run preflight before import</span>
+                                    <button type="button" class="btn btn-primary" id="import-commit-btn" onclick="importData()" title="Run preflight before import" disabled>Import & Merge</button>
+                                </div>
+                                <div id="import-result" aria-live="polite"></div>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section id="transfer-json" class="transfer-workspace">
+                        <div class="json-exchange-grid">
+                            <article class="kpi-card"><h3>Export My Data</h3><p>JSON is for member-to-Leader record exchange. Attachment files are not included.</p><button type="button" class="btn btn-primary" onclick="exportData()">Export My Data</button><div id="export-result" class="wizard-inline-result" style="display:none;"></div></article>
+                            <article class="kpi-card"><h3>Import JSON Package</h3><p>Use JSON only for terminal data exchange. It is not the Excel history-import workflow.</p><input type="file" id="json-import-file" class="form-input" accept=".json,application/json"><div class="json-import-actions"><button type="button" class="btn btn-secondary" onclick="preflightJsonImport()">Preflight JSON</button><button type="button" class="btn btn-primary" onclick="importJsonData()">Import JSON</button></div><div id="json-preflight-result"></div><div id="json-import-result"></div></article>
+                        </div>
+                    </section>
+
+                    <section id="transfer-governance" class="transfer-workspace" data-leader-spreadsheet>
+                        <div class="review-panel"><div class="card-title">Data Governance</div><div class="governance-actions"><button type="button" class="btn btn-secondary" onclick="normalizeCountries()">Normalize Countries / Regions</button><button type="button" class="btn btn-secondary" onclick="loadCoordinateAudit()">Load Coordinate Audit</button></div><div class="governance-batch-grid"><textarea class="form-input" id="gov-customer-ids" rows="2" placeholder="Customer IDs, one per line"></textarea><textarea class="form-input" id="gov-lead-ids" rows="2" placeholder="Lead IDs, one per line"></textarea><input type="text" class="form-input" id="gov-country" placeholder="Country"><input type="text" class="form-input" id="gov-region" placeholder="Region"><input type="number" step="0.000001" class="form-input" id="gov-lat" placeholder="Latitude"><input type="number" step="0.000001" class="form-input" id="gov-lng" placeholder="Longitude"><input type="text" class="form-input" id="gov-owner-id" placeholder="Owner ID"><input type="text" class="form-input" id="gov-product" placeholder="Product category"><input type="text" class="form-input" id="gov-application" placeholder="Application"><button type="button" class="btn btn-primary" onclick="runBatchRepair()">Run Batch Repair</button></div><div id="governance-result" style="margin-top:16px;"></div></div>
+                    </section>
+
+                    <section id="transfer-merge" class="transfer-workspace" data-leader-spreadsheet>
+                        <div class="review-panel">
+                            <div class="card-title">Customer Merge</div>
+                            <p class="customer-merge-intro">Search by approximate customer name or alias. Select the duplicate source and the target customer that should remain active.</p>
+                            <div class="customer-merge-grid">
+                                <div class="customer-merge-column">
+                                    <div class="customer-merge-head"><strong>Source duplicate</strong><div class="customer-merge-search"><input type="search" class="form-input" id="merge-source-search" placeholder="Search source name or alias"><button type="button" class="btn btn-secondary btn-sm" onclick="searchMergeCustomers('source')">Search</button></div></div>
+                                    <div id="merge-source-selected" class="customer-merge-selected"></div><div id="merge-source-results" class="customer-merge-results"></div>
+                                </div>
+                                <div class="customer-merge-column">
+                                    <div class="customer-merge-head"><strong>Target customer</strong><div class="customer-merge-search"><input type="search" class="form-input" id="merge-target-search" placeholder="Search target name or alias"><button type="button" class="btn btn-secondary btn-sm" onclick="searchMergeCustomers('target')">Search</button></div></div>
+                                    <div id="merge-target-selected" class="customer-merge-selected"></div><div id="merge-target-results" class="customer-merge-results"></div>
+                                </div>
                             </div>
+                            <div id="customer-merge-preview" class="customer-merge-preview" aria-live="polite"></div>
+                            <div class="governance-actions customer-merge-actions"><button type="button" class="btn btn-primary" id="customer-merge-confirm" onclick="mergeSelectedCustomers()" disabled>Select two customers</button></div>
+                            <div id="customer-merge-result" aria-live="polite"></div>
                         </div>
-                        <div class="governance-actions" style="margin-top:12px;">
-                            <button type="button" class="btn btn-primary" onclick="mergeSelectedCustomers()">Merge Source Into Target</button>
-                        </div>
-                        <div id="customer-merge-result" style="margin-top:16px;"></div>
-                    </div>
+                    </section>
                 </div>
             </div>
         </main>
@@ -920,11 +954,14 @@
     </div>
 
     <script src="/static/vendor/leaflet/leaflet.js?v=1.9.4"></script>
-    <script src="/static/js/i18n.js?v=1.0"></script>
-    <script src="/static/js/api-client.js?v=3.3"></script>
-    <script src="/static/js/shared/utils.js?v=1.0"></script>
+    <script src="/static/js/i18n.js?v=1.8"></script>
+    <script src="/static/js/api-client.js?v=3.8"></script>
+    <script src="/static/js/shared/utils.js?v=1.1"></script>
     <script src="/static/js/shared/render.js?v=1.0"></script>
-    <script src="/static/js/app.js?v=6.6"></script>
+    <script src="/static/js/modules/map-support.js?v=1.0"></script>
+    <script src="/static/js/app.js?v=6.9"></script>
+    <script src="/static/js/modules/review-map-view.js?v=1.0"></script>
+    <script src="/static/js/modules/review-map.js?v=1.0"></script>
 
     <!-- Offline authorization -->
     <script src="/static/js/modules/authorization-model.js?v=1.0"></script>
@@ -938,24 +975,31 @@
     <script src="/static/js/modules/authorization-issuer-actions.js?v=1.0"></script>
 
     <!-- Shared workflow contracts -->
-    <script src="/static/js/modules/role-capabilities.js?v=1.0"></script>
+    <script src="/static/js/modules/role-capabilities.js?v=1.1"></script>
     <script src="/static/js/modules/stage-filter-view.js?v=1.0"></script>
     <script src="/static/js/modules/stage-filter-data.js?v=1.0"></script>
     <script src="/static/js/modules/lead-navigation.js?v=1.0"></script>
     <script src="/static/js/modules/refresh-counts.js?v=1.0"></script>
-    <script src="/static/js/modules/user-menu.js?v=1.0"></script>
+    <script src="/static/js/modules/user-menu.js?v=1.2"></script>
 
     <!-- Intake and stage worklists -->
     <script src="/static/js/modules/intake-parser.js?v=1.0"></script>
     <script src="/static/js/modules/intake-submit.js?v=1.0"></script>
-    <script src="/static/js/modules/card-template.js?v=1.0"></script>
-    <script src="/static/js/modules/cards.js?v=1.0"></script>
-    <script src="/static/js/modules/sales-worklists.js?v=1.0"></script>
+    <script src="/static/js/modules/card-template.js?v=1.2"></script>
+    <script src="/static/js/modules/cards.js?v=1.2"></script>
+    <script src="/static/js/modules/followup-filter-model.js?v=1.0"></script>
+    <script src="/static/js/modules/followup-filter-controls.js?v=1.0"></script>
+    <script src="/static/js/modules/sales-worklists.js?v=1.1"></script>
     <script src="/static/js/modules/service-worklists.js?v=1.0"></script>
-    <script src="/static/js/modules/sampling-panel.js?v=1.0"></script>
-    <script src="/static/js/modules/sampling-actions.js?v=1.0"></script>
-    <script src="/static/js/modules/sampling.js?v=1.0"></script>
-    <script src="/static/js/modules/stage-filters.js?v=1.0"></script>
+    <script src="/static/js/modules/pre-sales-task-model.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling-task-details.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling-task-form.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling-form-data.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling-form-controller.js?v=1.0"></script>
+    <script src="/static/js/modules/sampling-panel.js?v=1.1"></script>
+    <script src="/static/js/modules/sampling-actions.js?v=1.1"></script>
+    <script src="/static/js/modules/sampling.js?v=1.1"></script>
+    <script src="/static/js/modules/stage-filters.js?v=1.1"></script>
 
     <!-- Inquiry detail panel -->
     <script src="/static/js/modules/contact-validation.js?v=1.0"></script>
@@ -979,15 +1023,18 @@
     <script src="/static/js/modules/inquiry-field-renderer.js?v=1.0"></script>
     <script src="/static/js/modules/data-quality-view.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-form.js?v=1.0"></script>
-    <script src="/static/js/modules/inquiry-panel.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-panel.js?v=1.1"></script>
 
     <!-- Governance and review -->
-    <script src="/static/js/modules/customer-merge-view.js?v=1.0"></script>
-    <script src="/static/js/modules/customer-merge-action.js?v=1.0"></script>
-    <script src="/static/js/modules/data-transfer.js?v=1.0"></script>
-    <script src="/static/js/modules/spreadsheet-import-state.js?v=1.0"></script>
-    <script src="/static/js/modules/spreadsheet-import-view.js?v=1.0"></script>
-    <script src="/static/js/modules/spreadsheet-import-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/customer-merge-conflict-view.js?v=1.0"></script>
+    <script src="/static/js/modules/customer-merge-preview.js?v=1.1"></script>
+    <script src="/static/js/modules/customer-merge-view.js?v=1.1"></script>
+    <script src="/static/js/modules/customer-merge-action.js?v=1.1"></script>
+    <script src="/static/js/modules/data-transfer.js?v=1.2"></script>
+    <script src="/static/js/modules/spreadsheet-import-state.js?v=1.2"></script>
+    <script src="/static/js/modules/spreadsheet-import-progress.js?v=1.3"></script>
+    <script src="/static/js/modules/spreadsheet-import-view.js?v=1.2"></script>
+    <script src="/static/js/modules/spreadsheet-import-actions.js?v=1.5"></script>
     <script src="/static/js/modules/data-governance.js?v=1.0"></script>
     <script src="/static/js/modules/data-review-tables.js?v=1.0"></script>
     <script src="/static/js/modules/data-review.js?v=1.0"></script>

@@ -34,7 +34,14 @@ function formatLabel(key) {
 function formatDate(str) {
     if (!str) return '-';
     try {
-        return new Date(str).toLocaleDateString('en-US', {
+        const calendarParts = String(str).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const date = calendarParts
+            ? new Date(Number(calendarParts[1]), Number(calendarParts[2]) - 1, Number(calendarParts[3]))
+            : new Date(str);
+        if (Number.isNaN(date.getTime())) return str;
+        const locale = window.I18n?.locale?.()
+            || (String(navigator.language || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US');
+        return date.toLocaleDateString(locale, {
             year: 'numeric', month: 'short', day: 'numeric'
         });
     } catch { return str; }
@@ -103,4 +110,3 @@ function debounce(fn, wait) {
         timeout = setTimeout(() => fn.apply(this, args), wait);
     };
 }
-

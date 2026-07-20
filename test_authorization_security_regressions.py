@@ -179,11 +179,17 @@ def assert_tech_formal_follow_up_rejected(client: TestClient, headers: dict, dat
 def assert_username_case_unique(client: TestClient, headers: dict) -> None:
     first = expect(client.post(
         "/api/authorization/members", headers=headers["leader.boundary"],
-        json={"username": "Case.Member", "display_name": "Case Member", "role": "sales"},
+        json={
+            "username": "Case.Member", "display_name": "Case Member",
+            "role": "sales", "region": "EU",
+        },
     ), 201, "create mixed-case member").json()
     expect(client.post(
         "/api/authorization/members", headers=headers["leader.boundary"],
-        json={"username": "case.member", "display_name": "Duplicate Case", "role": "tech"},
+        json={
+            "username": "case.member", "display_name": "Duplicate Case",
+            "role": "tech", "region": "EU",
+        },
     ), 400, "create case-colliding member")
     expect(client.patch(
         f"/api/authorization/members/{first['id']}", headers=headers["leader.boundary"],

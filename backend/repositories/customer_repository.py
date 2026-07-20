@@ -122,6 +122,30 @@ class CustomerRepository(BaseRepository):
         cursor = self.conn.execute(sql, params)
         return [dict(row) for row in cursor.fetchall()]
 
+    def list_merge_candidate_records(self) -> list[dict]:
+        """Return the small identity projection needed for merge-candidate ranking."""
+        rows = self.conn.execute(
+            """SELECT id, display_name, country, city, region, row_version, updated_at
+               FROM customers WHERE archived_at IS NULL ORDER BY display_name"""
+        ).fetchall()
+        records = {row["id"]: {**dict(row), "aliases": []} for row in rows}
+        if not records:
+            return []
+        alias_active = (
+            "AND a.archived_at IS NULL"
+            if self._has_column("customer_aliases", "archived_at")
+            else ""
+        )
+        aliases = self.conn.execute(
+            f"""SELECT a.customer_id, a.alias_name FROM customer_aliases a
+                JOIN customers c ON c.id = a.customer_id AND c.archived_at IS NULL
+                WHERE 1 = 1 {alias_active} ORDER BY a.alias_name"""
+        ).fetchall()
+        for alias in aliases:
+            if alias["customer_id"] in records:
+                records[alias["customer_id"]]["aliases"].append(alias["alias_name"])
+        return list(records.values())
+
     # Domain operations
     def add_domain(self, customer_id: str, domain: str, is_primary: bool = False) -> str:
         """Add domain to customer."""

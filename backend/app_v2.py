@@ -59,6 +59,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def desktop_cache_policy(request, call_next):
+        """Never let an upgraded desktop app reuse stale HTML or static assets."""
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith("/index.html"):
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+        elif path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+
     # Mount API routers
     app.include_router(auth_router, prefix="/api")
     app.include_router(config_router, prefix="/api")
@@ -80,6 +91,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "version": APP_VERSION,
             "desktop": callable(getattr(app.state, "desktop_shutdown", None)),
+            "running_from_disk_image": os.environ.get("JPT_RUNNING_FROM_DISK_IMAGE") == "1",
         }
 
     # Startup event

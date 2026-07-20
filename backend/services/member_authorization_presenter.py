@@ -5,18 +5,24 @@ from __future__ import annotations
 import json
 from typing import Optional
 
+from .business_region_service import InvalidBusinessRegionError, normalize_business_region
+
 
 def present_member(user: Optional[dict], authorizations) -> dict:
     if not user:
         raise ValueError("Member not found")
     history = authorizations.list_for_user(user["id"])
     active = next((item for item in history if item["is_active"]), None)
+    try:
+        region = normalize_business_region(user.get("region"))
+    except InvalidBusinessRegionError:
+        region = user.get("region")
     return {
         "id": user["id"],
         "username": user["username"],
         "display_name": user["display_name"],
         "role": user["role"],
-        "region": user.get("region"),
+        "region": region,
         "is_active": bool(user["is_active"]),
         "authorization_count": len(history),
         "active_device": active["device_fingerprint_hash"][:12] if active else None,

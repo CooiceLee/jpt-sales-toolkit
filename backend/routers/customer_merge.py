@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from ..repositories.base import ConflictError
+from ..services.customer_service import CustomerService
 from ..services.customer_merge_service import CustomerMergeService
 from .deps import require_role
 
@@ -23,6 +24,10 @@ def get_merge_service() -> CustomerMergeService:
     return CustomerMergeService()
 
 
+def get_customer_service() -> CustomerService:
+    return CustomerService()
+
+
 def _raise_merge_error(exc: Exception) -> None:
     if isinstance(exc, ConflictError):
         raise HTTPException(
@@ -37,6 +42,20 @@ def _raise_merge_error(exc: Exception) -> None:
         )
     code = status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError) else status.HTTP_400_BAD_REQUEST
     raise HTTPException(status_code=code, detail=str(exc))
+
+
+@router.get("/merge/candidates")
+async def list_customer_merge_candidates(
+    query: str = Query(..., min_length=2, max_length=120),
+    limit: int = Query(12, ge=1, le=50),
+    user: dict = Depends(require_role("leader")),
+    service: CustomerService = Depends(get_customer_service),
+):
+    """Return fuzzy name/alias candidates without exposing archived customers."""
+    try:
+        return service.fuzzy_merge_candidates(query, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.post("/merge/preview")

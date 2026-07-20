@@ -8,80 +8,86 @@
     }
     function showError(error, target = 'import-result') {
         console.error('Import error:', error);
+        const message = tr(error.message || 'Import failed');
         document.getElementById(target).innerHTML = `
-            <div class="empty-state compact error-state">${escapeHtml(tr(error.message || 'Import failed'))}</div>`;
-    }
-
-    function requireSpreadsheetLeader() {
-        if (State.user?.role !== 'leader') {
-            throw new Error(tr('Controlled XLSX import is available to Leader accounts only.'));
+            <div class="empty-state compact error-state">${escapeHtml(message)}</div>`;
+        if (target === 'import-result') {
+            const status = document.getElementById('import-commit-state');
+            if (status) {
+                status.textContent = message;
+                status.classList.add('error-state');
+            }
         }
     }
-
-    async function runSpreadsheetPreflight(file) {
-        requireSpreadsheetLeader();
-        SpreadsheetImportState.useFile(file);
-        const target = document.getElementById('import-preflight-result');
-        target.innerHTML = `<div class="loading-state">${tr('Running controlled preflight...')}</div>`;
-        const report = await ApiClient.preflightSpreadsheetImport(
-            file, SpreadsheetImportState.resolutions()
-        );
-        SpreadsheetImportState.setReport(file, report);
-        SpreadsheetImportView.render(report);
+    function requireSpreadsheetLeader() {
+        if (State.user?.role !== 'leader') throw new Error(tr('Controlled XLSX import is available to Leader accounts only.'));
     }
-
+    async function runSpreadsheetPreflight(file) {
+        let ticket = null;
+        try {
+            requireSpreadsheetLeader();
+            if (!SpreadsheetImportState.isSpreadsheet(file)) throw new Error(tr('Only .xlsx workbooks are supported'));
+            SpreadsheetImportState.useFile(file);
+            document.getElementById('import-commit-state')?.classList.remove('error-state');
+            document.getElementById('import-preflight-result').innerHTML = `<div class="loading-state">${tr('Running controlled preflight...')}</div>`;
+            ticket = SpreadsheetImportProgress.begin('preflight', file);
+            const report = await ApiClient.preflightSpreadsheetImport(file, SpreadsheetImportState.resolutions());
+            if (!SpreadsheetImportProgress.isCurrent(ticket)) return;
+            SpreadsheetImportState.setReport(file, report);
+            SpreadsheetImportView.render(report);
+            const setup = document.getElementById('import-setup-details');
+            if (setup) setup.open = false;
+        } catch (error) {
+            if (!ticket || SpreadsheetImportProgress.isCurrent(ticket)) showError(error, 'import-preflight-result');
+        } finally {
+            if (ticket) SpreadsheetImportProgress.finish(ticket);
+        }
+    }
     window.preflightImportData = async function() {
         const file = selectedFile();
-        if (!file) return;
-        try {
-            if (SpreadsheetImportState.isSpreadsheet(file)) {
-                await runSpreadsheetPreflight(file);
-            } else {
-                document.getElementById('import-preflight-result').innerHTML = `<div class="loading-state">${tr('Running JSON preflight...')}</div>`;
-                LegacyImportView.renderPreflight(await ApiClient.preflightImportData(file));
-            }
-        } catch (error) {
-            showError(error, 'import-preflight-result');
-        }
+        if (file) return runSpreadsheetPreflight(file);
     };
-
     window.recheckSpreadsheetImport = async function() {
         const file = selectedFile();
-        if (!file || !SpreadsheetImportState.isSpreadsheet(file)) return;
-        try {
-            await runSpreadsheetPreflight(file);
-        } catch (error) {
-            showError(error, 'import-preflight-result');
-        }
+        if (file && SpreadsheetImportState.isSpreadsheet(file)) return runSpreadsheetPreflight(file);
     };
-
     window.importData = async function() {
         const file = selectedFile();
         if (!file) return;
+        let ticket = null;
         try {
-            if (!SpreadsheetImportState.isSpreadsheet(file)) {
-                LegacyImportView.renderImport(await ApiClient.importData(file));
-            } else {
-                requireSpreadsheetLeader();
-                if (!SpreadsheetImportState.canCommit(file)) {
-                    throw new Error(tr('Run preflight and resolve every blocking issue before import.'));
-                }
-                const report = await ApiClient.commitSpreadsheetImport(
-                    file,
-                    SpreadsheetImportState.resolutions(),
-                    SpreadsheetImportState.sourceHash()
-                );
-                renderSpreadsheetSuccess(report);
-            }
+            requireSpreadsheetLeader();
+            if (!SpreadsheetImportState.canCommit(file)) throw new Error(tr('Run preflight and resolve every blocking issue before import.'));
+            document.getElementById('import-commit-state')?.classList.remove('error-state');
+            ticket = SpreadsheetImportProgress.begin('commit', file);
+            const report = await ApiClient.commitSpreadsheetImport(
+                file, SpreadsheetImportState.resolutions(), SpreadsheetImportState.sourceHash()
+            );
+            if (!SpreadsheetImportProgress.isCurrent(ticket)) return SpreadsheetImportProgress.markCommitUnconfirmed();
+            renderSpreadsheetSuccess(report);
             fileInput().value = '';
             SpreadsheetImportState.useFile(null);
-            SpreadsheetImportView.syncCommitButton();
-            if (document.querySelector('.module.active')?.id === 'module-dashboard') loadDashboard();
+            document.getElementById('import-file-name').textContent = tr('No workbook selected');
+            document.getElementById('import-setup-summary').textContent = tr('Import complete');
+            SpreadsheetImportProgress.markCommitComplete();
+            await refreshAllCounts().catch(error => {
+                console.error('Post-import count refresh failed:', error);
+                document.getElementById('import-result').insertAdjacentHTML('beforeend',
+                    `<p class="error-state">${escapeHtml(tr('Import completed, but navigation counts could not be refreshed. Reopen JPT to load the latest counts.'))}</p>`);
+            });
+            return report;
         } catch (error) {
+            if (ticket && !SpreadsheetImportProgress.isCurrent(ticket)) return SpreadsheetImportProgress.markCommitUnconfirmed();
+            if (error.outcomeUnconfirmed) SpreadsheetImportProgress.markCommitUnconfirmed();
+            if (error.report) {
+                SpreadsheetImportState.setReport(file, error.report);
+                SpreadsheetImportView.render(error.report);
+            }
             showError(error);
+        } finally {
+            if (ticket) SpreadsheetImportProgress.finish(ticket);
         }
     };
-
     function renderSpreadsheetSuccess(report) {
         const summary = report.summary || report;
         const counts = Object.values(report.counts || {});
@@ -99,15 +105,21 @@
                 <small>${tr('Batch')} ${escapeHtml(report.batch_id || '')}</small>
             </div>`;
     }
-
     window.onImportFileChanged = function() {
         const file = fileInput()?.files?.[0];
-        SpreadsheetImportState.useFile(file);
-        document.getElementById('import-preflight-result').innerHTML = '';
+        SpreadsheetImportProgress.selectionChanged();
+        SpreadsheetImportState.useFile(file, true);
+        SpreadsheetImportProgress.resetCommit();
+        document.getElementById('import-commit-state')?.classList.remove('error-state');
+        document.getElementById('import-file-name').textContent = file?.name || tr('No workbook selected');
+        document.getElementById('import-setup-summary').textContent = file?.name || tr('No workbook selected');
+        const setup = document.getElementById('import-setup-details');
+        if (setup) setup.open = true;
+        document.getElementById('import-preflight-result').innerHTML = `
+            <div class="wizard-empty-state">${tr(file ? 'Workbook selected. Run preflight to review its contents.' : 'Select a workbook and run preflight to review rows, account mappings, customer matches and issues.')}</div>`;
         document.getElementById('import-result').innerHTML = '';
-        if (SpreadsheetImportState.isSpreadsheet(file) && State.user?.role !== 'leader') {
+        if (file && State.user?.role !== 'leader') {
             showError(new Error(tr('Only a Leader can preflight or import XLSX files.')), 'import-preflight-result');
         }
-        SpreadsheetImportView.syncCommitButton();
     };
 })();

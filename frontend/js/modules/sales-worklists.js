@@ -1,6 +1,8 @@
 (function () {
     'use strict';
 
+    const tr = (text, params) => window.I18n?.t(text, params) || text;
+
     async function loadHandler() {
         const stage = document.getElementById('filter-stage')?.value || 'New';
         try {
@@ -19,41 +21,75 @@
         }
     }
 
-    function filterFollowupsByDate(inquiries, filter) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (filter === 'overdue') {
-            return inquiries.filter(item => item.next_followup_date && new Date(item.next_followup_date) < today);
+    function followupEmptyCopy(base, planned, plannedMode, activity) {
+        const copy = { title: 'No records in this view' };
+        if (!base.length) {
+            copy.text = 'No active leads match the current search, owner, technical or business-region filters.';
+            return copy;
         }
-        if (filter === 'today') {
-            return inquiries.filter(item => item.next_followup_date
-                && new Date(item.next_followup_date).toDateString() === today.toDateString());
+        if (plannedMode !== 'all' && !planned.length) {
+            const missing = base.filter(item =>
+                !FollowupFilterModel.calendarDay(item.next_followup_date)
+            ).length;
+            copy.params = { count: base.length, missing };
+            copy.text = missing === base.length
+                ? 'All {count} matching active leads are missing a next follow-up date. Set one in lead details or use All Active.'
+                : 'No matching active lead is due in this planned-date period; {missing} have no next follow-up date.';
+            return copy;
         }
-        if (filter === 'week') {
-            const weekLater = new Date(today);
-            weekLater.setDate(weekLater.getDate() + 7);
-            return inquiries.filter(item => {
-                const date = item.next_followup_date ? new Date(item.next_followup_date) : null;
-                return date && date >= today && date <= weekLater;
-            });
+        if (activity.mode === 'custom') {
+            const status = FollowupFilterModel.customRangeStatus(activity);
+            if (!status.valid) {
+                copy.text = status.reason === 'reversed'
+                    ? 'The custom activity start date must not be after the end date.'
+                    : 'Choose at least one custom activity date.';
+                return copy;
+            }
         }
-        return inquiries;
+        copy.text = activity.mode === 'never'
+            ? 'Every matching active lead already has a formal follow-up.'
+            : 'No active lead matches the selected planned-date and activity-time filters.';
+        return copy;
     }
 
     async function loadFollowup() {
         try {
-            const leads = await ApiClient.listLeads(getSharedLeadFilters());
-            let inquiries = leads
+            const leads = await ApiClient.listLeads({
+                ...getSharedLeadFilters(),
+                limit: 100000,
+            });
+            const base = FollowupFilterModel.annotate(leads
                 .filter(lead => ['Assigned', 'Following'].includes(lead.sales_stage))
                 .map(lead => leadToCardItem(lead, {
                     next_followup_date: lead.next_followup_date,
                     follow_ups_count: lead.follow_ups_count || 0,
-                }));
-            inquiries = filterFollowupsByDate(inquiries, State.currentFilters.followup || 'all');
-            setText('followup-count', `${inquiries.length} active`);
-            renderCards('followup-cards', inquiries, 'followup');
+                    latest_follow_up_at: lead.latest_follow_up_at,
+                    latest_follow_up_summary: lead.latest_follow_up_summary,
+                })));
+            const plannedMode = State.currentFilters.followup || 'all';
+            const activity = FollowupFilterControls.read();
+            const planned = FollowupFilterModel.filterPlanned(base, plannedMode);
+            let inquiries = FollowupFilterModel.filterActivity(planned, activity);
+            if (activity.mode !== 'all') {
+                inquiries = FollowupFilterModel.sortOldestActivity(inquiries);
+            }
+            setText('followup-count', tr('{shown} of {total} active', {
+                shown: inquiries.length,
+                total: base.length,
+            }));
+            renderCards(
+                'followup-cards',
+                inquiries,
+                'followup',
+                followupEmptyCopy(base, planned, plannedMode, activity)
+            );
         } catch (err) {
             console.error('Followup error:', err);
+            setText('followup-count', tr('Unable to load'));
+            renderCards('followup-cards', [], 'followup', {
+                title: 'Unable to load follow-ups',
+                text: 'The follow-up list could not be loaded. Please retry.',
+            });
         }
     }
 

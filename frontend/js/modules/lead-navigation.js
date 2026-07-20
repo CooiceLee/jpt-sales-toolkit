@@ -21,6 +21,7 @@ window.jumpToCustomerStageCards = async function(leadId, stage, customerId = '')
     State.stageFilters.customerId = customerId || lead?.customer_id || lead?.customer?.id || '';
     State.stageFilters.ownerId = '';
     State.stageFilters.techId = '';
+    State.stageFilters.businessRegion = '';
     syncStageFilterInputs();
     const module = moduleForLeadStage(lead || { sales_stage: stage });
     switchModule(module);

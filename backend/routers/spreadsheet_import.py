@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ..config import MAX_UPLOAD_SIZE
+from ..repositories.base import request_db_connection
 from ..services.spreadsheet_import import SpreadsheetImportService
 from ..services.spreadsheet_import.errors import ImportBlockedError, SpreadsheetImportError
 from .deps import get_current_user, require_role
@@ -21,9 +22,10 @@ async def spreadsheet_preflight(
 ):
     content = await _read_xlsx(file)
     try:
-        return SpreadsheetImportService().preflight(
-            content, file.filename or "import.xlsx", resolutions, user
-        )
+        with request_db_connection() as conn:
+            return SpreadsheetImportService(conn).preflight(
+                content, file.filename or "import.xlsx", resolutions, user
+            )
     except SpreadsheetImportError as exc:
         raise _http_error(exc) from exc
 
@@ -37,10 +39,11 @@ async def spreadsheet_import(
 ):
     content = await _read_xlsx(file)
     try:
-        return SpreadsheetImportService().commit(
-            content, file.filename or "import.xlsx", resolutions,
-            expected_source_hash, user,
-        )
+        with request_db_connection() as conn:
+            return SpreadsheetImportService(conn).commit(
+                content, file.filename or "import.xlsx", resolutions,
+                expected_source_hash, user,
+            )
     except SpreadsheetImportError as exc:
         raise _http_error(exc) from exc
 

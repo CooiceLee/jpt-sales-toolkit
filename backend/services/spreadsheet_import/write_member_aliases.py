@@ -3,6 +3,7 @@
 from ...repositories.authorization_schema import DEFAULT_ORGANIZATION_ID
 from ...repositories.base import generate_uuid, now_iso
 from ...repositories.member_identity_schema import normalize_identity
+from .member_mapping_keys import manual_member_target
 
 
 def write_manual_member_aliases(conn, canonical: dict, context: dict, actor_id: str) -> int:
@@ -13,17 +14,18 @@ def write_manual_member_aliases(conn, canonical: dict, context: dict, actor_id: 
         (canonical.get("source") or {}).get("kind") or "spreadsheet"
     )
     metadata = _metadata(canonical)
-    used_tokens = {token for token, _purpose in context["member_ids"]}
+    targets, manually_resolved = {}, set()
+    for (token, purpose), resolved_target in context["member_ids"].items():
+        targets.setdefault(token, set()).add(resolved_target)
+        raw_names = metadata.get(token, set())
+        if manual_member_target(manual, token, purpose, raw_names) == resolved_target:
+            manually_resolved.add(token)
     written = 0
-    for token in sorted(used_tokens):
-        if token.startswith("@record:"):
+    for token in sorted(manually_resolved):
+        if token.startswith("@record:") or len(targets.get(token, set())) != 1:
             continue
         raw_names = metadata.get(token, set())
-        target = manual.get(token) or next(
-            (manual[name] for name in raw_names if name in manual), None
-        )
-        if not target:
-            continue
+        target = next(iter(targets[token]))
         for source_name in {token, *raw_names}:
             if _upsert_alias(conn, source_system, source_name, target, actor_id):
                 written += 1

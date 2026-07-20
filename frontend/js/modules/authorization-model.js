@@ -5,6 +5,13 @@
         sales: 'Sales',
         tech: 'Tech'
     };
+    const REGION_LABELS = {
+        GLOBAL: 'GLOBAL',
+        EU: 'Europe',
+        NA_CA_AU: 'North America / Canada / Australia',
+        RU_TR_ME: 'Russia / Turkey / Middle East',
+        SEA: 'Southeast Asia',
+    };
 
     function status(raw = {}) {
         const authorization = raw.authorization || null;
@@ -77,11 +84,15 @@
     window.AuthorizationModel = {
         ROLES,
         ROLE_LABELS,
+        REGION_LABELS,
         status,
         members,
         events,
         deviceLabel,
         detailLabel,
+        regionLabel(value) {
+            return REGION_LABELS[value] || value || '-';
+        },
         requiresActivation(value) {
             const normalized = value?.deviceId !== undefined ? value : status(value);
             return normalized.mode === 'setup' || (normalized.mode === 'offline' && !normalized.activated);

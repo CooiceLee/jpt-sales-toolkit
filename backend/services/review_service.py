@@ -13,7 +13,12 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from ..repositories import LeadRepository, CustomerRepository, ActivityRepository
+from ..repositories import (
+    ActivityRepository,
+    CustomerRepository,
+    LeadRepository,
+    PreSalesReadRepository,
+)
 from ..repositories.base import ConflictError, generate_uuid, now_iso
 from .country_service import CountryService
 from .review_analysis_service import ReviewAnalysisService
@@ -50,10 +55,14 @@ class ReviewService:
         lead_repo: Optional[LeadRepository] = None,
         customer_repo: Optional[CustomerRepository] = None,
         activity_repo: Optional[ActivityRepository] = None,
+        pre_sales_read_repo: Optional[PreSalesReadRepository] = None,
     ):
         self.lead_repo = lead_repo or LeadRepository()
         self.customer_repo = customer_repo or CustomerRepository()
         self.activity_repo = activity_repo or ActivityRepository()
+        self.pre_sales_read_repo = pre_sales_read_repo or PreSalesReadRepository(
+            self.lead_repo.conn
+        )
         self.country_service = CountryService()
         self.country_lookup = self.country_service.lookup
         self.visibility_service = VisibilityService(self)

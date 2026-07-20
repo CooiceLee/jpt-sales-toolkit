@@ -7,11 +7,19 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from ..repositories import LeadRepository, ActivityRepository, AuditRepository, CustomerRepository
+from ..repositories import (
+    ActivityRepository,
+    AuditRepository,
+    CustomerRepository,
+    FollowUpReadRepository,
+    LeadRepository,
+)
 from ..repositories.data_quality_issue_repository import DataQualityIssueRepository
 from ..repositories.base import ConflictError
 from .lead_extra_fields import expose_extra_fields, merge_extra_fields
+from .lead_follow_up_presenter import apply_latest_follow_up
 from .permission_policy import mask_lead_for_tech
+from .business_region_service import get_business_region_service
 
 # Collaborator allowed fields (from docs/v0.5-page-api-matrix.md)
 COLLABORATOR_ALLOWED_FIELDS = {
@@ -83,8 +91,14 @@ class LeadService:
         self.audit_repo = audit_repo or AuditRepository()
         self.customer_repo = customer_repo or CustomerRepository()
         self.quality_issue_repo = quality_issue_repo or DataQualityIssueRepository()
+        self.follow_up_read_repo = FollowUpReadRepository(self.activity_repo.conn)
 
-    def _enrich_with_customer(self, lead: dict) -> dict:
+    def _enrich_with_customer(
+        self,
+        lead: dict,
+        actor_id: Optional[str] = None,
+        actor_role: str = "leader",
+    ) -> dict:
         """Add nested customer data to lead."""
         if not lead or not lead.get("customer_id"):
             return lead
@@ -96,6 +110,10 @@ class LeadService:
             lead["quality_issue_count"] = self.quality_issue_repo.open_counts_for_leads(
                 [lead["id"]]
             ).get(lead["id"], 0)
+            latest = self.follow_up_read_repo.latest_by_lead(
+                [lead["id"]], actor_id, actor_role
+            )
+            apply_latest_follow_up(lead, latest.get(lead["id"]))
 
         customer = self.customer_repo.get_by_id(lead["customer_id"])
         if customer:
@@ -122,7 +140,12 @@ class LeadService:
             }
         return lead
 
-    def _enrich_leads(self, leads: list[dict]) -> list[dict]:
+    def _enrich_leads(
+        self,
+        leads: list[dict],
+        actor_id: Optional[str] = None,
+        actor_role: str = "leader",
+    ) -> list[dict]:
         """Batch enrich leads with customer data."""
         if not leads:
             return leads
@@ -130,11 +153,15 @@ class LeadService:
         for lead in leads:
             expose_extra_fields(lead)
 
+        lead_ids = [lead["id"] for lead in leads if lead.get("id")]
         follow_up_counts = self.activity_repo.count_follow_ups_by_lead(
-            [lead["id"] for lead in leads if lead.get("id")]
+            lead_ids
+        )
+        latest_follow_ups = self.follow_up_read_repo.latest_by_lead(
+            lead_ids, actor_id, actor_role
         )
         quality_counts = self.quality_issue_repo.open_counts_for_leads(
-            [lead["id"] for lead in leads if lead.get("id")]
+            lead_ids
         )
 
         # Collect unique customer IDs
@@ -143,6 +170,9 @@ class LeadService:
             for lead in leads:
                 lead["follow_ups_count"] = follow_up_counts.get(lead.get("id"), 0)
                 lead["quality_issue_count"] = quality_counts.get(lead.get("id"), 0)
+                apply_latest_follow_up(
+                    lead, latest_follow_ups.get(lead.get("id"))
+                )
             return leads
 
         # Batch fetch customers
@@ -158,6 +188,9 @@ class LeadService:
         for lead in leads:
             lead["follow_ups_count"] = follow_up_counts.get(lead.get("id"), 0)
             lead["quality_issue_count"] = quality_counts.get(lead.get("id"), 0)
+            apply_latest_follow_up(
+                lead, latest_follow_ups.get(lead.get("id"))
+            )
             cid = lead.get("customer_id")
             if cid and cid in customers:
                 c = customers[cid]
@@ -209,22 +242,32 @@ class LeadService:
 
         return self.get(lead_id)
 
-    def get(self, lead_id: str) -> Optional[dict]:
+    def get(
+        self,
+        lead_id: str,
+        actor_id: Optional[str] = None,
+        actor_role: str = "leader",
+    ) -> Optional[dict]:
         """Get lead by ID with customer and assignments."""
         lead = self.lead_repo.get_by_id(lead_id)
         if not lead:
             return None
 
         lead["assignments"] = self.lead_repo.get_assignments(lead_id)
-        return self._enrich_with_customer(lead)
+        return self._enrich_with_customer(lead, actor_id, actor_role)
 
-    def get_by_display_id(self, display_id: str) -> Optional[dict]:
+    def get_by_display_id(
+        self,
+        display_id: str,
+        actor_id: Optional[str] = None,
+        actor_role: str = "leader",
+    ) -> Optional[dict]:
         """Get lead by display_id with customer."""
         lead = self.lead_repo.get_by_display_id(display_id)
         if not lead:
             return None
         lead["assignments"] = self.lead_repo.get_assignments(lead["id"])
-        return self._enrich_with_customer(lead)
+        return self._enrich_with_customer(lead, actor_id, actor_role)
 
     def update(
         self,
@@ -332,8 +375,14 @@ class LeadService:
         sales_stage: Optional[str] = None,
         tech_id: Optional[str] = None,
         search: Optional[str] = None,
+        business_region: Optional[str] = None,
     ) -> list[dict]:
         """List leads with permission filtering and customer data."""
+        region_aliases = (
+            get_business_region_service().aliases_for(business_region)
+            if business_region
+            else None
+        )
         if actor_role == "leader":
             # Leader sees all
             leads = self.lead_repo.list(
@@ -344,6 +393,7 @@ class LeadService:
                 sales_stage=sales_stage,
                 tech_id=tech_id,
                 search=search,
+                business_region_aliases=region_aliases,
             )
         elif actor_role == "tech":
             leads = self.lead_repo.list(
@@ -354,6 +404,7 @@ class LeadService:
                 sales_stage=sales_stage,
                 tech_id=actor_id,
                 search=search,
+                business_region_aliases=region_aliases,
             )
         else:
             owner_filter = None
@@ -368,9 +419,11 @@ class LeadService:
                 tech_id=tech_filter,
                 customer_id=customer_id,
                 search=search,
+                business_region_aliases=region_aliases,
             )
 
-        return [mask_lead_for_role(lead, actor_role) for lead in self._enrich_leads(leads)]
+        enriched = self._enrich_leads(leads, actor_id, actor_role)
+        return [mask_lead_for_role(lead, actor_role) for lead in enriched]
 
     def add_assignment(
         self,

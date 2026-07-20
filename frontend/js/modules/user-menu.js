@@ -4,7 +4,17 @@ function initUserMenu() {
     if (!footer) return;
 
     ApiClient.getRuntimeStatus()
-        .then(status => document.getElementById('desktop-exit')?.classList.toggle('hidden', !status.desktop))
+        .then(status => {
+            document.getElementById('desktop-exit')?.classList.toggle('hidden', !status.desktop);
+            document.getElementById('install-location-warning')?.classList.toggle(
+                'hidden', !status.running_from_disk_image
+            );
+            const version = document.getElementById('runtime-version');
+            if (version) {
+                version.textContent = `v${status.version || '—'}`;
+                version.title = `${window.I18n?.t('Running version') || 'Running version'}: ${status.version || '—'}`;
+            }
+        })
         .catch(error => console.debug('Runtime status unavailable:', error));
 
     footer.addEventListener('click', (e) => {

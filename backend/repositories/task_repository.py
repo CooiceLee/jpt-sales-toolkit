@@ -36,6 +36,16 @@ class PreSalesTaskRepository(BaseRepository):
         self.conn.commit()
         return task_id
 
+    def get_by_client_request_id(
+        self, lead_id: str, client_request_id: str
+    ) -> Optional[dict]:
+        row = self.conn.execute(
+            """SELECT * FROM pre_sales_tasks
+               WHERE lead_id = ? AND client_request_id = ?""",
+            (lead_id, client_request_id),
+        ).fetchone()
+        return dict(row) if row else None
+
     def update(
         self,
         task_id: str,

@@ -19,7 +19,6 @@
 
     function initFilters() {
         document.getElementById('filter-stage')?.addEventListener('change', loadHandler);
-        document.getElementById('filter-region')?.addEventListener('change', loadHandler);
         document.getElementById('map-stage-filter')?.addEventListener('change', loadReviewMap);
         document.getElementById('map-outcome-filter')?.addEventListener('change', loadReviewMap);
         document.getElementById('map-region-filter')?.addEventListener('change', loadReviewMap);
@@ -33,6 +32,7 @@
         document.getElementById('review-stage')?.addEventListener('change', loadDataReview);
         document.getElementById('trip-region')?.addEventListener('change', window.resetTripPlannerFilters);
         document.getElementById('trip-stage')?.addEventListener('change', window.resetTripPlannerFilters);
+        window.FollowupFilterControls?.init();
 
         initFilterTabs('module-followup', loadFollowup);
         initFilterTabs('module-sampling', loadSampling);

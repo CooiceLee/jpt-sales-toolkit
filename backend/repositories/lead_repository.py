@@ -137,6 +137,7 @@ class LeadRepository(BaseRepository):
         tech_id: Optional[str] = None,
         include_archived: bool = False,
         search: Optional[str] = None,
+        business_region_aliases: Optional[tuple[str, ...]] = None,
     ) -> list[dict]:
         """List leads with optional filters."""
         sql = """
@@ -183,6 +184,14 @@ class LeadRepository(BaseRepository):
                 )
             """
             params.extend([tech_id, tech_id])
+
+        if business_region_aliases:
+            placeholders = ", ".join("?" for _ in business_region_aliases)
+            sql += (
+                " AND LOWER(TRIM(COALESCE(owner.region, ''))) "
+                f"IN ({placeholders})"
+            )
+            params.extend(business_region_aliases)
 
         if search:
             sql += """ AND (
@@ -356,6 +365,7 @@ class LeadRepository(BaseRepository):
         tech_id: Optional[str] = None,
         customer_id: Optional[str] = None,
         search: Optional[str] = None,
+        business_region_aliases: Optional[tuple[str, ...]] = None,
     ) -> list[dict]:
         """Get leads where user is owner, collaborator, or watcher."""
         sql = """
@@ -403,6 +413,14 @@ class LeadRepository(BaseRepository):
                 )
             """
             params.extend([tech_id, tech_id])
+
+        if business_region_aliases:
+            placeholders = ", ".join("?" for _ in business_region_aliases)
+            sql += (
+                " AND LOWER(TRIM(COALESCE(owner.region, ''))) "
+                f"IN ({placeholders})"
+            )
+            params.extend(business_region_aliases)
 
         if search:
             sql += """ AND (

@@ -177,6 +177,10 @@ class ReviewAnalysisService:
             params,
         ).fetchone()[0]
 
+        pre_sales_active_lead_count = (
+            self.core.pre_sales_read_repo.count_active_leads(actor_id, actor_role)
+        )
+
         # By region
         region_counts = {}
         cursor = conn.execute(
@@ -201,6 +205,7 @@ class ReviewAnalysisService:
             "won_value": float(won_value),
             "recent_7_days": recent,
             "overdue_followups": overdue,
+            "pre_sales_active_lead_count": pre_sales_active_lead_count,
             "service_open_count": service_open_count,
             "by_region": region_counts,
         }

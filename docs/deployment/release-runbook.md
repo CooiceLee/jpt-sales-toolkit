@@ -1,5 +1,7 @@
 # 桌面安装包发布手册
 
+当前发布候选：`v0.11.4-internal`。
+
 ## 构建入口
 
 GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
@@ -28,7 +30,9 @@ GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
 6. 验证卸载不删除用户数据。
 7. 安装通过后再独立验证 XLSX 预检、提交、幂等更新和回滚；不得用预装数据掩盖安装问题。
 8. 独立验证来源人员映射、三角色权限边界，以及 JSON 数据包分发同步；验证 `.jptauth` 未进入 GitHub Artifact 或 Release。
-9. 正式版必须补齐 Windows 代码签名和 macOS Developer ID、Hardened Runtime、notarization、stapling；在此之前产物只能标记 `UNSIGNED-INTERNAL`。
+9. 使用真实或等价数据验证五类负责人业务地区、组合筛选、计划到期与长期未跟进的独立口径、客户模糊候选/预览/合并，以及地图精确/近似/缺失和离线提示。
+10. 检查 `docs/guides/` 三份 HTML 可离线打开、互相跳转、版本一致，且不包含真实客户、账号、密钥或本机路径。
+11. 正式版必须补齐 Windows 代码签名和 macOS Developer ID、Hardened Runtime、notarization、stapling；在此之前产物只能标记 `UNSIGNED-INTERNAL`。
 
 ## 回滚
 

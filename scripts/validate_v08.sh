@@ -17,6 +17,7 @@ echo "----------------------------------"
 
 echo
 echo "Step 1/4: JavaScript syntax"
+node --check frontend/js/i18n.js
 node --check frontend/js/api-client.js
 node --check frontend/js/app.js
 node --check frontend/js/shared/utils.js
@@ -69,10 +70,16 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_operational_field_frontend_contract.py
 "$PYTHON_BIN" test_v07_review_trip.py
 "$PYTHON_BIN" test_v09_filters_merge.py
+"$PYTHON_BIN" test_business_region_filters.py
 "$PYTHON_BIN" test_customer_merge_integrity.py
+"$PYTHON_BIN" test_customer_merge_frontend_contract.py
+"$PYTHON_BIN" test_map_frontend_contract.py
 "$PYTHON_BIN" test_runtime_contracts.py
 "$PYTHON_BIN" test_pre_sales_crud.py
+"$PYTHON_BIN" test_pre_sales_read_model.py
 "$PYTHON_BIN" test_sampling_frontend_contract.py
+"$PYTHON_BIN" test_i18n_frontend_contract.py
+"$PYTHON_BIN" test_followup_filter_frontend_contract.py
 "$PYTHON_BIN" test_frontend_module_contract.py
 "$PYTHON_BIN" test_lead_dynamic_fields.py
 "$PYTHON_BIN" test_intake_data_fidelity.py

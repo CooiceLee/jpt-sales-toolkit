@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
+import threading
 from pathlib import Path
 
 from backend.config import init_settings
-from backend.repositories import close_db, init_db, LeadRepository, UserRepository
+from backend.repositories import (
+    ActivityRepository,
+    AuditRepository,
+    close_db,
+    init_db,
+    LeadRepository,
+    PreSalesTaskRepository,
+    UserRepository,
+)
 from backend.repositories.base import ConflictError
 from backend.services import (
     AfterSalesTaskService,
@@ -85,6 +95,22 @@ def test_visibility(ids: dict) -> None:
 
 def test_crud_and_conflict(ids: dict) -> None:
     service = PreSalesTaskService()
+    request = {
+        "client_request_id": "retry-safe-create",
+        "assignee_id": ids["tech2"],
+        "status": "In Progress",
+        "request_json": json.dumps({"request_description": "Atomic request"}),
+        "result_json": json.dumps({"progress_text": "Submitted"}),
+    }
+    first = service.create(ids["lead2"], request, ids["sales2"])
+    repeated = service.create(ids["lead2"], request, ids["sales2"])
+    assert repeated["id"] == first["id"]
+    assert service.task_repo.conn.execute(
+        """SELECT COUNT(*) FROM pre_sales_tasks
+           WHERE lead_id = ? AND client_request_id = ?""",
+        (ids["lead2"], "retry-safe-create"),
+    ).fetchone()[0] == 1
+
     original = service.task_repo.get_by_id(ids["task1"])
     updated = service.update(ids["task1"], {
         "status": "Completed",
@@ -108,11 +134,104 @@ def test_crud_and_conflict(ids: dict) -> None:
     assert len(service.list(leader, {"lead_id": ids["lead1"]})) == 1
 
 
+class TrackingConnection(sqlite3.Connection):
+    """Expose rollback use so the losing idempotent writer can be asserted."""
+
+    rollback_count = 0
+
+    def rollback(self) -> None:
+        self.rollback_count += 1
+        super().rollback()
+
+
+class BarrierTaskRepository(PreSalesTaskRepository):
+    """Make two independent writers finish their initial miss before inserting."""
+
+    def __init__(self, conn: sqlite3.Connection, barrier: threading.Barrier):
+        super().__init__(conn)
+        self.barrier = barrier
+        self.initial_lookup_complete = False
+
+    def get_by_client_request_id(
+        self, lead_id: str, client_request_id: str
+    ) -> dict | None:
+        existing = super().get_by_client_request_id(lead_id, client_request_id)
+        if not self.initial_lookup_complete:
+            self.initial_lookup_complete = True
+            assert existing is None
+            self.barrier.wait(timeout=5)
+        return existing
+
+
+def test_concurrent_idempotent_create(ids: dict, db_path: Path) -> None:
+    barrier = threading.Barrier(2)
+    results, errors = [], []
+    request = {
+        "client_request_id": "concurrent-retry-safe-create",
+        "assignee_id": ids["tech1"],
+        "status": "In Progress",
+        "request_json": json.dumps({"request_description": "Concurrent request"}),
+    }
+
+    def create_from_independent_connection() -> None:
+        conn = sqlite3.connect(
+            db_path,
+            timeout=5,
+            check_same_thread=False,
+            factory=TrackingConnection,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            task_repo = BarrierTaskRepository(conn, barrier)
+            service = PreSalesTaskService(
+                task_repo=task_repo,
+                activity_repo=ActivityRepository(conn),
+                audit_repo=AuditRepository(conn),
+            )
+            task = service.create(ids["lead1"], request, ids["sales1"])
+            count = conn.execute(
+                """SELECT COUNT(*) FROM pre_sales_tasks
+                   WHERE lead_id = ? AND client_request_id = ?""",
+                (ids["lead1"], request["client_request_id"]),
+            ).fetchone()[0]
+            results.append({
+                "id": task["id"],
+                "count": count,
+                "rollback_count": conn.rollback_count,
+                "in_transaction": conn.in_transaction,
+            })
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            conn.close()
+
+    threads = [
+        threading.Thread(target=create_from_independent_connection)
+        for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(results) == 2
+    assert len({result["id"] for result in results}) == 1
+    assert all(result["count"] == 1 for result in results)
+    loser = [result for result in results if result["rollback_count"] == 1]
+    assert len(loser) == 1
+    assert loser[0]["in_transaction"] is False
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="jpt_sampling_") as directory:
+        db_path = Path(directory) / "sampling.sqlite"
         ids = build_fixture(Path(directory))
         test_visibility(ids)
         test_crud_and_conflict(ids)
+        test_concurrent_idempotent_create(ids, db_path)
         close_db()
     print("PASS: pre-sales CRUD, visibility, archive/restore and conflict checks")
 

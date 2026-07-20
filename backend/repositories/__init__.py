@@ -12,6 +12,8 @@ from .customer_repository import CustomerRepository
 from .customer_alias_repository import CustomerAliasRepository
 from .lead_repository import LeadRepository
 from .activity_repository import ActivityRepository
+from .follow_up_read_repository import FollowUpReadRepository
+from .pre_sales_read_repository import PreSalesReadRepository
 from .task_repository import PreSalesTaskRepository, AfterSalesTaskRepository
 from .attachment_repository import AttachmentRepository
 from .audit_repository import AuditRepository
@@ -32,6 +34,8 @@ __all__ = [
     "CustomerAliasRepository",
     "LeadRepository",
     "ActivityRepository",
+    "FollowUpReadRepository",
+    "PreSalesReadRepository",
     "PreSalesTaskRepository",
     "AfterSalesTaskRepository",
     "AttachmentRepository",

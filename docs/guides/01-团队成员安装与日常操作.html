@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>JPT 0.11.4 团队成员安装与日常操作</title>
+  <style>
+    :root{--wine:#8b1a1a;--wine2:#651212;--ink:#1d1d1f;--muted:#66615e;--bg:#f4f3f1;--paper:#fff;--line:#ded8d4;--soft:#f7efec;--ok:#176d3b;--warn:#945900;--blue:#245b87}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}.wrap{width:min(1080px,calc(100% - 40px));margin:auto}
+    .top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}.top .wrap{min-height:58px;display:flex;align-items:center;justify-content:space-between;gap:18px}.brand{font-weight:850}.brand span{color:var(--wine)}nav{display:flex;gap:17px;font-size:13px;flex-wrap:wrap}
+    .hero{padding:58px 0;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#fff,#f4e9e5)}.kicker{font-size:12px;letter-spacing:.18em;color:var(--wine);font-weight:850}.hero h1{font-size:clamp(34px,5vw,56px);line-height:1.08;letter-spacing:-.04em;margin:10px 0 17px}.lead{font-size:18px;color:#504c49;max-width:820px}.pills{display:flex;gap:9px;flex-wrap:wrap;margin-top:24px}.pill{padding:7px 12px;border:1px solid #d9ceca;border-radius:999px;background:#fff;font-size:13px}
+    main{padding:38px 0 70px}h2{font-size:28px;letter-spacing:-.025em;margin:46px 0 16px}h3{margin:0 0 8px}.metrics,.grid2,.grid3{display:grid;gap:15px}.metrics{grid-template-columns:repeat(3,1fr)}.grid2{grid-template-columns:1fr 1fr}.grid3{grid-template-columns:repeat(3,1fr)}.panel,.metric{background:#fff;border:1px solid var(--line);border-radius:16px;padding:21px}.metric b{display:block;color:var(--wine);font-size:28px}.panel p,.panel li{color:var(--muted)}
+    .steps{counter-reset:s;display:grid;gap:14px}.step{counter-increment:s;display:grid;grid-template-columns:52px 1fr;gap:15px;background:#fff;border:1px solid var(--line);border-radius:17px;padding:20px}.step::before{content:counter(s);display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:var(--wine);color:#fff;font-weight:850;font-size:18px}.step p{margin:0;color:var(--muted)}.step ul{margin:8px 0 0;padding-left:20px;color:var(--muted)}
+    .callout{margin:18px 0;padding:17px 20px;border-left:4px solid var(--wine);border-radius:0 12px 12px 0;background:#fff7f4}.callout.ok{border-color:var(--ok);background:#f3faf5}.callout.warn{border-color:#d18b00;background:#fff8e8}.callout.info{border-color:var(--blue);background:#f2f7fb}code{background:#f1ece9;color:#741616;border-radius:5px;padding:2px 5px}
+    table{width:100%;table-layout:fixed;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}th,td{padding:12px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{font-size:13px;background:#f6efec;color:var(--wine)}tr:last-child td{border-bottom:0}.check{columns:2;column-gap:18px;margin:0;padding:0;list-style:none}.check li{break-inside:avoid;background:#fff;border:1px solid var(--line);border-radius:11px;margin:0 0 10px;padding:12px 14px}.check li::before{content:"□";color:var(--wine);font-weight:900;margin-right:8px}.footer{border-top:1px solid var(--line);padding:26px 0 40px;color:var(--muted);font-size:13px}
+    @media(max-width:760px){.metrics,.grid2,.grid3{grid-template-columns:1fr}.check{columns:1}.top .wrap{align-items:flex-start;flex-direction:column;padding:12px 0}.wrap{width:min(100% - 24px,1080px)}.hero{padding:42px 0}.step{grid-template-columns:44px 1fr;padding:16px}.step::before{width:36px;height:36px}}@media print{body{background:#fff}.top{display:none}.hero{padding:25px 0}.step,.panel,.metric,.callout{break-inside:avoid}}
+  </style>
+</head>
+<body>
+  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="页面导航"><a href="#install">安装</a><a href="#activate">激活</a><a href="#followup">跟进筛选</a><a href="#map">地图</a><a href="02-Leader账号导入与治理.html">Leader 指南</a></nav></div></header>
+  <section class="hero"><div class="wrap"><div class="kicker">MEMBER GUIDE · GATE A</div><h1>团队成员安装与日常操作</h1><p class="lead">先证明程序可以独立安装、授权、保存和恢复，再参加 Excel、权限或同步测试。安装新版会保留原本地账号和数据，不会强制重新建号。</p><div class="pills"><span class="pill">v0.11.4-internal</span><span class="pill">Leader / Sales / Tech</span><span class="pill">一名成员默认一台电脑</span><span class="pill">Windows / macOS</span></div></div></section>
+  <main class="wrap">
+    <section class="metrics"><div class="metric"><b>1</b>名成员默认绑定 1 台设备</div><div class="metric"><b>90</b>天固定离线授权周期</div><div class="metric"><b>A</b>先独立完成安装验收</div></section>
+
+    <h2 id="install">1. 选择并安装正确版本</h2>
+    <table><thead><tr><th>设备</th><th>应选择</th><th>如何确认</th></tr></thead><tbody>
+      <tr><td>Windows 10 / 11</td><td>Windows x64 Setup <code>.exe</code></td><td>设置 → 系统 → 系统信息，确认 64 位</td></tr>
+      <tr><td>Mac M 系列芯片</td><td>macOS Apple Silicon arm64 <code>.dmg</code></td><td> → 关于本机，芯片显示 Apple</td></tr>
+      <tr><td>Mac Intel 芯片</td><td>macOS Intel x86_64 <code>.dmg</code></td><td> → 关于本机，处理器显示 Intel</td></tr>
+    </tbody></table>
+    <aside class="callout warn"><strong>内部未签名版本：</strong>只有在文件名、版本和 Leader 提供的校验记录一致时，才处理系统“未知发布者”提示。不提供 Linux 版本，也不要使用来源不明的命令关闭系统安全保护。</aside>
+
+    <section class="grid2">
+      <article class="panel"><h3>Windows 安装</h3><ol><li>完全退出旧 JPT，并关闭旧的本机浏览器页签。</li><li>运行 Windows x64 安装程序并按向导完成。</li><li>从“开始”菜单打开 JPT，不要继续用旧目录副本。</li><li>页面打开后确认标题栏为 <code>v0.11.4-internal</code>。</li></ol></article>
+      <article class="panel"><h3>macOS 安装</h3><ol><li>通过 JPT 的退出入口完全退出旧程序；只关浏览器不等于退出。</li><li>打开与芯片匹配的 DMG，把 App 拖入“应用程序”。</li><li>在 Finder 推出 DMG。</li><li>从“应用程序”打开 JPT，确认标题栏版本。</li></ol></article>
+    </section>
+    <aside class="callout"><strong>升级后没有重新创建账号是正常的。</strong>账号、授权、附件和业务数据保存在独立数据目录。新版只替换程序；不要通过删除数据目录来“刷新界面”。若仍看到旧界面，应确认旧后台已退出、DMG 已推出，并从正确的应用副本重新打开。</aside>
+
+    <h2 id="activate">2. 成员设备申请与激活</h2>
+    <section class="steps">
+      <article class="step"><div><h3>选择加入现有团队</h3><p>已有团队成员选择“加入现有团队”，确认页面显示的是自己的姓名与预期角色。</p></div></article>
+      <article class="step"><div><h3>下载设备申请</h3><p>生成 <code>.jptreq</code>，点对点发给 Leader。不要把设备申请放入公开群或公共代码仓库。</p></div></article>
+      <article class="step"><div><h3>接收两项内容</h3><p>Leader 返回设备专属 <code>.jptauth</code>；16 位验证码应通过另一条可信渠道发送。两项都不要转发给其他成员。</p></div></article>
+      <article class="step"><div><h3>导入并设置本地密码</h3><p>导入授权、输入验证码、设置至少 8 位密码。姓名、角色或设备任一不符时停止，让 Leader 重新签发。</p></div></article>
+      <article class="step"><div><h3>完成持久化检查</h3><p>建立一条带唯一测试标识的记录，查看、修改、归档或删除；完全退出并重新启动，确认预期数据仍在。</p></div></article>
+    </section>
+    <aside class="callout ok"><strong>Gate A 通过后再拿 Excel。</strong>程序安装、账号激活和本地保存必须在没有工作簿、没有 JSON 同步包的情况下单独通过。</aside>
+
+    <h2 id="followup">3. 业务地区与跟进时间怎么筛</h2>
+    <div class="grid2">
+      <article class="panel"><h3>负责人业务地区</h3><p>地区来自 Lead 负责人账号，不来自客户地址。五类固定值：</p><ul><li>GLOBAL</li><li>欧洲</li><li>北美/加拿大/澳洲</li><li>俄罗斯/土耳其/中东</li><li>东南亚</li></ul><p><strong>全部地区</strong>才表示清除地区限制；<strong>GLOBAL</strong> 是真实业务归属。地区、负责人、技术人员、搜索和时间条件会同时生效。</p></article>
+      <article class="panel"><h3>两种时间口径</h3><p><strong>计划到期：</strong>已逾期、今日到期、未来 7 天都查看下一次计划跟进日期。没有计划日期的记录不会自动进入这些页签。</p><p><strong>长期未跟进：</strong>先取最近正式跟进日期；没有则取询盘日期；再没有取创建日期。可用于找出长期没有实际活动的卡片。</p></article>
+    </div>
+    <table><thead><tr><th>筛选结果为空</th><th>先检查什么</th><th>正确动作</th></tr></thead><tbody>
+      <tr><td>已逾期/今日/未来 7 天为 0</td><td>卡片是否填写下一次计划日期</td><td>查看页面的针对性空状态；需要时返回全部进行中补填计划</td></tr>
+      <tr><td>长期未跟进为 0</td><td>时间门槛、负责人、地区、技术和搜索是否同时过窄</td><td>逐项清除组合条件，而不是把 GLOBAL 当成全部地区</td></tr>
+      <tr><td>看到“从未正式跟进”</td><td>是否确实没有正式跟进活动</td><td>仍可查看询盘/创建日期；补记真实跟进，不要伪造日期</td></tr>
+    </tbody></table>
+
+    <h2 id="map">4. 地图坐标质量</h2>
+    <section class="grid3">
+      <article class="panel"><h3>精确</h3><p>已有经过确认的经纬度，可用于地图定位；拜访前仍应核对地址和联系人。</p></article>
+      <article class="panel"><h3>近似</h3><p>仅按国家、城市或区域给出参考位置，不能用于判断楼宇、路线终点或实际距离。</p></article>
+      <article class="panel"><h3>缺失</h3><p>没有可用坐标。应进入坐标复核补充地址、地图选点或人工经纬度。</p></article>
+    </section>
+    <aside class="callout info"><strong>没有底图不等于数据丢失。</strong>地图底图和地址解析需要网络。离线或瓦片加载失败时，页面会提示底图状态；客户列表、筛选、坐标质量和人工修正仍应可用。</aside>
+
+    <h2>5. Gate A 完成清单</h2>
+    <ul class="check">
+      <li>安装包与设备架构一致</li><li>标题栏为 v0.11.4-internal</li><li>中英文切换不改变页面布局</li><li>姓名、角色和设备正确</li><li>可生成并导入设备授权</li><li>新增、查看、修改正常</li><li>归档/删除操作可纠正</li><li>完全退出后后台停止</li><li>重启后本地数据仍在</li><li>业务地区显示正确</li><li>时间筛选口径清楚</li><li>地图质量状态可理解</li>
+    </ul>
+
+    <h2>6. 常见异常</h2>
+    <table><thead><tr><th>现象</th><th>原因判断</th><th>处理</th></tr></thead><tbody>
+      <tr><td>提示旧版仍在运行</td><td>只关闭了浏览器，后台进程仍占用数据目录</td><td>回到旧版使用退出入口，确认完全停止后再打开新版</td></tr>
+      <tr><td>macOS 显示安装位置警告</td><td>正在从 DMG 运行</td><td>退出，拖入“应用程序”，推出 DMG，再从“应用程序”打开</td></tr>
+      <tr><td>升级后仍是旧界面</td><td>打开了旧副本或旧页面</td><td>关闭旧页签，核对应用位置和标题栏版本后重开</td></tr>
+      <tr><td>授权设备不匹配</td><td>使用了其他电脑或其他成员的授权</td><td>本机重新生成申请，由 Leader 对应成员重新签发</td></tr>
+      <tr><td>地图没有底图</td><td>离线或底图服务不可用</td><td>继续使用列表；需要定位时联网后重试，不要把近似点当精确点</td></tr>
+    </tbody></table>
+  </main>
+  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="02-Leader账号导入与治理.html">Leader 指南 →</a>　·　JPT v0.11.4-internal</div></footer>
+</body>
+</html>

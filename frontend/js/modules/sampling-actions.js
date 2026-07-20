@@ -1,39 +1,11 @@
 /** Sampling task form actions. */
-(function() {
-    function currentTask(index) {
-        return State.currentInquiry?.sample_tasks?.[index] || null;
-    }
+(function () {
+    'use strict';
 
-    async function loadAssignees(selectedId) {
-        const select = document.getElementById('sample-task-assignee');
-        if (!select) return;
-        const users = await ApiClient.listUsers().catch(() => []);
-        const techUsers = users.filter(user => user.role === 'tech' && user.is_active !== false);
-        select.innerHTML = '<option value="">Unassigned</option>' + techUsers
-            .map(user => `<option value="${user.id}" ${user.id === selectedId ? 'selected' : ''}>${escapeHtml(user.display_name || user.username)}</option>`)
-            .join('');
-    }
+    const tr = text => window.I18n?.t(text) || text;
+    const taskLocks = new Set();
 
-    window.showSampleTaskForm = async function(index = -1) {
-        const task = index >= 0 ? currentTask(index) : null;
-        if (RoleCapabilities.isTech() && (!task || task.archived_at)) return;
-        document.getElementById('sample-task-form')?.classList.remove('hidden');
-        document.getElementById('sample-task-index').value = String(index);
-        document.getElementById('sample-task-status').value = task?.status || 'Open';
-        document.getElementById('sample-task-due').value = task?.due_date || '';
-        document.getElementById('sample-task-params').value = task?.sample_params || '';
-        document.getElementById('sample-task-result').value = task?.sample_result || 'Pending';
-        document.getElementById('sample-task-report').value = task?.report_link || '';
-        document.getElementById('sample-task-confirmed').value = task?.confirmed_date || '';
-        document.getElementById('sample-task-save').textContent = RoleCapabilities.isTech()
-            ? 'Save result'
-            : (task ? 'Update request' : 'Save request');
-        if (!RoleCapabilities.isTech()) await loadAssignees(task?.assignee_id || '');
-        document.getElementById('sample-task-form')?.scrollIntoView({ block: 'nearest' });
-    };
-
-    window.editSampleTask = index => window.showSampleTaskForm(index);
-    window.hideSampleTaskForm = () => document.getElementById('sample-task-form')?.classList.add('hidden');
+    const currentTask = index => SamplingFormController.currentTask(index);
 
     async function refreshSampling(message) {
         const leadId = State.currentInquiry?.id;
@@ -44,56 +16,77 @@
         notify(message);
     }
 
+    async function mutateAndRefresh(mutation, successMessage, failureMessage) {
+        let committed = false;
+        try {
+            await mutation();
+            committed = true;
+            await refreshSampling(successMessage);
+            return true;
+        } catch (error) {
+            if (committed) {
+                window.hideSampleTaskForm();
+                alert(`${tr('The change was saved, but the screen could not refresh. Reopen this lead to load the latest data.')} ${error.message || ''}`.trim());
+            } else {
+                alert(`${failureMessage}: ${error.message || tr('Unknown error')}`);
+            }
+            return false;
+        }
+    }
+
     window.saveSampleTask = async function() {
         const leadId = State.currentInquiry?.id;
-        const params = document.getElementById('sample-task-params').value.trim();
-        if (!leadId || (!RoleCapabilities.isTech() && !params)) return alert('Please enter sample parameters.');
         const index = Number(document.getElementById('sample-task-index').value);
         const task = index >= 0 ? currentTask(index) : null;
-        if (RoleCapabilities.isTech() && (!task || task.archived_at)) {
-            return alert('Only an active assigned task result can be updated.');
+        if (!leadId || (!RoleCapabilities.isTech() && !SamplingFormData.requestDescription())) {
+            return alert(tr('Please enter a request description.'));
         }
-        const result = document.getElementById('sample-task-result').value;
-        let taskStatus = document.getElementById('sample-task-status').value;
-        if (['Success', 'Failed'].includes(result)) taskStatus = 'Completed';
-        if (result === 'Cancelled') taskStatus = 'Cancelled';
-        const resultData = {
-            status: taskStatus,
-            result_json: JSON.stringify({
-                sample_result: result,
-                report_link: document.getElementById('sample-task-report').value.trim(),
-                confirmed_date: document.getElementById('sample-task-confirmed').value || null
-            })
-        };
-        const data = RoleCapabilities.isTech() ? resultData : {
-            ...resultData,
-            assignee_id: document.getElementById('sample-task-assignee').value || null,
-            due_date: document.getElementById('sample-task-due').value || null,
-            request_json: JSON.stringify({ sample_params: params })
-        };
+        if (RoleCapabilities.isTech() && (!task || task.archived_at)) {
+            return alert(tr('Only an active assigned task result can be updated.'));
+        }
+        let data;
         try {
-            if (task?.id) {
-                await ApiClient.updatePreSalesTask(task.id, { ...data, row_version: task.row_version });
-            } else {
-                delete data.result_json;
-                delete data.status;
-                await ApiClient.createPreSalesTask(leadId, data);
-            }
-            await refreshSampling(task ? 'Sample request updated' : 'Sample request created');
+            data = SamplingFormData.collect(task);
         } catch (error) {
-            alert('Error saving sample request: ' + (error.message || 'Unknown error'));
+            return alert(`${tr('Error saving pre-sales task')}: ${tr(error.message || 'Unknown error')}`);
+        }
+        const save = document.getElementById('sample-task-save');
+        if (save?.disabled) return;
+        if (save) save.disabled = true;
+        try {
+            await mutateAndRefresh(async () => {
+                if (task?.id) {
+                    await ApiClient.updatePreSalesTask(task.id, {
+                        ...data, row_version: task.row_version
+                    });
+                } else {
+                    await ApiClient.createPreSalesTask(leadId, {
+                        ...data,
+                        client_request_id: SamplingFormData.creationToken()
+                    });
+                }
+            }, tr(task ? 'Pre-sales task updated' : 'Pre-sales task created'),
+            tr('Error saving pre-sales task'));
+        } finally {
+            const currentSave = document.getElementById('sample-task-save');
+            if (currentSave) currentSave.disabled = false;
         }
     };
 
     window.archiveSampleTask = async function(index) {
         if (!RoleCapabilities.canManageTaskRequests()) return;
         const task = currentTask(index);
-        if (!task || !confirm('Archive this sample request?')) return;
+        if (!task || !confirm(tr('Archive this pre-sales task?'))) return;
+        if (taskLocks.has(task.id)) return;
+        taskLocks.add(task.id);
         try {
-            await ApiClient.archivePreSalesTask(task.id);
-            await refreshSampling('Sample request archived');
-        } catch (error) {
-            alert('Error archiving sample request: ' + (error.message || 'Unknown error'));
+            await mutateAndRefresh(
+                () => ApiClient.archivePreSalesTask(task.id),
+                tr('Pre-sales task archived'),
+                tr('Error archiving pre-sales task')
+            );
+        } finally {
+            taskLocks.delete(task.id);
         }
     };
 
@@ -101,17 +94,22 @@
         if (!RoleCapabilities.canManageTaskRequests()) return;
         const task = currentTask(index);
         if (!task) return;
+        if (taskLocks.has(task.id)) return;
+        taskLocks.add(task.id);
         try {
-            await ApiClient.restorePreSalesTask(task.id);
-            await refreshSampling('Sample request restored');
-        } catch (error) {
-            alert('Error restoring sample request: ' + (error.message || 'Unknown error'));
+            await mutateAndRefresh(
+                () => ApiClient.restorePreSalesTask(task.id),
+                tr('Pre-sales task restored'),
+                tr('Error restoring pre-sales task')
+            );
+        } finally {
+            taskLocks.delete(task.id);
         }
     };
 
     window.newSampleRequest = function() {
         if (!RoleCapabilities.canManageTaskRequests()) return;
         switchModule('sampling');
-        notify('Select a lead card, then create the sample request in the Sample tab.');
+        notify(tr('Select a lead card, then create the task in the Pre-sales / Sample tab.'));
     };
 })();

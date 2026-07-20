@@ -207,6 +207,268 @@
             await sleep(500);
         }
 
+        async function runImportLayoutRegression(beforeLogin, dialogs) {
+            setProgress('import-layout');
+            const frame = document.getElementById('app-frame');
+            frame.style.width = '1280px';
+            frame.style.height = '720px';
+            frameWin().switchModule('export');
+            const report = {
+                format: 'JPT-XLSX-1.0-canonical', dataset_id: 'layout-regression',
+                source_hash: 'layout-regression-hash', can_commit: false,
+                canonical_summary: { total_source_rows: 300 },
+                summary: { total: 900, error_count: 240, warning_count: 60 },
+                member_mappings: [
+                    { source_name: 'shared-member', mapping_key: 'shared-member::owner', purpose: 'owner', status: 'blocker' },
+                    { source_name: 'shared-member', mapping_key: 'shared-member::task_assignee', purpose: 'task_assignee', status: 'blocker' },
+                    ...Array.from({ length: 38 }, (_, index) => ({
+                        source_name: `member-${index}`, mapping_key: `member-${index}::owner`, purpose: 'owner', status: 'blocker'
+                    }))
+                ].map(item => ({ ...item,
+                    candidates: [{ id: 'leader', username: 'leader', display_name: 'Leader', role: 'leader' }]
+                })),
+                customer_mappings: Array.from({ length: 80 }, (_, index) => ({
+                    external_key: `customer-${index}`, display_name: `Customer ${index}`,
+                    status: 'create', candidates: []
+                })),
+                issues: Array.from({ length: 240 }, (_, index) => ({
+                    severity: 'error', code: 'missing_required_field',
+                    entity_type: 'leads', external_key: `lead-${index}`,
+                    source_record_key: `row-${index}`, message: 'Required test field is missing'
+                }))
+            };
+            const file = new (frameWin().File)(['layout'], 'layout-regression.xlsx');
+            const transfer = new (frameWin().DataTransfer)();
+            transfer.items.add(file);
+            frameDoc().getElementById('import-file').files = transfer.files;
+            frameWin().SpreadsheetImportState.useFile(file);
+            frameWin().SpreadsheetImportState.setReport(file, report);
+            frameWin().SpreadsheetImportView.render(report);
+            frameDoc().getElementById('import-setup-details').open = false;
+            await sleep(100);
+            const preflight = frameDoc().getElementById('import-preflight-result');
+            const action = frameDoc().querySelector('.wizard-action-bar').getBoundingClientRect();
+            const language = frameDoc().getElementById('language-toggle').getBoundingClientRect();
+            const main = frameDoc().querySelector('.main-content');
+            const result = {
+                beforeLogin, dialogs,
+                preflightClientHeight: preflight.clientHeight,
+                preflightScrollHeight: preflight.scrollHeight,
+                preflightOverflow: frameWin().getComputedStyle(preflight).overflowY,
+                actionBottom: action.bottom,
+                viewportHeight: frameWin().innerHeight,
+                mainOverflow: main.scrollHeight - main.clientHeight,
+                languageTop: language.top,
+                headerHeight: frameDoc().querySelector('.main-header').clientHeight,
+                commitDisabled: frameDoc().getElementById('import-commit-btn').disabled,
+                commitStatus: frameDoc().getElementById('import-commit-state').textContent.trim(),
+                sharedMemberKeys: [...frameDoc().querySelectorAll('[data-member-key^="shared-member::"]')]
+                    .map(item => item.dataset.memberKey).sort()
+            };
+            result.failures = [];
+            if (result.preflightScrollHeight <= result.preflightClientHeight) result.failures.push('Preflight list did not scroll internally.');
+            if (result.preflightOverflow !== 'auto') result.failures.push('Preflight overflow is not auto.');
+            if (result.actionBottom > result.viewportHeight) result.failures.push('Import action bar left the viewport.');
+            if (result.mainOverflow > 30) result.failures.push(`Import page overflowed by ${result.mainOverflow}px.`);
+            if (result.languageTop < 0 || result.languageTop >= result.headerHeight) result.failures.push('Language toggle is outside the header.');
+            if (!result.commitDisabled || !result.commitStatus.includes('240')) result.failures.push('Blocking import state is not explicit.');
+            if (result.sharedMemberKeys.join('|') !== 'shared-member::owner|shared-member::task_assignee') result.failures.push('Purpose-specific member mapping keys collided.');
+            writeResults(result);
+            publishResult(result);
+            setStatus(result.failures.length ? 'FAIL' : 'PASS', result.failures.length ? 'fail' : 'pass');
+            document.title = `JPT Browser Regression ${result.failures.length ? 'FAIL' : 'PASS'}`;
+            return result;
+        }
+
+        async function runJsonRefreshRegression(beforeLogin, dialogs) {
+            setProgress('json-refresh');
+            frameWin().switchModule('export');
+            frameWin().showTransferWorkspace('json');
+            const token = getAuthToken();
+            const response = await fetch('/api/data/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify({ lead_ids: null })
+            });
+            if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+            const blob = await response.blob();
+            const file = new (frameWin().File)([blob], 'refresh-regression.json', {
+                type: 'application/json'
+            });
+            const transfer = new (frameWin().DataTransfer)();
+            transfer.items.add(file);
+            frameDoc().getElementById('json-import-file').files = transfer.files;
+            frameDoc().getElementById('nav-total').textContent = 'stale';
+            frameDoc().getElementById('nav-parser-total').textContent = 'stale';
+            const report = await frameWin().importJsonData();
+            const dashboard = await apiRequest('/api/review/dashboard');
+            const result = {
+                beforeLogin, dialogs,
+                reportReturned: Boolean(report),
+                navTotal: frameDoc().getElementById('nav-total').textContent.trim(),
+                navParser: frameDoc().getElementById('nav-parser-total').textContent.trim(),
+                expectedNavTotal: String(dashboard.total_leads || 0),
+                importResult: frameDoc().getElementById('json-import-result').textContent.trim()
+            };
+            result.failures = [];
+            if (!result.reportReturned) result.failures.push('JSON import did not return a report.');
+            if (result.navTotal !== result.expectedNavTotal) result.failures.push('Left navigation count was not refreshed.');
+            if (result.navParser !== result.expectedNavTotal) result.failures.push('Parser navigation count was not refreshed.');
+            if (!result.importResult) result.failures.push('Import result was not rendered.');
+            writeResults(result);
+            publishResult(result);
+            setStatus(result.failures.length ? 'FAIL' : 'PASS', result.failures.length ? 'fail' : 'pass');
+            document.title = `JPT Browser Regression ${result.failures.length ? 'FAIL' : 'PASS'}`;
+            return result;
+        }
+
+        async function runSpreadsheetNetworkRegression(beforeLogin, dialogs) {
+            setProgress('spreadsheet-network');
+            frameWin().switchModule('export');
+            const file = new (frameWin().File)(['network'], 'network-regression.xlsx');
+            const transfer = new (frameWin().DataTransfer)();
+            transfer.items.add(file);
+            frameDoc().getElementById('import-file').files = transfer.files;
+            frameWin().onImportFileChanged();
+            const originalFetch = frameWin().fetch.bind(frameWin());
+            let releaseRequest;
+            let requestStarted = '';
+            let preflightOutcome = 'network';
+            const staleReport = {
+                format: 'JPT-XLSX-1.0-canonical', dataset_id: 'stale-report-must-not-render',
+                source_hash: 'stale-report-hash', can_commit: true,
+                summary: { total: 1, error_count: 0, warning_count: 0 },
+                canonical_summary: { total_source_rows: 1 }, member_mappings: [],
+                customer_mappings: [], issues: []
+            };
+            frameWin().fetch = async (url, options) => {
+                const path = String(url);
+                if (path.includes('/api/data/spreadsheet/preflight')) {
+                    requestStarted = 'preflight';
+                    await new Promise(resolve => { releaseRequest = resolve; });
+                    if (preflightOutcome === 'network') throw new TypeError('Failed to fetch');
+                    return new frameWin.Response(JSON.stringify(staleReport), {
+                        status: 200, headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+                if (path.includes('/api/data/spreadsheet/import')) {
+                    requestStarted = 'commit';
+                    await new Promise(resolve => { releaseRequest = resolve; });
+                    throw new TypeError('Failed to fetch');
+                }
+                if (path.includes('/api/health')) throw new TypeError('Failed to fetch');
+                return originalFetch(url, options);
+            };
+            try {
+                const pending = frameWin().preflightImportData();
+                await waitFor('preflight busy state', () => requestStarted === 'preflight' && releaseRequest);
+                const picker = frameDoc().querySelector('.workbook-picker[for="import-file"]');
+                const during = {
+                    preflightDisabled: frameDoc().getElementById('import-preflight-btn').disabled,
+                    recheckDisabled: frameDoc().getElementById('import-recheck-btn').disabled,
+                    commitDisabled: frameDoc().getElementById('import-commit-btn').disabled,
+                    fileDisabled: frameDoc().getElementById('import-file').disabled,
+                    pickerDisabled: picker.getAttribute('aria-disabled'),
+                    status: frameDoc().getElementById('import-commit-state').textContent.trim()
+                };
+                releaseRequest();
+                await pending;
+                const message = frameDoc().getElementById('import-preflight-result').textContent.trim();
+                const preflightRecovered = !frameDoc().getElementById('import-file').disabled &&
+                    picker.getAttribute('aria-disabled') === 'false';
+                preflightOutcome = 'stale';
+                requestStarted = '';
+                releaseRequest = null;
+                const sameTimestamp = 1710000000000;
+                const staleA = new (frameWin().File)(['A'], 'same-metadata.xlsx', { lastModified: sameTimestamp });
+                const staleB = new (frameWin().File)(['B'], 'same-metadata.xlsx', { lastModified: sameTimestamp });
+                const staleATransfer = new (frameWin().DataTransfer)();
+                staleATransfer.items.add(staleA);
+                frameDoc().getElementById('import-file').files = staleATransfer.files;
+                frameWin().onImportFileChanged();
+                const pendingStale = frameWin().preflightImportData();
+                await waitFor('stale preflight busy state', () => requestStarted === 'preflight' && releaseRequest);
+                const staleBTransfer = new (frameWin().DataTransfer)();
+                staleBTransfer.items.add(staleB);
+                frameDoc().getElementById('import-file').files = staleBTransfer.files;
+                frameWin().onImportFileChanged();
+                releaseRequest();
+                await pendingStale;
+                const staleReportIgnored = frameDoc().getElementById('import-file').files[0] === staleB &&
+                    !frameWin().SpreadsheetImportState.hasReport() &&
+                    !frameDoc().getElementById('import-preflight-result').textContent.includes('stale-report-must-not-render');
+                const commitTransfer = new (frameWin().DataTransfer)();
+                commitTransfer.items.add(file);
+                frameDoc().getElementById('import-file').files = commitTransfer.files;
+                frameWin().onImportFileChanged();
+                const commitReport = {
+                    format: 'JPT-XLSX-1.0-canonical', dataset_id: 'network-regression',
+                    source_hash: 'network-regression-hash', can_commit: true,
+                    summary: { total: 1, error_count: 0, warning_count: 0 },
+                    canonical_summary: { total_source_rows: 1 }, member_mappings: [],
+                    customer_mappings: [], issues: []
+                };
+                frameWin().SpreadsheetImportState.setReport(file, commitReport);
+                frameWin().SpreadsheetImportView.render(commitReport);
+                frameWin().SpreadsheetImportProgress.sync();
+                requestStarted = '';
+                releaseRequest = null;
+                const pendingCommit = frameWin().importData();
+                await waitFor('commit busy state', () => requestStarted === 'commit' && releaseRequest);
+                const commitDuring = {
+                    fileDisabled: frameDoc().getElementById('import-file').disabled,
+                    pickerDisabled: picker.getAttribute('aria-disabled')
+                };
+                releaseRequest();
+                await pendingCommit;
+                const commitMessage = frameDoc().getElementById('import-result').textContent.trim();
+                const result = {
+                    beforeLogin, dialogs, during, message, preflightRecovered,
+                    staleReportIgnored, commitDuring, commitMessage,
+                    pickerLockedAfterUnconfirmed: frameDoc().getElementById('import-file').disabled &&
+                        picker.getAttribute('aria-disabled') === 'true' &&
+                        frameDoc().getElementById('import-commit-btn').disabled
+                };
+                result.failures = [];
+                if (!during.preflightDisabled || !during.recheckDisabled || !during.commitDisabled) {
+                    result.failures.push('Spreadsheet actions were not locked during preflight.');
+                }
+                if (!during.fileDisabled || during.pickerDisabled !== 'true') {
+                    result.failures.push('Workbook picker was not locked during preflight.');
+                }
+                if (!during.status.includes('预检') && !during.status.includes('preflight')) {
+                    result.failures.push('Preflight progress was not visible.');
+                }
+                if (message.includes('Failed to fetch')) result.failures.push('Raw browser network error leaked into the UI.');
+                if (!message.includes('尚未导入') && !message.includes('was not imported')) {
+                    result.failures.push('Network error did not confirm that the workbook was not imported.');
+                }
+                if (!result.preflightRecovered) result.failures.push('Workbook picker did not recover after preflight failure.');
+                if (!result.staleReportIgnored) result.failures.push('A stale preflight response overwrote a same-metadata replacement file.');
+                if (!commitDuring.fileDisabled || commitDuring.pickerDisabled !== 'true') {
+                    result.failures.push('Workbook picker was not locked during commit.');
+                }
+                if ((!commitMessage.includes('无法确认') && !commitMessage.includes('could not be confirmed')) ||
+                    (!commitMessage.includes('目标业务记录') && !commitMessage.includes('target records'))) {
+                    result.failures.push('Commit failure did not explain the unconfirmed outcome and record verification.');
+                }
+                if (commitMessage.includes('尚未导入') || commitMessage.includes('was not imported')) {
+                    result.failures.push('Commit failure made an unsafe not-imported claim.');
+                }
+                if (!result.pickerLockedAfterUnconfirmed) result.failures.push('Unconfirmed commit did not remain locked against immediate retry.');
+                writeResults(result);
+                publishResult(result);
+                setStatus(result.failures.length ? 'FAIL' : 'PASS', result.failures.length ? 'fail' : 'pass');
+                document.title = `JPT Browser Regression ${result.failures.length ? 'FAIL' : 'PASS'}`;
+                return result;
+            } finally {
+                frameWin().fetch = originalFetch;
+            }
+        }
+
         async function run() {
             const params = new URLSearchParams(location.search);
             const username = params.get('username');
@@ -243,6 +505,19 @@
             }, 25000);
             await sleep(1200);
 
+            if (mode === 'import-layout') {
+                await runImportLayoutRegression(beforeLogin, dialogs);
+                return;
+            }
+            if (mode === 'json-refresh') {
+                await runJsonRefreshRegression(beforeLogin, dialogs);
+                return;
+            }
+            if (mode === 'spreadsheet-network') {
+                await runSpreadsheetNetworkRegression(beforeLogin, dialogs);
+                return;
+            }
+
             setProgress('collect-dashboard');
             const dashboardApiData = await apiRequest('/api/review/dashboard');
             const mapApiData = await apiRequest('/api/review/map');
@@ -255,6 +530,7 @@
                 kpiWonValue: frameDoc().getElementById('kpi-pipeline')?.textContent?.trim(),
                 apiWonValueK: Math.round((dashboardApiData.won_value || 0) / 1000).toLocaleString(),
                 navTotal: frameDoc().getElementById('nav-total')?.textContent?.trim(),
+                navParser: frameDoc().getElementById('nav-parser-total')?.textContent?.trim(),
                 navHandler: frameDoc().getElementById('nav-handler-total')?.textContent?.trim(),
                 navFollowup: frameDoc().getElementById('nav-followup-total')?.textContent?.trim(),
                 navSampling: frameDoc().getElementById('nav-sampling-total')?.textContent?.trim(),
@@ -660,24 +936,22 @@
                     leadCount: initialLeads
                 };
 
-                // Import the exported data back (should be idempotent)
+                // Import through the real JSON UI path so post-import navigation refresh is covered.
                 setProgress('import-data');
-                const formData = new FormData();
-                formData.append('file', exportBlob, 'regression-export.json');
-
-                const importResponse = await fetch('/api/data/import', {
-                    method: 'POST',
-                    headers: {
-                        ...(token ? { Authorization: `Bearer ${token}` } : {})
-                    },
-                    body: formData
-                });
-
-                if (!importResponse.ok) {
-                    throw new Error(`Import failed: ${importResponse.status}`);
-                }
-
-                const importReport = await importResponse.json();
+                frameWin().showTransferWorkspace('json');
+                const exchangeFile = new (frameWin().File)(
+                    [exportBlob], 'regression-export.json', { type: 'application/json' }
+                );
+                const exchangeTransfer = new (frameWin().DataTransfer)();
+                exchangeTransfer.items.add(exchangeFile);
+                frameDoc().getElementById('json-import-file').files = exchangeTransfer.files;
+                frameDoc().getElementById('nav-total').textContent = 'stale';
+                const importReport = await frameWin().importJsonData();
+                await waitFor('navigation count refresh', () =>
+                    frameDoc().getElementById('nav-total').textContent !== 'stale'
+                );
+                const refreshedDashboard = await apiRequest('/api/review/dashboard');
+                const refreshedNavTotal = frameDoc().getElementById('nav-total').textContent.trim();
 
                 // Re-export to verify counts unchanged
                 setProgress('verify-export');
@@ -705,6 +979,7 @@
                     importMergedTasks: importReport.merged_tasks || 0,
                     importSkipped: importReport.skipped_records,
                     importErrors: importReport.errors || [],
+                    navigationRefreshed: refreshedNavTotal === String(refreshedDashboard.total_leads || 0),
                     finalCustomerCount: finalCustomers,
                     finalLeadCount: finalLeads,
                     countsUnchanged: initialCustomers === finalCustomers && initialLeads === finalLeads
@@ -744,6 +1019,9 @@
             }
             if (dashboard.kpiFollowing !== dashboard.navFollowup) {
                 failures.push(`Dashboard following KPI should match Follow-up nav count (${dashboard.navFollowup}), got ${dashboard.kpiFollowing}.`);
+            }
+            if (dashboard.kpiTotal !== dashboard.navParser) {
+                failures.push(`Parser nav count should match dashboard total (${dashboard.kpiTotal}), got ${dashboard.navParser}.`);
             }
             if (Number(stageBuckets.handler.navCount || 0) !== stageBuckets.handler.cardCount) {
                 failures.push(`Handler nav count should match default New cards (${stageBuckets.handler.cardCount}), got ${stageBuckets.handler.navCount}.`);
@@ -829,6 +1107,7 @@
                 if (!exchangeAfter.countsUnchanged) {
                     failures.push(`Import changed record counts (customers: ${exchangeBefore.customerCount} → ${exchangeAfter.finalCustomerCount}, leads: ${exchangeBefore.leadCount} → ${exchangeAfter.finalLeadCount})`);
                 }
+                if (!exchangeAfter.navigationRefreshed) failures.push('Import did not refresh the left navigation counts.');
             }
             if (JSON.stringify(dashboard.stageFilterOptions) !== JSON.stringify(['New', '', 'Assigned', 'Following', 'Quoted', 'Won', 'Lost'])) {
                 failures.push(`Handler stage filter options are stale: ${dashboard.stageFilterOptions.join(', ')}`);

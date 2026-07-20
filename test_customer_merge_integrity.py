@@ -73,6 +73,30 @@ def test_alias_lifecycle_and_match(path: Path) -> None:
     assert CustomerService().match(None, "ELG EU")[0]["id"] == ids["target"]
 
 
+def test_fuzzy_candidate_ranking(path: Path) -> None:
+    ids = _fresh_db(path)
+    service = CustomerService()
+    service.alias_repo.create(ids["target"], "ELG Europe", ids["leader"])
+    hidden = service.alias_repo.create(ids["source"], "Hidden Old Name", ids["leader"])
+    service.alias_repo.set_archived(ids["source"], hidden["id"], ids["leader"], True)
+    third = service.create({
+        "display_name": "European Laser Systems",
+        "country": "France",
+    }, ids["leader"])
+
+    alias_matches = service.fuzzy_merge_candidates("ELG Europe")
+    assert alias_matches[0]["id"] == ids["target"]
+    assert alias_matches[0]["matched_on"] == "alias"
+    assert alias_matches[0]["matched_value"] == "ELG Europe"
+    assert alias_matches[0]["score"] == 100
+    assert not any(item["id"] == ids["source"] for item in service.fuzzy_merge_candidates("Hidden Old Name"))
+
+    typo_matches = service.fuzzy_merge_candidates("Europe Lazer Gmbh")
+    assert typo_matches[0]["id"] == ids["target"]
+    assert typo_matches[0]["score"] > typo_matches[1]["score"]
+    assert any(item["id"] == third["id"] for item in typo_matches)
+
+
 def test_alias_and_merge_api(path: Path) -> None:
     ids = _fresh_db(path)
     LeadRepository().create({
@@ -114,7 +138,12 @@ def test_alias_and_merge_api(path: Path) -> None:
         "source_customer_id": ids["source"], "target_customer_id": ids["target"],
         "source_row_version": 1, "target_row_version": 1,
     }).status_code == 403
+    assert client.get("/api/customers/merge/candidates?query=API%20Alias").status_code == 403
     actor["value"] = users["leader"]
+    candidates = client.get("/api/customers/merge/candidates?query=API%20Alias%20Updated")
+    assert candidates.status_code == 200, candidates.text
+    assert candidates.json()[0]["id"] == ids["target"]
+    assert candidates.json()[0]["matched_on"] == "alias"
     assert client.post("/api/customers/merge/preview", json={
         "source_customer_id": ids["source"], "target_customer_id": ids["target"],
     }).status_code == 422
@@ -224,6 +253,7 @@ def main() -> None:
     with TemporaryDirectory(prefix="jpt-customer-merge-") as temp:
         root = Path(temp)
         test_alias_lifecycle_and_match(root / "alias.sqlite")
+        test_fuzzy_candidate_ranking(root / "fuzzy.sqlite")
         test_alias_and_merge_api(root / "api.sqlite")
         test_complete_merge(root / "merge.sqlite")
         test_audit_failure_rolls_back(root / "rollback.sqlite")

@@ -1,7 +1,7 @@
 """Shared identity and binding helpers for related lead records."""
 
 from ...repositories.base import generate_uuid
-from .bindings import bind, binding_id
+from .bindings import bind, binding_id, external_keys
 
 
 def local_record(conn, canonical, kind, item):
@@ -17,9 +17,10 @@ def local_record(conn, canonical, kind, item):
 
 def finish_record(conn, canonical, kind, item, local_id,
                   batch_id, ids, counts, existed):
-    bind(conn, canonical["dataset_id"], kind, item["external_key"], local_id,
-         batch_id, canonical["source_hash"])
-    ids[kind][item["external_key"]] = local_id
+    for key in external_keys(item):
+        bind(conn, canonical["dataset_id"], kind, key, local_id,
+             batch_id, canonical["source_hash"])
+        ids[kind][key] = local_id
     counts[kind]["updated" if existed else "created"] += 1
 
 

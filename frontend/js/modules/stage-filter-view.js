@@ -8,16 +8,16 @@ function canFilterByTech() {
 
 function initStageFilterControls() {
     STAGE_MODULES.forEach(ensureStageFilterControls);
-        const handlerSearch = document.getElementById('search-inquiry');
-        if (handlerSearch && !handlerSearch.dataset.stageFilterBound) {
-            handlerSearch.dataset.stageFilterBound = '1';
-            handlerSearch.addEventListener('input', debounce(() => {
-                State.stageFilters.search = handlerSearch.value.trim();
-                State.stageFilters.customerId = '';
-                syncStageFilterInputs();
-                reloadActiveStageModule();
-            }, 300));
-        }
+    const handlerSearch = document.getElementById('search-inquiry');
+    if (handlerSearch && !handlerSearch.dataset.stageFilterBound) {
+        handlerSearch.dataset.stageFilterBound = '1';
+        handlerSearch.addEventListener('input', debounce(() => {
+            State.stageFilters.search = handlerSearch.value.trim();
+            State.stageFilters.customerId = '';
+            syncStageFilterInputs();
+            reloadActiveStageModule();
+        }, 300));
+    }
     loadStageFilterUsers();
     syncStageFilterInputs();
 }
@@ -52,7 +52,15 @@ function buildStageFilterControls(moduleKey) {
     const techControl = canFilterByTech()
         ? `<select class="filter-select" id="stage-tech-${moduleKey}"><option value="">All tech</option></select>`
         : '';
-    return `${searchControl}${ownerControl}${techControl}`;
+    const regionControl = `<select class="filter-select business-region-filter" id="stage-region-${moduleKey}" title="Business region">${businessRegionOptions()}</select>`;
+    return `${searchControl}${ownerControl}${techControl}${regionControl}`;
+}
+
+function businessRegionOptions() {
+    const definitions = State.config?.regions?.business_regions || [];
+    return '<option value="">All regions</option>' + definitions.map(region =>
+        `<option value="${escapeHtml(region.code)}">${escapeHtml(region.label)}</option>`
+    ).join('');
 }
 
 function bindStageFilterEvents(moduleKey) {
@@ -82,6 +90,16 @@ function bindStageFilterEvents(moduleKey) {
         techSelect.dataset.bound = '1';
         techSelect.addEventListener('change', () => {
             State.stageFilters.techId = techSelect.value || '';
+            syncStageFilterInputs();
+            reloadActiveStageModule();
+        });
+    }
+
+    const regionSelect = document.getElementById(`stage-region-${moduleKey}`);
+    if (regionSelect && !regionSelect.dataset.bound) {
+        regionSelect.dataset.bound = '1';
+        regionSelect.addEventListener('change', () => {
+            State.stageFilters.businessRegion = regionSelect.value || '';
             syncStageFilterInputs();
             reloadActiveStageModule();
         });

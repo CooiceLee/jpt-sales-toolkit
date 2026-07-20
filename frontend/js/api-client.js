@@ -1,5 +1,5 @@
 /**
- * JPT Sales Toolkit - API Client v3.3
+ * JPT Sales Toolkit - API Client v3.7
  * Handles authentication, token management, and error handling
  */
 
@@ -302,6 +302,18 @@ const ApiClient = (function() {
         return request('/customers/match', {
             method: 'POST',
             body: JSON.stringify({ email, company_name: companyName })
+        });
+    }
+
+    async function listCustomerMergeCandidates(query, limit = 12) {
+        const params = new URLSearchParams({ query, limit: String(limit) });
+        return request(`/customers/merge/candidates?${params}`);
+    }
+
+    async function previewCustomerMerge(data) {
+        return request('/customers/merge/preview', {
+            method: 'POST',
+            body: JSON.stringify(data)
         });
     }
 
@@ -777,7 +789,7 @@ const ApiClient = (function() {
         return response.json();
     }
 
-    async function spreadsheetImportRequest(path, file, fields = {}) {
+    async function spreadsheetImportRequest(path, file, fields = {}, operation = 'preflight') {
         const token = getToken();
         const formData = new FormData();
         formData.append('file', file);
@@ -785,28 +797,91 @@ const ApiClient = (function() {
             if (value === undefined || value === null) return;
             formData.append(key, typeof value === 'string' ? value : JSON.stringify(value));
         });
-        const response = await fetch(`${API_BASE}${path}`, {
-            method: 'POST',
-            headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-            body: formData
-        });
-        if (!response.ok) {
-            const payload = await response.json().catch(() => null);
-            const message = payload?.detail?.message || payload?.detail || payload?.message;
-            throw new ApiError(message || `Spreadsheet import failed: ${response.status}`, response.status);
+        let response;
+        try {
+            response = await fetch(`${API_BASE}${path}`, {
+                method: 'POST',
+                headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+                body: formData
+            });
+        } catch (cause) {
+            throw await spreadsheetNetworkError(cause, operation);
         }
-        return response.json();
+        let responseText;
+        try {
+            responseText = await response.text();
+        } catch (cause) {
+            throw await spreadsheetNetworkError(cause, operation);
+        }
+        let payload;
+        try {
+            payload = JSON.parse(responseText);
+        } catch (cause) {
+            throw spreadsheetResponseError(cause, operation, response.status);
+        }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            throw spreadsheetResponseError(new TypeError('Invalid spreadsheet response'), operation, response.status);
+        }
+        if (!response.ok) {
+            const detail = payload?.detail;
+            const message = detail?.message || (typeof detail === 'string' ? detail : null) || payload?.message;
+            const fallback = operation === 'preflight' ? 'Preflight failed' : 'Spreadsheet import failed';
+            const error = new ApiError(message || `${fallback}: ${response.status}`, response.status);
+            error.code = detail?.code || payload?.code;
+            error.report = detail?.report || payload?.report;
+            throw error;
+        }
+        return payload;
+    }
+
+    async function spreadsheetNetworkError(cause, operation) {
+        let serviceAvailable = false;
+        try {
+            const response = await fetch(`${API_BASE}/health`, { cache: 'no-store' });
+            const status = response.ok ? await response.json().catch(() => null) : null;
+            serviceAvailable = response.ok && status?.status === 'ok';
+        } catch (_) {
+            serviceAvailable = false;
+        }
+        if (operation === 'commit') {
+            const error = spreadsheetResponseError(cause, operation, 0, true);
+            error.serviceAvailable = serviceAvailable;
+            return error;
+        }
+        const message = serviceAvailable
+            ? 'The spreadsheet request failed before the local service responded. The current workbook was not imported. Please run preflight again.'
+            : 'The local JPT service stopped or could not be reached. The current workbook was not imported. Reopen JPT and run preflight again.';
+        const error = new ApiError(message, 0);
+        error.code = serviceAvailable ? 'spreadsheet_request_failed' : 'local_service_unavailable';
+        error.serviceAvailable = serviceAvailable;
+        error.networkFailure = true;
+        error.causeName = cause?.name || 'NetworkError';
+        return error;
+    }
+
+    function spreadsheetResponseError(cause, operation, status = 0, networkFailure = false) {
+        const commit = operation === 'commit';
+        const message = commit
+            ? 'The import outcome could not be confirmed because the local service stopped or its response could not be read. Reopen JPT, verify the navigation counts and target records, then retry only if no import was recorded.'
+            : 'The spreadsheet preflight response could not be read. The current workbook was not imported. Please run preflight again.';
+        const error = new ApiError(message, status);
+        error.code = commit ? 'spreadsheet_commit_outcome_unconfirmed' : 'spreadsheet_response_unreadable';
+        error.operation = operation;
+        error.outcomeUnconfirmed = commit;
+        error.networkFailure = networkFailure;
+        error.causeName = cause?.name || 'ResponseError';
+        return error;
     }
 
     async function preflightSpreadsheetImport(file, resolutions = {}) {
-        return spreadsheetImportRequest('/data/spreadsheet/preflight', file, { resolutions });
+        return spreadsheetImportRequest('/data/spreadsheet/preflight', file, { resolutions }, 'preflight');
     }
 
     async function commitSpreadsheetImport(file, resolutions, expectedSourceHash) {
         return spreadsheetImportRequest('/data/spreadsheet/import', file, {
             resolutions,
             expected_source_hash: expectedSourceHash
-        });
+        }, 'commit');
     }
 
     async function listDataQualityIssues(filters = {}) {
@@ -880,6 +955,8 @@ const ApiClient = (function() {
         updateCustomerContact,
         archiveCustomerContact,
         matchCustomers,
+        listCustomerMergeCandidates,
+        previewCustomerMerge,
         mergeCustomers,
 
         // Lead

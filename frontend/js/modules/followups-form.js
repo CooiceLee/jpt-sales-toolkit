@@ -41,7 +41,9 @@ async function refreshCurrentInquiryData(leadId) {
     const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
         ApiClient.getLead(leadId),
         taskOnly ? [] : ApiClient.listActivities(leadId).catch(() => []),
-        ApiClient.listPreSalesTasks({ lead_id: leadId, include_archived: true }).catch(() => []),
+        ApiClient.listPreSalesTasks({
+            lead_id: leadId, include_archived: true, limit: 100000
+        }),
         ApiClient.listAfterSalesTasks({ lead_id: leadId }).catch(() => []),
         taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
     ]);
@@ -55,6 +57,13 @@ async function refreshCurrentInquiryData(leadId) {
     State.currentInquiry._attachments = attachments;
     State.currentInquiry.attachments = attachments;
     State.currentInquiry.sample_tasks = preSalesTasks.map(task => SamplingModule.toView(task));
+    State.currentInquiry.latest_follow_up = lead.latest_follow_up || null;
+    State.currentInquiry.latest_follow_up_at = lead.latest_follow_up_at
+        || lead.latest_follow_up?.created_at || '';
+    State.currentInquiry.latest_follow_up_at_raw =
+        lead.latest_follow_up?.occurred_at_raw || '';
+    State.currentInquiry.latest_follow_up_summary = lead.latest_follow_up_summary
+        || lead.latest_follow_up?.content || lead.latest_follow_up?.summary || '';
     State.currentInquiry.follow_ups = activities
         .filter(a => a.action_type === 'follow_up')
         .map(mapFollowUpActivity);

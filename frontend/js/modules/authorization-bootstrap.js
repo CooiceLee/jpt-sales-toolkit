@@ -10,7 +10,7 @@
     window.bootstrapFirstLeader = async function() {
         const username = document.getElementById('bootstrap-username')?.value.trim() || '';
         const displayName = document.getElementById('bootstrap-display-name')?.value.trim() || '';
-        const region = document.getElementById('bootstrap-region')?.value.trim() || null;
+        const region = document.getElementById('bootstrap-region')?.value.trim() || '';
         const password = document.getElementById('bootstrap-password')?.value || '';
         const confirmation = document.getElementById('bootstrap-password-confirm')?.value || '';
         const issuerPassphrase = document.getElementById('bootstrap-issuer-passphrase')?.value || '';
@@ -18,6 +18,7 @@
         const button = document.getElementById('bootstrap-submit-btn');
         const message = AuthorizationActivation.message;
         if (!username || !displayName) return message('Username and display name are required.', true);
+        if (!region) return message('Business region is required.', true);
         if (/\s/.test(username)) return message('Username cannot contain spaces.', true);
         if (password.length < 8) return message('Login password must contain at least 8 characters.', true);
         if (password !== confirmation) return message('Login passwords do not match.', true);

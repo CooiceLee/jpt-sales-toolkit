@@ -69,9 +69,7 @@ function initTripPlannerMap() {
     const el = document.getElementById('trip-map');
     if (!el) return;
     State.tripMap = L.map('trip-map').setView([35, 20], 2);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap, CARTO'
-    }).addTo(State.tripMap);
+    MapSupport.addTileLayer(State.tripMap, { containerId: 'trip-map', style: 'light' });
     State.tripMapLayer = L.layerGroup().addTo(State.tripMap);
 }
 
@@ -99,4 +97,3 @@ function setTripBusy(busy) {
         }
     });
 }
-

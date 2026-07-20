@@ -50,17 +50,17 @@ function initCoordinatePickerMap(lat, lng) {
     }
 
     // Default to center if no coordinates
-    const hasCoordinates = lat !== null && lat !== undefined &&
-        lng !== null && lng !== undefined &&
-        Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
-    const centerLat = hasCoordinates ? Number(lat) : 35;
-    const centerLng = hasCoordinates ? Number(lng) : 20;
+    const existingPair = MapSupport.coordinatePair(lat, lng);
+    const hasCoordinates = !!existingPair;
+    const centerLat = hasCoordinates ? existingPair[0] : 35;
+    const centerLng = hasCoordinates ? existingPair[1] : 20;
     const zoom = hasCoordinates ? 10 : 2;
 
     coordinatePickerMap = L.map('coord-map-picker').setView([centerLat, centerLng], zoom);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(coordinatePickerMap);
+    MapSupport.addTileLayer(coordinatePickerMap, {
+        containerId: 'coord-map-picker',
+        style: 'standard'
+    });
 
     // Add marker if coordinates exist
     if (hasCoordinates) {
@@ -85,4 +85,3 @@ function initCoordinatePickerMap(lat, lng) {
     // Force map to recalculate size
     coordinatePickerMap.invalidateSize();
 }
-

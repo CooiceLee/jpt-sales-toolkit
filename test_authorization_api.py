@@ -51,6 +51,13 @@ def login(client: TestClient, username: str, password: str):
 def bootstrap_and_issue(client: TestClient, device: dict) -> tuple[dict, str]:
     status = expect(client.get("/api/authorization/status"), 200, "fresh status").json()
     assert status["mode"] == "setup" and not status["activated"]
+    missing_region = expect(client.post("/api/authorization/bootstrap", json={
+        "username": "leader.missing-region",
+        "display_name": "Missing Region Leader",
+        "password": LEADER_PASSWORD,
+        "issuer_passphrase": ISSUER_PASSPHRASE,
+    }), 400, "first Leader requires business region")
+    assert missing_region.json()["detail"] == "Business region is required"
     bootstrap = expect(client.post("/api/authorization/bootstrap", json={
         "username": "leader.local",
         "display_name": "Local Leader",
@@ -63,6 +70,19 @@ def bootstrap_and_issue(client: TestClient, device: dict) -> tuple[dict, str]:
 
     _, leader_headers = login(client, "leader.local", LEADER_PASSWORD)
     assert leader_headers
+    leader = next(item for item in client.get(
+        "/api/authorization/members", headers=leader_headers
+    ).json() if item["username"] == "leader.local")
+    assert leader["region"] == "GLOBAL"
+    missing_member_region = expect(client.post(
+        "/api/authorization/members", headers=leader_headers,
+        json={
+            "username": "sales.missing-region",
+            "display_name": "Sales Missing Region",
+            "role": "sales",
+        },
+    ), 400, "new member requires business region")
+    assert missing_member_region.json()["detail"] == "Business region is required"
     expect(client.post("/api/authorization/bootstrap", json={
         "username": "second", "display_name": "Second", "password": LEADER_PASSWORD,
         "issuer_passphrase": ISSUER_PASSPHRASE,
@@ -76,12 +96,10 @@ def bootstrap_and_issue(client: TestClient, device: dict) -> tuple[dict, str]:
         "/api/authorization/members", headers=leader_headers,
         json={
             "username": "sales.one", "display_name": "Sales One",
-            "role": "sales", "region": "EU",
+            "role": "sales", "region": "Europe",
         },
     ), 201, "create Sales member").json()
-    leader = next(item for item in client.get(
-        "/api/authorization/members", headers=leader_headers
-    ).json() if item["username"] == "leader.local")
+    assert sales["region"] == "EU"
     updated = expect(client.patch(
         f"/api/authorization/members/{leader['id']}", headers=leader_headers,
         json={"display_name": "Primary Leader"},

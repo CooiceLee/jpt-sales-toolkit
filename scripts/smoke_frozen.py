@@ -14,9 +14,9 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 
 LOCAL_OPENER = build_opener(ProxyHandler({}))
-EXPECTED_VERSION = (Path(__file__).resolve().parents[1] / "VERSION").read_text(
-    encoding="utf-8"
-).strip()
+ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+STANDARD_TEMPLATE = ROOT / "frontend" / "templates" / "JPT标准导入模板.xlsx"
 
 
 def free_port() -> int:
@@ -35,7 +35,36 @@ def fetch(url: str, method: str = "GET", payload=None, token: str | None = None)
         return response.status, response.headers, response.read()
 
 
-def wait_for_health(base_url: str, timeout: float = 30) -> None:
+def preflight_template(base_url: str, token: str):
+    assert STANDARD_TEMPLATE.is_file(), f"Standard template not found: {STANDARD_TEMPLATE}"
+    boundary = f"----JPTFrozenSmoke{time.monotonic_ns():x}"
+    prefix = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{STANDARD_TEMPLATE.name}"\r\n'
+        "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n"
+    ).encode("utf-8")
+    suffix = (
+        f"\r\n--{boundary}\r\n"
+        'Content-Disposition: form-data; name="resolutions"\r\n\r\n'
+        "{}\r\n"
+        f"--{boundary}--\r\n"
+    ).encode("utf-8")
+    request = Request(
+        f"{base_url}/api/data/spreadsheet/preflight",
+        data=prefix + STANDARD_TEMPLATE.read_bytes() + suffix,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    with LOCAL_OPENER.open(request, timeout=30) as response:
+        return response.status, json.loads(response.read())
+
+
+def wait_for_health(
+    base_url: str, expect_disk_image: bool = False, timeout: float = 30
+) -> None:
     deadline = time.monotonic() + timeout
     last_error = None
     while time.monotonic() < deadline:
@@ -47,6 +76,7 @@ def wait_for_health(base_url: str, timeout: float = 30) -> None:
                 and health["status"] == "ok"
                 and health["version"] == EXPECTED_VERSION
                 and health["desktop"] is True
+                and health["running_from_disk_image"] is expect_disk_image
             ):
                 return
         except Exception as exc:  # process startup produces several expected failures
@@ -58,6 +88,7 @@ def wait_for_health(base_url: str, timeout: float = 30) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("executable", type=Path)
+    parser.add_argument("--expect-disk-image", action="store_true")
     args = parser.parse_args()
     executable = args.executable.resolve()
     assert executable.is_file(), f"Frozen executable not found: {executable}"
@@ -69,7 +100,15 @@ def main() -> None:
         ])
         try:
             base_url = f"http://127.0.0.1:{port}"
-            wait_for_health(base_url)
+            wait_for_health(base_url, args.expect_disk_image)
+            status, headers, body = fetch(base_url)
+            assert status == 200
+            assert headers.get("Cache-Control") == "no-store, max-age=0"
+            assert b'data-transfer-target="spreadsheet"' in body
+            assert b'import-preflight-scroll' in body
+            status, headers, _ = fetch(f"{base_url}/static/js/i18n.js")
+            assert status == 200
+            assert headers.get("Cache-Control") == "no-store, max-age=0"
             status, _, body = fetch(f"{base_url}/api/authorization/status")
             authorization = json.loads(body)
             assert status == 200 and authorization["mode"] == "setup"
@@ -85,6 +124,7 @@ def main() -> None:
                 payload={
                     "username": "smoke.leader",
                     "display_name": "Smoke Leader",
+                    "region": "GLOBAL",
                     "password": "Smoke-Login-2026!",
                     "issuer_passphrase": "Smoke-Issuer-Passphrase-2026!",
                 },
@@ -97,6 +137,18 @@ def main() -> None:
             )
             token = json.loads(body)["token"]
             assert status == 200 and token
+            status, report = preflight_template(base_url, token)
+            assert status == 200
+            assert report["dataset_id"] == "30d886c9-9fff-4c24-a410-7d25f213c0b8"
+            assert report["summary"]["total"] == 0
+            assert report["summary"]["error_count"] == 1
+            assert report["summary"]["warning_count"] == 0
+            assert report["can_commit"] is False
+            assert [issue["code"] for issue in report["issues"]] == ["no_import_records"]
+            status, _, body = fetch(f"{base_url}/api/health")
+            health = json.loads(body)
+            assert status == 200 and health["status"] == "ok"
+            assert health["version"] == EXPECTED_VERSION and process.poll() is None
             status, _, body = fetch(
                 f"{base_url}/api/desktop/shutdown", method="POST", token=token
             )

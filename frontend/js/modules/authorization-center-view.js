@@ -48,7 +48,7 @@
                         <tr>
                             <td><strong>${escapeHtml(member.displayName)}</strong><small>${escapeHtml(member.username)}</small></td>
                             <td>${escapeHtml(AuthorizationModel.ROLE_LABELS[member.role])}</td>
-                            <td>${escapeHtml(member.region || '-')}</td>
+                            <td>${escapeHtml(AuthorizationModel.regionLabel(member.region))}</td>
                             <td>${escapeHtml(AuthorizationModel.deviceLabel(member.activeDevice))}</td>
                             <td>${escapeHtml(dateLabel(member.expiresAt))}</td>
                             <td><span class="authorization-status ${member.active ? 'active' : 'inactive'}">${member.active ? 'Active' : 'Inactive'}</span></td>

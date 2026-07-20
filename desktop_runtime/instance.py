@@ -67,15 +67,21 @@ def find_available_port(preferred: int, attempts: int = 20) -> int:
     raise RuntimeError("No local port is available for JPT Sales Toolkit")
 
 
-def is_healthy(port: int, timeout: float = 0.5) -> bool:
+def read_instance_health(port: int, timeout: float = 0.5) -> Optional[dict]:
     try:
         with _LOCAL_OPENER.open(
             f"http://127.0.0.1:{port}/api/health", timeout=timeout
         ) as response:
             value = json.loads(response.read().decode("utf-8"))
-            return response.status == 200 and value.get("status") == "ok"
+            if response.status == 200 and isinstance(value, dict) and value.get("status") == "ok":
+                return value
     except (OSError, URLError, ValueError, json.JSONDecodeError):
-        return False
+        pass
+    return None
+
+
+def is_healthy(port: int, timeout: float = 0.5) -> bool:
+    return read_instance_health(port, timeout) is not None
 
 
 def wait_until_healthy(port: int, timeout: float = 20.0) -> bool:

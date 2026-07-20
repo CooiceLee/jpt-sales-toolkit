@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>JPT 0.11.4 Leader 账号、Excel 与数据治理</title>
+  <style>
+    :root{--wine:#8b1a1a;--wine2:#611010;--ink:#1d1d1f;--muted:#65605d;--bg:#f4f3f1;--paper:#fff;--line:#ddd7d3;--soft:#f7efec;--ok:#176d3b;--warn:#965a00;--error:#b22525;--blue:#245b87;--shadow:0 14px 40px rgba(49,34,29,.08)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}.wrap{width:min(1120px,calc(100% - 40px));margin:auto}
+    .top{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}.top .wrap{min-height:60px;display:flex;align-items:center;justify-content:space-between;gap:18px}.brand{font-weight:850}.brand span{color:var(--wine)}nav{display:flex;gap:16px;flex-wrap:wrap;font-size:13px}
+    .hero{padding:61px 0;border-bottom:1px solid var(--line);background:radial-gradient(circle at 88% 10%,rgba(139,26,26,.13),transparent 33%),linear-gradient(135deg,#fff,#f5edeb)}.kicker{font-size:12px;letter-spacing:.18em;color:var(--wine);font-weight:850}.hero h1{font-size:clamp(34px,5vw,58px);line-height:1.08;letter-spacing:-.04em;margin:10px 0 18px}.lead{max-width:860px;font-size:18px;color:#504b48}.pills{display:flex;gap:9px;flex-wrap:wrap;margin-top:24px}.pill{background:#fff;border:1px solid #d7cbc7;border-radius:999px;padding:7px 12px;font-size:13px}
+    main{padding:38px 0 72px}h2{font-size:29px;letter-spacing:-.025em;margin:50px 0 17px}h3{margin:0 0 8px}.grid2,.grid3,.flow{display:grid;gap:15px}.grid2{grid-template-columns:1fr 1fr}.grid3{grid-template-columns:repeat(3,1fr)}.flow{grid-template-columns:repeat(4,1fr)}.panel,.flow article{background:#fff;border:1px solid var(--line);border-radius:16px;padding:21px}.panel p,.panel li,.flow p{color:var(--muted)}.flow b{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;background:var(--wine);color:#fff}.flow strong{display:block;font-size:17px;margin:13px 0 5px}
+    .callout{margin:18px 0;border-left:4px solid var(--wine);border-radius:0 12px 12px 0;padding:17px 20px;background:#fff7f4}.callout.info{border-color:var(--blue);background:#f2f7fb}.callout.warn{border-color:#d28a00;background:#fff8e8}.callout.ok{border-color:var(--ok);background:#f2f9f4}.callout strong{color:inherit}.steps{counter-reset:s;display:grid;gap:14px}.step{counter-increment:s;display:grid;grid-template-columns:54px 1fr;gap:15px;padding:21px;background:#fff;border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.step::before{content:counter(s);display:grid;place-items:center;width:43px;height:43px;border-radius:13px;background:var(--wine);color:#fff;font-size:18px;font-weight:850}.step p{margin:0;color:var(--muted)}.step ul{margin:8px 0 0;padding-left:20px;color:var(--muted)}
+    .screen{border:1px solid #cfc7c2;border-radius:18px;background:#fbfaf8;padding:18px;box-shadow:var(--shadow)}.tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}.tab{padding:8px 11px;border-radius:9px;background:#eee9e5;font-size:13px}.tab.active{background:var(--wine);color:#fff}.screen-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.screen-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px}.review{margin-top:12px;border:1px solid #d8cfca;border-radius:12px;background:#fff}.review-head,.review-actions{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.review-window{height:195px;overflow:auto;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px;background:#faf9f7}.group{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:#fff}.button{display:inline-block;background:var(--wine);color:#fff;border-radius:9px;padding:8px 11px;font-weight:750;font-size:13px}.button.secondary{background:var(--soft);color:var(--wine);border:1px solid #ead7d0}.status{padding:5px 9px;border-radius:999px;background:#eaf6ed;color:var(--ok);font-size:12px;font-weight:800}
+    table{width:100%;table-layout:fixed;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}th,td{padding:12px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{font-size:13px;background:#f6efec;color:var(--wine)}tr:last-child td{border-bottom:0}code{background:#f0ebe8;color:#761717;border-radius:5px;padding:2px 5px}.danger{color:var(--error);font-weight:750}.good{color:var(--ok);font-weight:750}.check{columns:2;column-gap:18px;margin:0;padding:0;list-style:none}.check li{break-inside:avoid;background:#fff;border:1px solid var(--line);border-radius:11px;margin:0 0 10px;padding:12px 14px}.check li::before{content:"□";color:var(--wine);font-weight:900;margin-right:8px}.footer{border-top:1px solid var(--line);padding:27px 0 40px;color:var(--muted);font-size:13px}
+    @media(max-width:900px){.flow,.grid3{grid-template-columns:1fr 1fr}}@media(max-width:740px){.wrap{width:min(100% - 24px,1120px)}.top .wrap{align-items:flex-start;flex-direction:column;padding:12px 0}.hero{padding:43px 0}.grid2,.grid3,.flow,.screen-grid{grid-template-columns:1fr}.check{columns:1}.step{grid-template-columns:44px 1fr;padding:16px}.step::before{width:36px;height:36px}.review-window{height:235px}}@media print{body{background:#fff}.top{display:none}.hero{padding:25px 0}.step,.panel,.callout,.screen{break-inside:avoid;box-shadow:none}}
+  </style>
+</head>
+<body>
+  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> LEADER GUIDE</a><nav aria-label="页面导航"><a href="#auth">账号</a><a href="#excel">Excel</a><a href="#region">地区与跟进</a><a href="#merge">客户合并</a><a href="#map">地图</a><a href="#sync">JSON 同步</a></nav></div></header>
+  <section class="hero"><div class="wrap"><div class="kicker">LEADER GUIDE · GATE B / C / D</div><h1>账号、Excel 导入与数据治理</h1><p class="lead">Leader 先建立真实成员和业务地区，再独立处理 Excel。预检不写数据库；只有阻断项清零、人工修正确认后才提交。客户合并、地图复核和 JSON 同步各自保留独立验证证据。</p><div class="pills"><span class="pill">v0.11.4-internal</span><span class="pill">Leader 专属治理</span><span class="pill">Excel 四步向导</span><span class="pill">先预览再合并</span></div></div></section>
+  <main class="wrap">
+    <section class="flow" aria-label="独立验收顺序">
+      <article><b>A</b><strong>程序先通过</strong><p>安装、授权、保存、退出、重启和备份独立正常。</p></article>
+      <article><b>B</b><strong>Excel 再导入</strong><p>完整备份、预检、人工修正、提交、幂等和更新。</p></article>
+      <article><b>C</b><strong>权限单独核对</strong><p>用多个真实角色验证归属、可见范围和敏感字段。</p></article>
+      <article><b>D</b><strong>JSON 独立同步</strong><p>两个终端验证导出、预检、合并、重复导入和附件边界。</p></article>
+    </section>
+
+    <h2 id="auth">1. 建立账号、设备授权和业务地区</h2>
+    <div class="grid2">
+      <article class="panel"><h3>全新团队的首位 Leader</h3><ol><li>选择建立新团队，设置 Leader 用户名和本地登录密码。</li><li>设置至少 12 位签发器口令；口令不写入数据库且无法找回。</li><li>系统生成签发密钥并绑定当前设备 90 天。</li><li>立即创建完整备份，把备份与签发器口令分开保存。</li></ol></article>
+      <article class="panel"><h3>为成员签发</h3><ol><li>先创建成员，角色只能为 Leader / Sales / Tech。</li><li>接收成员本机生成的 <code>.jptreq</code>。</li><li>核对姓名、设备和角色后签发 <code>.jptauth</code>。</li><li>授权文件与 16 位验证码通过两条可信渠道发送。</li></ol></article>
+    </div>
+    <aside class="callout"><strong>每名成员默认一台设备。</strong>换机时由新电脑重新生成申请并重签；旧授权成为历史。当前离线模式不承诺设备丢失后立即远程停用。</aside>
+
+    <h3>负责人业务地区</h3>
+    <table><thead><tr><th>界面选项</th><th>含义</th><th>注意</th></tr></thead><tbody>
+      <tr><td><strong>全部地区</strong></td><td>不限制负责人业务地区</td><td>只用于筛选，不是成员地区值</td></tr>
+      <tr><td><strong>GLOBAL</strong></td><td>负责人承担全球业务</td><td>是真实归属，不等于全部地区</td></tr>
+      <tr><td><strong>欧洲</strong></td><td>欧洲业务分组</td><td rowspan="4">地区按 Lead 负责人账号判定，不按客户所在国家、地址或地图坐标推断</td></tr>
+      <tr><td><strong>北美/加拿大/澳洲</strong></td><td>北美、加拿大及澳洲业务分组</td></tr>
+      <tr><td><strong>俄罗斯/土耳其/中东</strong></td><td>俄罗斯、土耳其及中东业务分组</td></tr>
+      <tr><td><strong>东南亚</strong></td><td>东南亚业务分组</td></tr>
+    </tbody></table>
+
+    <h2 id="excel">2. Excel 导入：从备份到验证</h2>
+    <aside class="callout info"><strong>开始前 5 项：</strong>当前账号是 Leader；Gate A 已通过；相关成员已创建并启用；文件是小于 25 MB 的 <code>.xlsx</code>；同一数据集持续更新保留原 <code>dataset_id</code> 和所有 <code>*_key</code>。</aside>
+
+    <section class="screen" aria-label="Excel 导入页面结构示意">
+      <div class="tabs"><span class="tab active">Excel 导入</span><span class="tab">JSON 数据交换</span><span class="tab">数据治理</span><span class="tab">客户合并</span></div>
+      <div class="screen-grid">
+        <div class="screen-card"><strong>1 · 导入前完整备份</strong><p>完整备份包含数据库、附件和授权配置。</p><span class="button secondary">创建完整备份</span></div>
+        <div class="screen-card"><strong>2 · 选择工作簿</strong><p>只选择 JPT-XLSX-1.0 <code>.xlsx</code>。</p><span class="button secondary">选择工作簿</span> <span class="button">运行预检</span></div>
+      </div>
+      <div class="review">
+        <div class="review-head"><strong>3 · 预检与修正</strong><span>固定高度复核窗口</span></div>
+        <div class="review-window"><div class="group">▸ 成员账号映射</div><div class="group">▸ 客户匹配</div><div class="group">▸ 错误、警告与排除项</div><p>数据较多时只在此区域或已展开分组内部滚动；页面本身不应被报告持续拉长。</p></div>
+        <div class="review-actions"><span class="button secondary">应用修正并重新预检</span><span class="status">可以导入</span><span class="button">导入并合并</span></div>
+      </div>
+    </section>
+
+    <section class="steps">
+      <article class="step"><div><h3>进入正确页签</h3><p>用 Leader 登录，进入“导出 / 导入”，选择顶部“Excel 导入”。JSON、数据治理和客户合并在独立页签，不要混用。</p><ul><li>没有 Excel 页签：核对角色与版本。</li><li>看到旧版左右卡片：完全退出旧程序并从正确安装副本重开。</li></ul></div></article>
+      <article class="step"><div><h3>创建完整备份</h3><p>先点击“创建完整备份”，等待成功并记录文件名、时间和保存位置。JSON 的“导出我的数据”不包含附件，不能代替完整备份。</p><ul><li>备份失败或没有记录位置：停止导入。</li><li>备份包含授权配置，应按敏感文件保管。</li></ul></div></article>
+      <article class="step"><div><h3>选择工作簿</h3><p>点击“选择工作簿”，选择需要导入的 <code>.xlsx</code>，确认页面文件名正确。工作表名称和前四行结构不得改变，业务数据从第 5 行开始。</p><ul><li>不接受 <code>.xls</code>、<code>.xlsm</code>、空文件或超限文件。</li><li>预检后不要覆盖、重新保存或替换原文件。</li></ul></div></article>
+      <article class="step"><div><h3>运行只读预检</h3><p>点击“运行预检”。预检只解析文件和生成报告，不写数据库。先核对源数据行、实体、错误和警告数量。</p><ul><li><strong>错误：</strong>阻断提交，必须修复、映射或确认排除。</li><li><strong>警告：</strong>允许提交，但导入后要人工补充或核验。</li><li><strong>信息：</strong>来源追踪或自动匹配说明。</li></ul></div></article>
+      <article class="step"><div><h3>处理成员账号映射</h3><p>展开成员分组，把来源姓名、缩写和大小写变体映射到实际启用账号。工作簿不能创建账号。</p><ul><li>Lead owner 只能映射到 Leader 或 Sales。</li><li>售前/售后任务 assignee 只能映射到 Tech。</li><li>同一来源姓名按 owner、collaborator、actor、task assignee 等职责可能要分别选择账号。</li><li>未知、停用、歧义或角色不匹配均为阻断项。</li></ul></div></article>
+      <article class="step"><div><h3>处理客户匹配</h3><p>展开客户分组，核对主名称、别名、国家、域名和联系人。确认是同一客户时选择现有目标；不是同一实体时创建新客户。</p><ul><li>名称相似不代表实体相同。</li><li>只有确认源记录无效时才排除，不能为了让按钮可用而随意排除。</li><li>预检匹配不修改原 Excel。</li></ul></div></article>
+      <article class="step"><div><h3>应用修正并重新预检</h3><p>修改过账号、客户或排除项后，点击“应用修正并重新预检”。只有显示“可以导入”且阻断项为 0 时才能提交。</p><ul><li>仍显示阻断数量：继续处理对应分组。</li><li>文件有任何变化：重新选择并从预检开始。</li></ul></div></article>
+      <article class="step"><div><h3>执行一次正式提交</h3><p>再次核对文件、数据集和映射，点击一次“导入并合并”。成功后记录批次编号以及新增、更新、归档、跳过和警告数量。</p><ul><li>明确失败：整批回滚，不保留半批数据。</li><li>显示“结果无法确认”：不要立即重试；重开程序先查左侧计数和目标记录。</li><li>明确显示导入完成但导航刷新失败：不要重复导入，只需重开页面核对。</li></ul></div></article>
+      <article class="step"><div><h3>验证幂等更新与权限</h3><p>第二次导入完全相同文件，不应新增副本；再保留原稳定键只修改一个允许字段，确认仅更新目标记录。</p><ul><li>分别用 Leader、目标/非目标 Sales、目标/非目标 Tech 核对可见范围。</li><li>检查警告记录是否在对应卡片中可见并可人工补充。</li><li>检查负责人业务地区、跟进时间、样品/任务和地图质量是否正确。</li></ul></div></article>
+    </section>
+
+    <h3>Excel 异常处理速查</h3>
+    <table><thead><tr><th>现象</th><th>判断</th><th>处理</th></tr></thead><tbody>
+      <tr><td>预检内容把页面拉得很长</td><td>仍在使用旧界面或旧程序副本</td><td>新版应有固定高度复核窗口；退出旧后台并核对 v0.11.4</td></tr>
+      <tr><td>选择文件后提示只有 Leader 可用</td><td>角色不正确</td><td>退出并使用已授权 Leader；不要修改文件绕过权限</td></tr>
+      <tr><td>导入按钮不可用</td><td>未预检、仍有阻断项，或修正后尚未复检</td><td>展开问题分组，修正并重新预检直至可以导入</td></tr>
+      <tr><td>提交响应中断</td><td>客户端无法确认事务结果</td><td>不要立即重复提交；重开程序核对批次、计数和目标记录</td></tr>
+      <tr><td>重复导入产生副本</td><td><code>dataset_id</code> 或外部键被改变</td><td>停止继续导入，恢复稳定键并评估客户合并</td></tr>
+    </tbody></table>
+
+    <h2 id="region">3. 地区与长期未跟进的组合筛选</h2>
+    <div class="grid2">
+      <article class="panel"><h3>计划到期</h3><p>“已逾期 / 今日到期 / 未来 7 天”只看下一次计划跟进日期。没有计划日期的记录不应被当作逾期；空状态应说明是缺少计划日期、没有符合范围的记录，还是组合条件过窄。</p></article>
+      <article class="panel"><h3>长期未跟进</h3><p>活动日期按“最近正式跟进 → 询盘日期 → 创建日期”回退。可选择未跟进时间门槛，找出长期没有实际跟进的卡片；“从未正式跟进”仅表示没有正式跟进活动。</p></article>
+    </div>
+    <aside class="callout warn"><strong>组合条件取交集。</strong>业务地区、负责人、技术人员、搜索词、计划到期和长期未跟进条件会同时缩小结果。页面为 0 时先逐项核对当前条件；清除地区应选择“全部地区”，不是 GLOBAL。</aside>
+
+    <h2 id="merge">4. 客户名称/别名模糊候选与一键合并</h2>
+    <section class="steps">
+      <article class="step"><div><h3>搜索候选</h3><p>进入“客户合并”，输入法律名称、品牌名、简称或历史名称。候选同时检索主名称和别名，并显示相似度分数及匹配来源。</p></div></article>
+      <article class="step"><div><h3>选择来源与保留目标</h3><p>来源客户是将被归档的重复实体，目标客户是合并后保留的实体。核对国家、域名、联系人、Lead 和历史记录，不要只看分数。</p></div></article>
+      <article class="step"><div><h3>核对只读迁移预览</h3><p>选择两端后等待预览。核对将迁移的联系人、Lead、域名、别名和其他受支持关联；预览本身不写数据。</p></div></article>
+      <article class="step"><div><h3>执行一次合并并复核</h3><p>预览有效且目标正确后只点击一次合并。来源客户归档，关联迁移到目标并保留审计。完成后用两个名称重新搜索，核对目标别名、联系人和 Lead。</p></div></article>
+    </section>
+    <aside class="callout"><strong>不能合并的情况：</strong>只是名称近似但法律实体不同、国家/域名冲突无法解释、预览缺少预期关联、来源与目标选反、数据正在由其他导入批次修改。此时保留两个客户并补充别名或人工说明。</aside>
+
+    <h2 id="map">5. 地图与坐标质量</h2>
+    <table><thead><tr><th>状态</th><th>可以做什么</th><th>不能据此做什么</th></tr></thead><tbody>
+      <tr><td><strong>精确</strong></td><td>显示经过确认的经纬度；用于地图定位与复核</td><td>仍不能代替拜访前核对实际地址和联系人</td></tr>
+      <tr><td><strong>近似</strong></td><td>显示国家、城市或区域级参考位置</td><td>不能作为楼宇定位、路线终点或精确距离依据</td></tr>
+      <tr><td><strong>缺失</strong></td><td>进入坐标复核，通过地址、地图选点或人工经纬度补齐</td><td>不能把没有坐标的客户从业务清单中视为不存在</td></tr>
+    </tbody></table>
+    <aside class="callout info"><strong>离线底图：</strong>底图或地址解析不可用时应显示状态提示。客户列表、地区筛选、质量统计和人工修正仍然可用；恢复网络后再加载底图。负责人业务地区与地图地理位置是两个不同维度。</aside>
+
+    <h2 id="sync">6. JSON 数据包终端同步</h2>
+    <div class="grid2">
+      <article class="panel"><h3>正确流程</h3><ol><li>发送端先创建完整备份。</li><li>在“JSON 数据交换”导出权限范围内的数据。</li><li>记录来源、时间、版本和文件。</li><li>接收端先预检权限与冲突，再合并。</li><li>重复导入同一包，确认不新增重复记录。</li><li>检查接收端原有本地活动仍保留。</li></ol></article>
+      <article class="panel"><h3>边界</h3><ul><li>Excel 用于外部/历史数据摄取，不是持续同步协议。</li><li>JSON 只包含附件元数据，附件本体独立传递。</li><li>完整备份不是普通成员同步包。</li><li><code>.jptauth</code>、<code>.jptreq</code> 不进入业务同步目录。</li><li>只向成员分发其权限允许的数据。</li></ul></article>
+    </div>
+
+    <h2>7. Leader 放行清单</h2>
+    <ul class="check">
+      <li>v0.11.4 版本和平台正确</li><li>Gate A 独立通过</li><li>成员角色和业务地区正确</li><li>导入前完整备份已记录</li><li>Excel 预检确认零写入</li><li>成员映射角色合法</li><li>客户匹配经过人工确认</li><li>阻断项为 0 才提交</li><li>提交批次和统计已记录</li><li>相同文件重复导入不重复</li><li>更新保留稳定外部键</li><li>多角色权限交叉验证</li><li>计划到期与长期未跟进口径正确</li><li>GLOBAL 与全部地区不混淆</li><li>客户合并先预览后执行</li><li>地图质量和离线状态可理解</li><li>JSON 与 Excel 独立验证</li><li>异常数据可从备份恢复</li>
+    </ul>
+
+    <h2>8. 问题严重级别</h2>
+    <table><thead><tr><th>级别</th><th>定义</th><th>动作</th></tr></thead><tbody>
+      <tr><td class="danger">P0</td><td>数据丢失/错误、权限泄露、授权绕过、错误客户合并</td><td>立即停止测试，隔离文件和终端，保留备份与证据</td></tr>
+      <tr><td class="danger">P1</td><td>安装、登录、预检、提交、同步等核心链路阻塞</td><td>停止进入下一 Gate，记录完整复现步骤</td></tr>
+      <tr><td class="good">P2</td><td>低频且有明确安全绕行方式</td><td>记录影响和绕行方式，纳入后续修复</td></tr>
+    </tbody></table>
+  </main>
+  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="01-团队成员安装与日常操作.html">成员指南</a>　·　JPT v0.11.4-internal Leader 操作资料</div></footer>
+</body>
+</html>

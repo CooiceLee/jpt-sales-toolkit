@@ -16,6 +16,7 @@ from ..services.lead_service import (
     InvalidLeadContactError,
     mask_lead_for_role,
 )
+from ..services.business_region_service import InvalidBusinessRegionError
 from ..repositories.base import ConflictError
 from .deps import get_current_user, require_role, get_actor_role_for_lead, get_attachment_service
 from .lead_attachment_permissions import (
@@ -170,21 +171,29 @@ async def list_leads(
     sales_stage: Optional[str] = None,
     tech_id: Optional[str] = None,
     search: Optional[str] = None,
+    business_region: Optional[str] = None,
     user: dict = Depends(get_current_user),
     service: LeadService = Depends(get_lead_service),
 ):
     """List leads with permission filtering."""
-    return service.list(
-        actor_id=user["id"],
-        actor_role=user["role"],
-        limit=limit,
-        offset=offset,
-        owner_id=owner_id,
-        customer_id=customer_id,
-        sales_stage=sales_stage,
-        tech_id=tech_id,
-        search=search,
-    )
+    try:
+        return service.list(
+            actor_id=user["id"],
+            actor_role=user["role"],
+            limit=limit,
+            offset=offset,
+            owner_id=owner_id,
+            customer_id=customer_id,
+            sales_stage=sales_stage,
+            tech_id=tech_id,
+            search=search,
+            business_region=business_region,
+        )
+    except InvalidBusinessRegionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/{lead_id}")
@@ -194,7 +203,7 @@ async def get_lead(
     service: LeadService = Depends(get_lead_service),
 ):
     """Get lead by ID."""
-    lead = service.get(lead_id)
+    lead = service.get(lead_id, user["id"], user["role"])
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

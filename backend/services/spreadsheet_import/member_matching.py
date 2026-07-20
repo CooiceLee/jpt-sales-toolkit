@@ -7,6 +7,7 @@ from ...repositories.member_import_alias_repository import MemberImportAliasRepo
 from ...repositories.user_repository import UserRepository
 from ..member_identity_errors import MemberIdentityError
 from ..member_identity_resolver import MemberIdentityResolver, ROLE_RULES
+from .member_mapping_keys import manual_member_target, member_mapping_key
 from .persistence_common import CLEAR_TOKEN
 
 def resolve_members(conn, canonical: dict, manual: dict[str, str]) -> tuple[list[dict], dict]:
@@ -19,9 +20,7 @@ def resolve_members(conn, canonical: dict, manual: dict[str, str]) -> tuple[list
     active = [user for user in users.list_all() if user.get("is_active")]
     public, resolved = [], {}
     for (name, purpose), raw_names in sorted(occurrences.items()):
-        target_id = manual.get(name) or next(
-            (manual[raw] for raw in raw_names if raw in manual), None
-        )
+        target_id = manual_member_target(manual, name, purpose, raw_names)
         candidates = [_public_user(user) for user in active if user["role"] in ROLE_RULES[purpose]]
         try:
             match = (_manual_match(users, target_id, purpose) if target_id else
@@ -113,7 +112,8 @@ def _manual_match(users: UserRepository, user_id: str, purpose: str) -> dict:
 
 def _entry(name, purpose, status, match, candidates, code=None, message=None) -> dict:
     return {
-        "source_name": name, "purpose": purpose, "status": status,
+        "source_name": name, "purpose": purpose,
+        "mapping_key": member_mapping_key(name, purpose), "status": status,
         "user_id": match.get("user_id") if match else None,
         "matched_by": match.get("matched_by") if match else None,
         "candidates": candidates, "code": code, "message": message,

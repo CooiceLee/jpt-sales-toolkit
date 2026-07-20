@@ -47,7 +47,7 @@ PRESALES_FIELDS = {
     "G": "task.customer_decision_maker", "H": "lead.quantity_text", "I": "task.request_date",
     "J": "task.due_date", "K": "task.assignee_username_token", "L": "task.competitor",
     "M": "task.key_points", "N": "task.concerns", "O": "task.progress_text",
-    "P": "task.next_action", "Q": "preserved_unmapped",
+    "P": "task.next_action", "Q": "task.supplemental_notes",
 }
 WON_FIELDS = {
     "A": "source_ordinal", "B": "lead.owner_username_token", "C": "lead.products_detail",

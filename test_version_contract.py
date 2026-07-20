@@ -12,11 +12,12 @@ ROOT = Path(__file__).parent
 def main() -> None:
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     assert APP_VERSION == version
-    assert version_values(version) == (version, "0.11.0.0")
+    stamped_version, file_version = version_values(version)
+    assert stamped_version == version
     installer = (ROOT / "packaging" / "windows" / "installer.iss").read_text(
         encoding="utf-8"
     )
-    assert '#define VersionInfoVersion "0.11.0.0"' in installer
+    assert f'#define VersionInfoVersion "{file_version}"' in installer
     assert version_values("v1.2.3-beta.1") == ("1.2.3-beta.1", "1.2.3.0")
     assert version_values("1.2.3+build.7") == ("1.2.3+build.7", "1.2.3.0")
     assert version_values("1.2.3-rc.1+sha.abc") == (

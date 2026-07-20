@@ -1,8 +1,8 @@
 """Request models shared by task route modules."""
 
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TaskListFilters(BaseModel):
@@ -16,13 +16,16 @@ class TaskListFilters(BaseModel):
 
 class PreSalesTaskCreate(BaseModel):
     assignee_id: Optional[str] = None
+    client_request_id: Optional[str] = Field(default=None, max_length=128)
+    status: Optional[Literal["Open", "In Progress", "Completed", "Cancelled"]] = None
     request_json: Optional[str] = None
+    result_json: Optional[str] = None
     due_date: Optional[str] = None
 
 
 class PreSalesTaskUpdate(BaseModel):
     assignee_id: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[Literal["Open", "In Progress", "Completed", "Cancelled"]] = None
     request_json: Optional[str] = None
     result_json: Optional[str] = None
     due_date: Optional[str] = None

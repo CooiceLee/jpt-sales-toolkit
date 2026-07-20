@@ -15,7 +15,7 @@ def get_offline_service() -> OfflineAuthorizationService:
     return OfflineAuthorizationService()
 
 
-def get_authorization_provider() -> AuthorizationProvider:
+async def get_authorization_provider() -> AuthorizationProvider:
     return resolve_authorization_provider()
 
 

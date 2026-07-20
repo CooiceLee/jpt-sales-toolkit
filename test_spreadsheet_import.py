@@ -4,20 +4,28 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager
 import hashlib
+import inspect
 import json
 import os
+import sqlite3
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from backend.app_v2 import create_app
 from backend.repositories import UserRepository, close_db, get_db, init_db
-from backend.routers.deps import get_current_user
+from backend.repositories.base import request_db_connection
+from backend.routers.authorization_dependencies import get_authorization_provider
+from backend.routers.deps import get_auth_service, get_current_user
 from backend.services.spreadsheet_import import SpreadsheetImportService
 from backend.services.spreadsheet_import.errors import ImportBlockedError, SpreadsheetImportError
+from backend.services.spreadsheet_import.member_mapping_keys import member_mapping_key
+from backend.services.spreadsheet_import.resolutions import parse_resolutions
 
 
 def canonical_for(content: bytes, blocked: bool = False) -> dict:
@@ -142,6 +150,72 @@ def resolutions(ids: dict) -> dict:
     return {"member_mappings": {
         "old-sales": ids["sales"], "old-collab": ids["collab"], "old-tech": ids["tech"],
     }, "customer_mappings": {"CUS-1": "__CREATE__"}, "excluded_records": []}
+
+
+def purpose_split_canonical(content: bytes) -> dict:
+    result = canonical_for(content)
+    result["dataset_id"] = "purpose-split-dataset"
+    result["entities"]["leads"][0]["owner_username_token"] = "shared-person"
+    for kind in ("pre_sales_tasks", "after_sales_tasks"):
+        result["entities"][kind][0]["assignee_username_token"] = "shared-person"
+    result["member_name_tokens"] = [
+        item for item in result["member_name_tokens"]
+        if item["username_token"] != "old-tech"
+    ] + [{"username_token": "shared-person", "raw_names": ["Milena"]}]
+    return result
+
+
+def purpose_split_resolutions(ids: dict) -> dict:
+    return {
+        "member_mappings": {
+            "old-sales": ids["sales"], "old-collab": ids["collab"],
+            "shared-person": ids["sales"],
+            member_mapping_key("shared-person", "task_assignee"): ids["tech"],
+        },
+        "customer_mappings": {"CUS-1": "__CREATE__"}, "excluded_records": [],
+    }
+
+
+def grouped_pre_sales_canonical(content: bytes) -> dict:
+    result = canonical_for(content)
+    result["dataset_id"] = "grouped-pre-sales-dataset"
+    result["issues"] = []
+    result["entities"]["assignments"] = []
+    result["entities"]["activities"] = []
+    result["entities"]["after_sales_tasks"] = []
+    common = {
+        "source_ref": result["entities"]["leads"][0]["source_ref"],
+        "task_group_key": "PTG-SAME-SOURCE-ROW", "lead_key": "LEAD-1",
+        "status": "In Progress", "request_description": "Alloy weld depth test",
+        "request_date": "2026-05-01", "request_date_raw": "2026年5月1日",
+        "due_date": "2026-06-01", "due_date_raw": "2026年6月1日前",
+        "customer_decision_maker": "Dr. Chen", "quantity_text": "3 samples",
+        "competitor": "Competitor A", "key_points": "Measure penetration depth",
+        "concerns": "Protective gas stability", "progress_text": "Sample request submitted",
+        "next_action": "Engineer to accept samples",
+    }
+    result["entities"]["pre_sales_tasks"] = [
+        {**common, "external_key": "PRE-NEIL",
+         "assignee_username_token": "legacy-neil", "assignee_name_raw": "Neil"},
+        {**common, "external_key": "PRE-AYDEN",
+         "assignee_username_token": "legacy-ayden", "assignee_name_raw": "Ayden"},
+    ]
+    result["member_name_tokens"] = [
+        {"username_token": "old-sales", "raw_names": ["Legacy Sales"]},
+        {"username_token": "legacy-neil", "raw_names": ["Neil"]},
+        {"username_token": "legacy-ayden", "raw_names": ["Ayden"]},
+    ]
+    return result
+
+
+def grouped_pre_sales_resolutions(ids: dict, second_tech_id: str) -> dict:
+    return {
+        "member_mappings": {
+            "old-sales": ids["sales"], "legacy-neil": ids["tech"],
+            "legacy-ayden": second_tech_id,
+        },
+        "customer_mappings": {"CUS-1": "__CREATE__"}, "excluded_records": [],
+    }
 
 
 def bound_id(conn, kind: str, external_key: str) -> str:
@@ -380,6 +454,241 @@ def _assert_partial_upsert_defaults(conn, actor):
     ).fetchone()[0] == 0
 
 
+def assert_purpose_specific_mappings(conn, ids, actor):
+    content = b"xlsx-purpose-split"
+    selected = purpose_split_resolutions(ids)
+    service = SpreadsheetImportService(conn, lambda value, _name: purpose_split_canonical(value))
+    report = service.preflight(content, "purpose.xlsx", selected, actor)
+    shared = [item for item in report["member_mappings"]
+              if item["source_name"] == "shared-person"]
+    assert report["can_commit"], report["issues"]
+    assert {item["mapping_key"] for item in shared} == {
+        member_mapping_key("shared-person", "owner"),
+        member_mapping_key("shared-person", "task_assignee"),
+    }
+    assert {item["purpose"]: item["user_id"] for item in shared} == {
+        "owner": ids["sales"], "task_assignee": ids["tech"],
+    }
+    parsed = parse_resolutions({"member_mappings": [{
+        "mapping_key": member_mapping_key("shared-person", "task_assignee"),
+        "user_id": ids["tech"],
+    }]})
+    assert parsed["member_mappings"] == {
+        member_mapping_key("shared-person", "task_assignee"): ids["tech"]
+    }
+    service.commit(content, "purpose.xlsx", selected, report["source_hash"], actor)
+    assert conn.execute("SELECT owner_id FROM leads").fetchone()[0] == ids["sales"]
+    assert conn.execute("SELECT assignee_id FROM pre_sales_tasks").fetchone()[0] == ids["tech"]
+    assert conn.execute("SELECT assignee_id FROM after_sales_tasks").fetchone()[0] == ids["tech"]
+    assert conn.execute(
+        "SELECT COUNT(*) FROM member_import_aliases WHERE lower(source_name) IN ('shared-person', 'milena')"
+    ).fetchone()[0] == 0
+
+
+def assert_pre_sales_group_dedup(path: Path):
+    ids, actor = setup(path)
+    conn = get_db()
+    content = b"xlsx-grouped-pre-sales"
+    service = SpreadsheetImportService(
+        conn, lambda value, _name: grouped_pre_sales_canonical(value)
+    )
+    selected = grouped_pre_sales_resolutions(ids, ids["tech"])
+    report = service.preflight(content, "grouped.xlsx", selected, actor)
+    assert report["can_commit"], report["issues"]
+    assert report["summary"]["entities"]["pre_sales_tasks"] == 1
+    assert report["predicted"]["pre_sales_tasks"] == {"create": 1, "update": 0}
+    first = service.commit(content, "grouped.xlsx", selected, report["source_hash"], actor)
+    assert first["counts"]["pre_sales_tasks"] == {"created": 1, "updated": 0}
+    task = conn.execute(
+        """SELECT id, request_json, result_json FROM pre_sales_tasks
+           WHERE archived_at IS NULL"""
+    ).fetchone()
+    request, result = json.loads(task["request_json"]), json.loads(task["result_json"])
+    assert request == {
+        "competitor": "Competitor A", "concerns": "Protective gas stability",
+        "customer_decision_maker": "Dr. Chen", "due_date_raw": "2026年6月1日前",
+        "key_points": "Measure penetration depth", "quantity_text": "3 samples",
+        "request_date": "2026-05-01", "request_date_raw": "2026年5月1日",
+        "request_description": "Alloy weld depth test",
+    }
+    assert result == {
+        "next_action": "Engineer to accept samples",
+        "progress_text": "Sample request submitted",
+    }
+    bindings = conn.execute(
+        """SELECT external_key, local_entity_id FROM import_bindings
+           WHERE dataset_id = ? AND entity_type = 'pre_sales_tasks'
+           ORDER BY external_key""",
+        ("grouped-pre-sales-dataset",),
+    ).fetchall()
+    assert {row["external_key"] for row in bindings} == {"PRE-AYDEN", "PRE-NEIL"}
+    assert {row["local_entity_id"] for row in bindings} == {task["id"]}
+
+    repeated = service.commit(content, "grouped.xlsx", selected, report["source_hash"], actor)
+    assert repeated["counts"]["pre_sales_tasks"] == {"created": 0, "updated": 1}
+    assert conn.execute(
+        "SELECT COUNT(*) FROM pre_sales_tasks WHERE archived_at IS NULL"
+    ).fetchone()[0] == 1
+
+    duplicate_id = "legacy-duplicate-pre-sales-task"
+    conn.execute(
+        """INSERT INTO pre_sales_tasks (
+               id, lead_id, assignee_id, status, request_json, result_json, due_date,
+               archived_at, created_at, created_by, updated_at, updated_by, row_version
+           )
+           SELECT ?, lead_id, assignee_id, status, request_json, result_json, due_date,
+                  NULL, created_at, created_by, updated_at, updated_by, row_version
+           FROM pre_sales_tasks WHERE id = ?""",
+        (duplicate_id, task["id"]),
+    )
+    conn.execute(
+        """UPDATE import_bindings SET local_entity_id = ?
+           WHERE dataset_id = ? AND entity_type = 'pre_sales_tasks'
+             AND external_key = 'PRE-AYDEN'""",
+        (duplicate_id, "grouped-pre-sales-dataset"),
+    )
+    equivalent_request = json.loads(task["request_json"])
+    conn.execute(
+        "UPDATE pre_sales_tasks SET request_json = ? WHERE id = ?",
+        (json.dumps(dict(reversed(list(equivalent_request.items())))), duplicate_id),
+    )
+    conn.commit()
+    service.commit(content, "grouped.xlsx", selected, report["source_hash"], actor)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM pre_sales_tasks WHERE archived_at IS NULL"
+    ).fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT archived_at FROM pre_sales_tasks WHERE id = ?", (duplicate_id,)
+    ).fetchone()[0]
+    rebound = conn.execute(
+        """SELECT DISTINCT local_entity_id FROM import_bindings
+           WHERE dataset_id = ? AND entity_type = 'pre_sales_tasks'
+             AND external_key IN ('PRE-NEIL', 'PRE-AYDEN')""",
+        ("grouped-pre-sales-dataset",),
+    ).fetchall()
+    assert [row[0] for row in rebound] == [task["id"]]
+    assert conn.execute(
+        """SELECT COUNT(*) FROM audit_logs
+           WHERE entity_id = ? AND event_type = 'deduplicate_import'""",
+        (duplicate_id,),
+    ).fetchone()[0] == 1
+    close_db()
+
+    ids, actor = setup(path.with_name("different-tech.sqlite"))
+    conn = get_db()
+    second_tech = UserRepository().create("tech-2", "x", "Tech Two", "tech")
+    selected = grouped_pre_sales_resolutions(ids, second_tech)
+    report = service = SpreadsheetImportService(
+        conn, lambda value, _name: grouped_pre_sales_canonical(value)
+    ).preflight(content, "grouped.xlsx", selected, actor)
+    assert report["can_commit"] and report["summary"]["entities"]["pre_sales_tasks"] == 2
+    committed = SpreadsheetImportService(
+        conn, lambda value, _name: grouped_pre_sales_canonical(value)
+    ).commit(content, "grouped.xlsx", selected, report["source_hash"], actor)
+    assert committed["counts"]["pre_sales_tasks"] == {"created": 2, "updated": 0}
+    assignees = conn.execute(
+        """SELECT DISTINCT assignee_id FROM pre_sales_tasks
+           WHERE archived_at IS NULL"""
+    ).fetchall()
+    assert {row[0] for row in assignees} == {ids["tech"], second_tech}
+    close_db()
+
+
+def assert_pre_sales_group_conflict_guard(path: Path):
+    ids, actor = setup(path)
+    conn = get_db()
+    content = b"xlsx-grouped-pre-sales-conflict"
+    selected = grouped_pre_sales_resolutions(ids, ids["tech"])
+    service = SpreadsheetImportService(
+        conn, lambda value, _name: grouped_pre_sales_canonical(value)
+    )
+    report = service.preflight(content, "grouped.xlsx", selected, actor)
+    service.commit(content, "grouped.xlsx", selected, report["source_hash"], actor)
+    task = conn.execute(
+        "SELECT * FROM pre_sales_tasks WHERE archived_at IS NULL"
+    ).fetchone()
+    duplicate_id = "manual-duplicate-pre-sales-task"
+    conn.execute(
+        """INSERT INTO pre_sales_tasks (
+               id, lead_id, assignee_id, client_request_id, status,
+               request_json, result_json, due_date, archived_at,
+               created_at, created_by, updated_at, updated_by, row_version
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)""",
+        (
+            duplicate_id, task["lead_id"], task["assignee_id"],
+            task["client_request_id"], task["status"], task["request_json"],
+            json.dumps({"manual_note": "CRITICAL MANUAL EDIT ONLY ON DUPLICATE"}),
+            task["due_date"], task["created_at"], task["created_by"],
+            task["updated_at"], task["updated_by"], task["row_version"],
+        ),
+    )
+    conn.execute(
+        """UPDATE import_bindings SET local_entity_id = ?
+           WHERE dataset_id = ? AND entity_type = 'pre_sales_tasks'
+             AND external_key = 'PRE-AYDEN'""",
+        (duplicate_id, "grouped-pre-sales-dataset"),
+    )
+    conn.commit()
+    baseline_versions = {
+        row["id"]: row["row_version"]
+        for row in conn.execute(
+            "SELECT id, row_version FROM pre_sales_tasks ORDER BY id"
+        ).fetchall()
+    }
+    baseline_batches = conn.execute("SELECT COUNT(*) FROM import_batches").fetchone()[0]
+
+    blocked = service.preflight(content, "grouped.xlsx", selected, actor)
+    conflict = next(
+        item for item in blocked["issues"]
+        if item["code"] == "pre_sales_duplicate_conflict"
+    )
+    assert not blocked["can_commit"] and conflict["field"] == "result_json"
+    try:
+        service.commit(content, "grouped.xlsx", selected, blocked["source_hash"], actor)
+        raise AssertionError("Conflicting duplicate task import should be blocked")
+    except ImportBlockedError:
+        pass
+    assert conn.execute(
+        "SELECT COUNT(*) FROM pre_sales_tasks WHERE archived_at IS NULL"
+    ).fetchone()[0] == 2
+    assert {
+        row["id"]: row["row_version"]
+        for row in conn.execute(
+            "SELECT id, row_version FROM pre_sales_tasks ORDER BY id"
+        ).fetchall()
+    } == baseline_versions
+    assert conn.execute("SELECT COUNT(*) FROM import_batches").fetchone()[0] == baseline_batches
+
+    conn.execute(
+        "UPDATE pre_sales_tasks SET result_json = ? WHERE id = ?",
+        (task["result_json"], duplicate_id),
+    )
+    conn.execute(
+        """INSERT INTO lead_activities (
+               id, lead_id, actor_id, action_type, visibility,
+               is_formal_follow_up, summary, payload_json, created_at
+           ) VALUES (?, ?, ?, 'task_update', 'all', 0, ?, ?, ?)""",
+        (
+            "manual-duplicate-task-update", task["lead_id"], actor["id"],
+            "Manual duplicate edit history",
+            json.dumps({"task_type": "pre_sales", "task_id": duplicate_id}),
+            task["updated_at"],
+        ),
+    )
+    conn.commit()
+    history_blocked = service.preflight(content, "grouped.xlsx", selected, actor)
+    history_conflict = next(
+        item for item in history_blocked["issues"]
+        if item["code"] == "pre_sales_duplicate_conflict"
+    )
+    assert "task_update_history" in history_conflict["field"]
+    assert not history_blocked["can_commit"]
+    assert conn.execute(
+        "SELECT archived_at FROM lead_activities WHERE id = 'manual-duplicate-task-update'"
+    ).fetchone()[0] is None
+    close_db()
+
+
 def _assert_lifecycle(conn, actor, action, should_be_archived):
     content = f"xlsx-{action.lower()}".encode()
     service = SpreadsheetImportService(conn, action_parser(action))
@@ -413,7 +722,26 @@ def assert_api_contract(ids):
             init_db(Path(api_data) / "database.sqlite")
             leader_id = UserRepository().create("api-leader", "x", "API Leader", "leader")
             app = create_app(); app.dependency_overrides[get_current_user] = current_user
-            with TestClient(app) as client:
+            connection_closures = []
+
+            @contextmanager
+            def tracked_request_connection():
+                conn = None
+                try:
+                    with request_db_connection() as conn:
+                        yield conn
+                finally:
+                    try:
+                        conn.execute("SELECT 1")
+                    except sqlite3.ProgrammingError as exc:
+                        connection_closures.append("closed" in str(exc).lower())
+                    else:
+                        connection_closures.append(False)
+
+            with TestClient(app) as client, patch(
+                "backend.routers.spreadsheet_import.request_db_connection",
+                tracked_request_connection,
+            ):
                 denied = client.post(
                     "/api/data/spreadsheet/preflight",
                     files={"file": ("test.xlsx", BytesIO(b"invalid"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
@@ -439,6 +767,22 @@ def assert_api_contract(ids):
                 )
                 assert empty_preflight.status_code == 200, empty_preflight.text
                 assert empty_preflight.json()["can_commit"] is False
+                blocked_import = client.post(
+                    "/api/data/spreadsheet/import",
+                    files={"file": (
+                        "JPT标准导入模板.xlsx", BytesIO(template_content),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )},
+                    data={
+                        "resolutions": "{}",
+                        "expected_source_hash": empty_preflight.json()["source_hash"],
+                    },
+                )
+                assert blocked_import.status_code == 422, blocked_import.text
+                assert connection_closures == [True, True], (
+                    "Spreadsheet endpoint leaked a request connection",
+                    connection_closures,
+                )
                 assert not any(
                     route.path == "/api/data/import-template" for route in app.routes
                 ), "The Excel template must be distributed separately from the app"
@@ -451,6 +795,11 @@ def assert_api_contract(ids):
             close_db()
 
 
+def assert_dependency_thread_contract():
+    assert inspect.iscoroutinefunction(get_auth_service)
+    assert inspect.iscoroutinefunction(get_authorization_provider)
+
+
 def main():
     with TemporaryDirectory() as tmp:
         ids, actor = setup(Path(tmp) / "import.sqlite")
@@ -459,7 +808,13 @@ def main():
         assert_rollback_and_blocking(conn, ids, actor)
         assert_commit_idempotency(conn, ids, actor)
         assert_api_contract(ids)
+        assert_dependency_thread_contract()
         close_db()
+        ids, actor = setup(Path(tmp) / "purpose-specific.sqlite")
+        assert_purpose_specific_mappings(get_db(), ids, actor)
+        close_db()
+        assert_pre_sales_group_dedup(Path(tmp) / "grouped-pre-sales.sqlite")
+        assert_pre_sales_group_conflict_guard(Path(tmp) / "grouped-pre-sales-conflict.sqlite")
     print("PASS: spreadsheet preflight/import is Leader-only, atomic, and idempotent")
 
 

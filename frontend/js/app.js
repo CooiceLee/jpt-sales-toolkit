@@ -1,6 +1,6 @@
 /**
- * JPT Sales Toolkit - v6.6 modular application entry
- * Global state, startup, navigation, dashboard and overview map only.
+ * JPT Sales Toolkit - v6.8 modular application entry
+ * Global state, startup, navigation and dashboard shell.
  */
 
 // ===== Global State =====
@@ -39,11 +39,13 @@ const State = {
         search: '',
         ownerId: '',
         techId: '',
-        customerId: ''
+        customerId: '',
+        businessRegion: ''
     },
     customerMerge: {
         source: null,
-        target: null
+        target: null,
+        preview: null
     },
     currentFilters: {
         followup: 'all',
@@ -62,7 +64,7 @@ function deriveModuleCounts(stats) {
         total: stats.total_leads || 0,
         handler: byStage['New'] || 0,
         followup: (byStage['Assigned'] || 0) + (byStage['Following'] || 0),
-        sampling: byStage['Following'] || 0,
+        sampling: stats.pre_sales_active_lead_count || 0,
         deal: (byStage['Quoted'] || 0) + (byStage['Lost'] || 0),
         fulfillment: byStage['Won'] || 0,
         aftersales: stats.service_open_count || 0,
@@ -72,6 +74,7 @@ function deriveModuleCounts(stats) {
 function applyNavigationCounts(stats) {
     const counts = deriveModuleCounts(stats);
     setText('nav-total', counts.total);
+    setText('nav-parser-total', counts.total);
     setText('nav-handler-total', counts.handler);
     setText('nav-followup-total', counts.followup);
     setText('nav-sampling-total', counts.sampling);
@@ -258,7 +261,7 @@ function switchModule(module) {
         parser: 'Inquiry Parser',
         handler: 'Inquiry Handler',
         followup: 'Follow-up Tracker',
-        sampling: 'Sample Manager',
+        sampling: 'Pre-sales / Sampling',
         deal: 'Deal Closer',
         fulfillment: 'Order Fulfillment',
         aftersales: 'After-sales',
@@ -298,6 +301,7 @@ async function loadModuleData(module) {
         case 'trip-planner': await loadTripPlanner(); break;
         case 'coordinate-review': await loadCoordinateReview(); break;
         case 'authorization': await loadAuthorizationCenter(); break;
+        case 'export': window.DataTransferWorkspace?.ensureAccessible?.(); break;
     }
 }
 
@@ -363,132 +367,5 @@ function renderFunnel(byStage) {
             </div>
         `;
     }).join('');
-}
-
-// ===== Map =====
-function initMap() {
-    State.map = L.map('world-map').setView([48, 10], 4);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap, CARTO'
-    }).addTo(State.map);
-
-    State.mapLayer = L.layerGroup().addTo(State.map);
-}
-
-function getMapFilters() {
-    return {
-        sales_stage: document.getElementById('map-stage-filter')?.value || '',
-        outcome: document.getElementById('map-outcome-filter')?.value || '',
-        region: document.getElementById('map-region-filter')?.value || ''
-    };
-}
-
-async function loadReviewMap() {
-    if (!State.map || !State.mapLayer) return;
-
-    try {
-        const filters = getMapFilters();
-        const mapData = await ApiClient.getMapData(filters);
-        State.mapData = mapData;
-        if (!filters.sales_stage && !filters.outcome && !filters.region) {
-            updateCoordinateReviewBadge(mapData);
-        }
-        renderReviewMap(mapData);
-    } catch (err) {
-        console.error('Review map error:', err);
-        setText('map-summary', 'Map data unavailable');
-    }
-}
-
-function renderReviewMap(mapData) {
-    State.mapLayer.clearLayers();
-    State.mapCustomerMarkers = {};
-
-    const qualityFilter = document.getElementById('map-quality-filter')?.value || '';
-    const points = (mapData.points || []).filter(point => {
-        if (qualityFilter === 'exact') return point.coordinate_quality === 'exact';
-        if (qualityFilter === 'needs_geocode') return point.needs_geocode;
-        return true;
-    });
-
-    const bounds = [];
-    points.forEach(point => {
-        const isExact = point.coordinate_quality === 'exact';
-        const color = point.latest_stage === 'Won' ? '#2f855a' :
-            point.latest_stage === 'Lost' ? '#8a3d3d' :
-            isExact ? '#8B1E3F' : '#D98C24';
-        const marker = L.circleMarker([point.lat, point.lng], {
-            radius: Math.min(22, 8 + point.lead_count * 3),
-            color: isExact ? '#ffffff' : '#6b4b12',
-            weight: isExact ? 2 : 1,
-            fillColor: color,
-            fillOpacity: isExact ? 0.88 : 0.62,
-            dashArray: isExact ? null : '4 3'
-        });
-
-        marker.bindTooltip(`${point.customer_name} · ${point.lead_count}`);
-        marker.bindPopup(renderMapPopup(point), { minWidth: 260 });
-        marker.addTo(State.mapLayer);
-        State.mapCustomerMarkers[point.customer_id] = marker;
-        bounds.push([point.lat, point.lng]);
-    });
-
-    if (bounds.length) {
-        State.map.fitBounds(bounds, { padding: [28, 28], maxZoom: 6 });
-    } else {
-        State.map.setView([35, 20], 2);
-    }
-
-    renderMapSummary(mapData, points.length);
-}
-
-function renderMapPopup(point) {
-    const leadLines = (point.leads || []).slice(0, 4).map(lead => `
-        <div class="map-popup-lead">
-            <strong>${escapeHtml(lead.display_id || '')}</strong>
-            <span>${escapeHtml(lead.sales_stage || '')}</span>
-        </div>
-    `).join('');
-    const qualityLabel = point.coordinate_quality === 'exact'
-        ? `Exact ${point.geocode_source ? `· ${escapeHtml(point.geocode_source)}` : ''}`
-        : point.coordinate_quality === 'auto_approximate'
-            ? `Auto candidate ${point.geocode_confidence ? `· ${escapeHtml(point.geocode_confidence)}` : ''} · verify`
-            : 'Country-level fallback · needs address fix';
-    const lockedBadge = point.geocode_locked ? '<span class="map-popup-locked">Locked</span>' : '';
-    return `
-        <div class="map-popup">
-            <div class="map-popup-title">${escapeHtml(point.customer_name)}</div>
-            <div class="map-popup-meta">${escapeHtml([point.city, point.country_name || point.country].filter(Boolean).join(', '))}</div>
-            <div class="map-popup-quality ${point.coordinate_quality === 'exact' ? 'exact' : 'fallback'}">${qualityLabel}${lockedBadge}</div>
-            <div class="map-popup-stats">
-                <span>${point.lead_count} leads</span>
-                <span>${point.won_count} won</span>
-                <span>${point.open_count} open</span>
-            </div>
-            <div class="map-popup-leads">${leadLines}</div>
-            <div style="display:flex;gap:8px;margin-top:8px;">
-                <button type="button" class="btn btn-primary btn-sm" onclick="openInquiryPanel('${point.latest_lead_id}')">Open Lead</button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="jumpToCustomerStageCards('${point.latest_lead_id}', '${point.latest_stage}', '${point.customer_id || ''}')">View Cards</button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="openCoordinateCorrectionFromMap('${escapeHtml(point.customer_id)}')">Fix Location</button>
-            </div>
-        </div>
-    `;
-}
-
-function renderMapSummary(mapData, visiblePoints) {
-    const summary = mapData.summary || {};
-    const text = [
-        `${visiblePoints} shown`,
-        `${summary.exact_points || 0} exact`,
-        `${summary.approximate_points || 0} need review`,
-        `${summary.missing_locations || 0} missing`
-    ].join(' · ');
-    setText('map-summary', text);
-}
-
-function updateCoordinateReviewBadge(mapData) {
-    const summary = mapData?.summary || {};
-    const count = (summary.approximate_points || 0) + (summary.missing_locations || 0);
-    setText('nav-coordinate-review-total', count);
 }
 

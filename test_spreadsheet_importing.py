@@ -19,7 +19,7 @@ from backend.services.importing import (
 )
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_LEGACY = Path("/Users/liliang/Desktop/欧洲小分队进度记录.xlsx")
+DEFAULT_LEGACY = ROOT / "test_fixtures" / "legacy-sales-workbook.xlsx"
 TEMPLATE = ROOT / "frontend" / "templates" / "JPT标准导入模板.xlsx"
 LEGACY_SHA256 = "6f9b3e1fe195558d7c64671a8a15752db541ae5166a9724dad03487f53585dc5"
 YELLOW_WON_ROWS = {63, 78, 85, 94, 127, 133, 136, 139, 140, 141, 142, 143, 144, 145, 146, 147}
@@ -47,6 +47,7 @@ def test_real_legacy_workbook() -> None:
     assert len(missing) == 24
     assert Counter(issue["field"] for issue in missing) == {"title": 15, "customer_key": 9}
     _assert_potential_quantity_mapping(canonical)
+    _assert_presales_supplemental_notes(canonical)
     _assert_entity_contract(canonical)
     _assert_style_and_boundary_contract(canonical)
     json.dumps(canonical, ensure_ascii=False)
@@ -62,6 +63,15 @@ def _assert_potential_quantity_mapping(canonical: dict) -> None:
     lead = next(leads[key] for key in trace["target_entity_keys"] if key in leads)
     assert customer["display_name"] == "strijbosch" and not customer.get("company_size")
     assert lead["quantity_text"] == "2台"
+
+
+def _assert_presales_supplemental_notes(canonical: dict) -> None:
+    tasks = [
+        task for task in canonical["entities"]["pre_sales_tasks"]
+        if task["source_ref"]["sheet"] == "售前（技术问题）"
+        and task["source_ref"]["row"] == 19
+    ]
+    assert tasks and {task.get("supplemental_notes") for task in tasks} == {"备料一套"}
 
 
 def _assert_entity_contract(canonical: dict) -> None:

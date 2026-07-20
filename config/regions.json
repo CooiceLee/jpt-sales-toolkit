@@ -1,5 +1,54 @@
 {
   "version": "1.0",
+  "business_regions": [
+    {
+      "code": "GLOBAL",
+      "label": "GLOBAL",
+      "label_cn": "GLOBAL",
+      "aliases": ["Global", "global", "全球"]
+    },
+    {
+      "code": "EU",
+      "label": "Europe",
+      "label_cn": "欧洲",
+      "aliases": ["Euro", "Europe", "EU", "欧洲"]
+    },
+    {
+      "code": "NA_CA_AU",
+      "label": "North America / Canada / Australia",
+      "label_cn": "北美/加拿大/澳洲",
+      "aliases": [
+        "NA_CA_AU",
+        "North America",
+        "North America / Canada / Australia",
+        "AM",
+        "Americas & Oceania",
+        "美洲+澳洲",
+        "北美",
+        "北美/加拿大/澳洲"
+      ]
+    },
+    {
+      "code": "RU_TR_ME",
+      "label": "Russia / Turkey / Middle East",
+      "label_cn": "俄罗斯/土耳其/中东",
+      "aliases": [
+        "RU_TR_ME",
+        "Russia/Turkey/Middle East",
+        "Russia / Turkey / Middle East",
+        "RIMEA",
+        "Russia, India, Middle East & Africa",
+        "俄印中东",
+        "俄罗斯/土耳其/中东"
+      ]
+    },
+    {
+      "code": "SEA",
+      "label": "Southeast Asia",
+      "label_cn": "东南亚",
+      "aliases": ["SEA", "Southeast Asia", "东南亚"]
+    }
+  ],
   "regions": {
     "EU": {
       "label": "Europe",

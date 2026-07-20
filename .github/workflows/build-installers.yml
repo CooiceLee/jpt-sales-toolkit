@@ -159,7 +159,7 @@ jobs:
             fi
           done
           codesign --verify --deep --strict --verbose=2 "$mount_dir/JPT Sales Toolkit.app"
-          python scripts/smoke_frozen.py "$mount_dir/JPT Sales Toolkit.app/Contents/MacOS/JPT Sales Toolkit"
+          python scripts/smoke_frozen.py --expect-disk-image "$mount_dir/JPT Sales Toolkit.app/Contents/MacOS/JPT Sales Toolkit"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}-installer
@@ -196,6 +196,7 @@ jobs:
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber

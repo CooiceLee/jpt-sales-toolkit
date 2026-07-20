@@ -11,6 +11,7 @@ from ..repositories import CustomerRepository, AuditRepository
 from ..repositories.base import ConflictError
 from ..repositories.customer_alias_repository import CustomerAliasRepository
 from .country_service import CountryService
+from .customer_fuzzy_search import rank_merge_candidates
 from .customer_merge_service import CustomerMergeService
 
 
@@ -191,6 +192,14 @@ class CustomerService:
             country=country,
             region=region,
             search=search,
+        )
+
+    def fuzzy_merge_candidates(self, query: str, limit: int = 12) -> list[dict]:
+        """Rank active customers by display name and active aliases."""
+        return rank_merge_candidates(
+            self.customer_repo.list_merge_candidate_records(),
+            query,
+            limit,
         )
 
     def merge_customers(

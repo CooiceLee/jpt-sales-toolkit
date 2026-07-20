@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .bindings import external_keys
+
 PARTIAL_REQUIRED_FIELDS = {
     "leads": {"sales_stage"},
     "activities": {"activity_type", "occurred_at", "content", "visibility"},
@@ -12,8 +14,8 @@ PARTIAL_REQUIRED_FIELDS = {
 
 def parser_issues(canonical: dict, excluded: set[str], entities: dict,
                   bound_keys: set[tuple[str, str]]) -> list[dict]:
-    key_types = {item.get("external_key"): kind
-                 for kind, items in entities.items() for item in items}
+    key_types = {key: kind for kind, items in entities.items()
+                 for item in items for key in external_keys(item)}
     trace_targets = _trace_targets(canonical.get("source_trace") or [])
     result = []
     for raw in canonical.get("issues") or []:

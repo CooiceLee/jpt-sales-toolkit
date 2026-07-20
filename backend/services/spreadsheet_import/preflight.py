@@ -8,7 +8,9 @@ from .entity_scope import scope_entities
 from .issue_format import finalize_issues
 from .lifecycle_validation import lifecycle_issues
 from .member_matching import resolve_members
+from .pre_task_coalescing import coalesce_pre_sales_tasks
 from .prediction import predicted_counts
+from .pre_task_duplicate_guard import pre_task_duplicate_issues
 from .record_validation import record_issues
 from .source_issues import mapping_issues, parser_issues
 from .update_field_validation import update_field_issues
@@ -19,6 +21,8 @@ def build_preflight(conn, canonical: dict, resolutions: dict) -> tuple[dict, dic
     entities = scope_entities(canonical, excluded)
     scoped = {**canonical, "entities": entities}
     members, member_ids = resolve_members(conn, scoped, resolutions["member_mappings"])
+    entities = coalesce_pre_sales_tasks(entities, member_ids)
+    scoped = {**canonical, "entities": entities}
     customers, customer_targets = resolve_customers(
         conn, scoped, resolutions["customer_mappings"], excluded
     )
@@ -26,6 +30,9 @@ def build_preflight(conn, canonical: dict, resolutions: dict) -> tuple[dict, dic
     issues = parser_issues(canonical, excluded, entities, bound_keys)
     issues.extend(mapping_issues(members, customers))
     issues.extend(record_issues(entities, member_ids, customer_targets))
+    issues.extend(pre_task_duplicate_issues(
+        conn, canonical["dataset_id"], entities["pre_sales_tasks"]
+    ))
     issues.extend(update_field_issues(entities))
     issues.extend(contact_integrity_issues(entities, customer_targets))
     issues.extend(alias_issues(conn, entities, customer_targets))

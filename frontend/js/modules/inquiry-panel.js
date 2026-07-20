@@ -1,4 +1,6 @@
 // ===== Detail Panel =====
+const panelTr = text => window.I18n?.t(text) || text;
+
 function panelTabForContext(context) {
     const tabMap = {
         handler: 'basic',
@@ -19,7 +21,9 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
         const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
             ApiClient.getLead(leadId),
             taskOnly ? [] : ApiClient.listActivities(leadId).catch(() => []),
-            ApiClient.listPreSalesTasks({ lead_id: leadId, include_archived: true }).catch(() => []),
+            ApiClient.listPreSalesTasks({
+                lead_id: leadId, include_archived: true, limit: 100000
+            }),
             ApiClient.listAfterSalesTasks({ lead_id: leadId }).catch(() => []),
             taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
         ]);
@@ -48,6 +52,12 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
             follow_ups: followUps,
             after_sales: afterSales,
             sample_tasks: preSalesTasks.map(task => SamplingModule.toView(task)),
+            latest_follow_up: lead.latest_follow_up || null,
+            latest_follow_up_at: lead.latest_follow_up_at
+                || lead.latest_follow_up?.created_at || '',
+            latest_follow_up_at_raw: lead.latest_follow_up?.occurred_at_raw || '',
+            latest_follow_up_summary: lead.latest_follow_up_summary
+                || lead.latest_follow_up?.content || lead.latest_follow_up?.summary || '',
             attachments: attachments,
             _lead: lead,
             _customer: lead.customer,
@@ -63,7 +73,7 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
         document.getElementById('app')?.classList.add('detail-open');
     } catch (err) {
         console.error('Panel error:', err);
-        alert('Error loading lead');
+        alert(panelTr('Error loading lead'));
     }
 };
 
@@ -79,7 +89,7 @@ function renderPanelTabs(activeTabId = 'basic') {
         { id: 'customer', label: 'Customer' },
         { id: 'requirement', label: 'Requirement' },
         { id: 'evaluation', label: 'Evaluation' },
-        { id: 'sample', label: 'Sample' },
+        { id: 'sample', label: 'Pre-sales / Sample' },
         { id: 'deal', label: 'Deal' },
         { id: 'fulfillment', label: 'Fulfillment' },
         { id: 'followup', label: 'Follow-ups' },
@@ -99,7 +109,7 @@ function renderPanelTabs(activeTabId = 'basic') {
     const tabsContainer = document.getElementById('panel-tabs');
     togglePanelSaveButton(validActiveTab);
     tabsContainer.innerHTML = tabs.map(t =>
-        `<button type="button" class="panel-tab ${t.id === validActiveTab ? 'active' : ''}" data-tab="${t.id}">${t.label}</button>`
+        `<button type="button" class="panel-tab ${t.id === validActiveTab ? 'active' : ''}" data-tab="${t.id}">${escapeHtml(panelTr(t.label))}</button>`
     ).join('');
 
     tabsContainer.querySelectorAll('.panel-tab').forEach(tab => {

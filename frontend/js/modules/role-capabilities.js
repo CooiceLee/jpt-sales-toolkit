@@ -26,9 +26,11 @@
             item.classList.toggle('hidden', !spreadsheetAllowed);
         });
         const importInput = document.getElementById('import-file');
-        if (importInput) importInput.accept = spreadsheetAllowed
-            ? '.json,.xlsx,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            : '.json,application/json';
+        if (importInput) importInput.disabled = !spreadsheetAllowed;
+        document.querySelectorAll('[data-task-manager]').forEach(item => {
+            item.classList.toggle('hidden', !window.RoleCapabilities.canManageTaskRequests());
+        });
+        window.DataTransferWorkspace?.ensureAccessible?.();
     }
 
     window.RoleCapabilities = {

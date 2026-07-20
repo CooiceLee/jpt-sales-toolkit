@@ -2,7 +2,7 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前内部试运行基线：`v0.11.0-internal`。当前启动、账号授权、备份、回归、地图坐标、数据复盘、出差规划、拜访执行和数据治理入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。
+当前团队稳定候选基线：`v0.11.4-internal`。它是 `UNSIGNED-INTERNAL` 内部版本，不等同于已签名的公开正式版。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、地图坐标、数据复盘、出差规划、拜访执行和数据治理入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
 
 ## 功能概览
 
@@ -10,15 +10,16 @@
 |------|------|------|
 | 1 | Inquiry Parser | 解析询盘邮件，自动提取客户和需求信息 |
 | 2 | Inquiry Handler | 管理询盘记录，编辑客户信息和需求评估 |
-| 3 | Follow-up Tracker | 跟进记录管理 |
+| 3 | Follow-up Tracker | 计划到期、长期未跟进和跟进记录管理 |
 | 4 | Sample Manager | 打样流程管理 |
 | 5 | Deal Closer | 报价和成交管理 |
 | 6 | Order Fulfillment | 订单履行跟踪 |
 | 7 | After-sales Support | 售后问题管理 |
 | Data | Data Review | 经营复盘、风险 Lead、高价值 Lead 和权限隔离分析 |
 | Data | Trip Planner | 候选客户、区域路线、停留时间、拜访执行、结果回填和导出 |
-| Data | Coordinate Review | 坐标质量队列、地图选点、经纬度录入和地址解析选点 |
+| Data | Coordinate Review | 精确/近似/缺失坐标质量队列、地图选点、经纬度录入和地址解析选点 |
 | Ops | Export / Import | 销售数据包导出、导入预检、Leader 汇总导入、权限过滤合并和数据治理 |
+| Ops | Customer Merge | 名称/别名模糊候选、只读迁移预览和 Leader 安全合并 |
 
 ## 快速开始
 
@@ -101,6 +102,17 @@ bash scripts/validate_v08.sh
 
 程序安装和 Excel 数据导入是两条独立链路。Leader 在程序安装、账号激活和基础功能验收完成后，使用单独分发的 `JPT-XLSX-1.0` 标准模板或外部工作簿，按“上传 → 预检 → 人工修正 → 正式提交”导入。安装包不内置 XLSX、业务数据或成员授权文件。XLSX 不创建账号；来源人员必须匹配到现有 Leader / Sales / Tech 成员。字段、外部键、客户别名和重复导入口径见 [标准导入格式](docs/import-workbook-standard.md)。
 
+### 业务地区与跟进时间
+
+- 负责人账号的业务地区固定为 `GLOBAL / 欧洲 / 北美/加拿大/澳洲 / 俄罗斯/土耳其/中东 / 东南亚`。`GLOBAL` 是真实业务归属，不等于“全部地区”；清除地区条件应选择“全部地区”。
+- 业务地区按 Lead 负责人账号划分，不根据客户所在国家推断。地区、负责人、技术、搜索和时间条件同时生效。
+- “已逾期 / 今日到期 / 未来 7 天”按计划的下一次跟进日期筛选；“长期未跟进”按最近正式跟进日期回退到询盘日期、再回退到创建日期计算。
+
+### 地图与客户合并
+
+- 地图将坐标区分为精确、近似和缺失。近似点只表示区域参考，不能替代实际地址；离线或底图不可用时仍可通过列表和坐标质量状态处理数据。
+- Leader 可按客户名称或别名查看模糊候选与匹配分数。选择来源和保留目标后，必须先核对只读迁移预览，再执行一次合并；来源客户会归档而不是物理删除。
+
 ## 配置文件说明
 
 ```
@@ -172,4 +184,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.11.0-internal*
+*JPT Sales Toolkit v0.11.4-internal*

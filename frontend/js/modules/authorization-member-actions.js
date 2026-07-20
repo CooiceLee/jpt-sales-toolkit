@@ -4,7 +4,7 @@
             username: document.getElementById('authorization-member-username')?.value.trim() || '',
             display_name: document.getElementById('authorization-member-name')?.value.trim() || '',
             role: document.getElementById('authorization-member-role')?.value || '',
-            region: document.getElementById('authorization-member-region')?.value.trim() || null
+            region: document.getElementById('authorization-member-region')?.value.trim() || ''
         };
     }
 
@@ -26,6 +26,10 @@
         }
         if (!AuthorizationModel.ROLES.includes(data.role)) {
             showAuthorizationCenterMessage('Role must be Leader, Sales, or Tech.', true);
+            return false;
+        }
+        if (!data.region) {
+            showAuthorizationCenterMessage('Business region is required.', true);
             return false;
         }
         return true;

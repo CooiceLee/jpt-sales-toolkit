@@ -320,6 +320,7 @@ CREATE TABLE IF NOT EXISTS pre_sales_tasks (
     id TEXT PRIMARY KEY,
     lead_id TEXT NOT NULL REFERENCES leads(id),
     assignee_id TEXT REFERENCES users(id),
+    client_request_id TEXT,
     status TEXT NOT NULL CHECK (
         status IN ('Open', 'In Progress', 'Completed', 'Cancelled')
     ),
@@ -575,6 +576,9 @@ CREATE INDEX IF NOT EXISTS idx_lead_assignments_user ON lead_assignments(user_id
 CREATE INDEX IF NOT EXISTS idx_lead_activities_lead_time ON lead_activities(lead_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_pre_sales_tasks_lead ON pre_sales_tasks(lead_id);
 CREATE INDEX IF NOT EXISTS idx_pre_sales_assignee ON pre_sales_tasks(assignee_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pre_sales_client_request
+    ON pre_sales_tasks(lead_id, client_request_id)
+    WHERE client_request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_after_sales_tasks_lead ON after_sales_tasks(lead_id);
 CREATE INDEX IF NOT EXISTS idx_after_sales_assignee ON after_sales_tasks(assignee_id, status);
 CREATE INDEX IF NOT EXISTS idx_attachments_lead ON attachments(lead_id, category);

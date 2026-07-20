@@ -5,11 +5,13 @@ from __future__ import annotations
 import tempfile
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 from zipfile import ZipFile
 
 from desktop_runtime.instance import InstanceLock, find_available_port
 from desktop_runtime.paths import user_data_dir
+from desktop_launcher import instance_version_mismatch, main as desktop_main, running_from_disk_image
 from backend.app_v2 import create_app
 from backend.routers.deps import get_current_user
 from fastapi.testclient import TestClient
@@ -41,8 +43,46 @@ def test_single_instance_lock() -> None:
         assert find_available_port(28765) >= 28765
 
 
+def test_disk_image_detection() -> None:
+    with patch("desktop_launcher.sys.platform", "darwin"):
+        with patch("desktop_launcher.sys.executable", "/Volumes/JPT/JPT Sales Toolkit"):
+            assert running_from_disk_image()
+        with patch("desktop_launcher.sys.executable", "/private/tmp/mount/JPT Sales Toolkit"):
+            with patch("desktop_launcher.os.statvfs", return_value=SimpleNamespace(f_flag=1)):
+                assert running_from_disk_image()
+        with patch("desktop_launcher.sys.executable", "/Applications/JPT Sales Toolkit"):
+            with patch("desktop_launcher.os.statvfs", return_value=SimpleNamespace(f_flag=0)):
+                assert not running_from_disk_image()
+    with patch("desktop_launcher.APP_VERSION", "0.11.3-internal"):
+        assert instance_version_mismatch({"version": "0.11.0-internal"})
+        assert not instance_version_mismatch({"version": "0.11.3-internal"})
+        assert instance_version_mismatch({})
+
+
+def test_old_instance_guard() -> None:
+    args = SimpleNamespace(data_dir=None, port=8765, no_browser=False)
+    logger = SimpleNamespace(error=lambda *_args: None)
+    lock = SimpleNamespace(acquire=lambda: False)
+    with tempfile.TemporaryDirectory(prefix="jpt_old_instance_") as temp_dir:
+        with patch.dict("desktop_launcher.os.environ", {}, clear=False):
+            with patch("desktop_launcher.arguments", return_value=args), \
+                 patch("desktop_launcher.user_data_dir", return_value=Path(temp_dir)), \
+                 patch("desktop_launcher.prepare_data_dir"), \
+                 patch("desktop_launcher.configure_logging", return_value=logger), \
+                 patch("desktop_launcher.InstanceLock", return_value=lock), \
+                 patch("desktop_launcher.read_instance_port", return_value=8765), \
+                 patch("desktop_launcher.wait_until_healthy", return_value=True), \
+                 patch("desktop_launcher.read_instance_health", return_value={"status": "ok"}), \
+                 patch("desktop_launcher.show_instance_version_warning") as warning, \
+                 patch("desktop_launcher.webbrowser.open") as open_browser:
+                assert desktop_main() == 2
+    warning.assert_called_once()
+    open_browser.assert_not_called()
+
+
 def test_packaging_sources() -> None:
     spec = (ROOT / "packaging" / "jpt_sales_toolkit.spec").read_text(encoding="utf-8")
+    frozen_smoke = (ROOT / "scripts" / "smoke_frozen.py").read_text(encoding="utf-8")
     for resource in ('"index.html"', '"fields.json"', '"schema.sql"'):
         assert resource in spec
     assert '"frontend/templates"' not in spec
@@ -53,6 +93,7 @@ def test_packaging_sources() -> None:
         ".jptauth", ".jptreq", ".xlsx", "database.sqlite",
     ):
         assert prohibited not in spec
+    assert '"region": "GLOBAL"' in frozen_smoke
 
     gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "*.jptauth" in gitignore
@@ -73,6 +114,7 @@ def test_packaging_sources() -> None:
     assert "lipo -archs" in workflow
     assert "codesign --verify --deep --strict" in workflow
     assert 'hdiutil detach -force "$mount_dir"' in workflow
+    assert "--expect-disk-image" in workflow
     for prohibited_pattern in ("*.xlsx", "*.jptauth", "*.jptreq", "database.sqlite"):
         assert prohibited_pattern in workflow
 
@@ -109,12 +151,20 @@ def test_frontend_is_locally_bootstrapped() -> None:
 
 def test_frontend_language_and_backup_controls() -> None:
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    styles = (ROOT / "frontend" / "css" / "style.css").read_text(encoding="utf-8")
     i18n = (ROOT / "frontend" / "js" / "i18n.js").read_text(encoding="utf-8")
     api = (ROOT / "frontend" / "js" / "api-client.js").read_text(encoding="utf-8")
     transfer = (ROOT / "frontend" / "js" / "modules" / "data-transfer.js").read_text(
         encoding="utf-8"
     )
+    actions = (ROOT / "frontend" / "js" / "modules" / "spreadsheet-import-actions.js").read_text(
+        encoding="utf-8"
+    )
+    app = (ROOT / "frontend" / "js" / "app.js").read_text(encoding="utf-8")
     assert 'id="language-toggle"' in index
+    assert index.index('id="header-actions"') < index.index('id="language-toggle"')
+    assert "position: static" in styles
+    assert 'id="runtime-version"' in index
     assert index.index("/static/js/i18n.js") < index.index("/static/js/app.js")
     assert "jpt_ui_language" in i18n
     assert "MutationObserver" in i18n
@@ -122,6 +172,35 @@ def test_frontend_language_and_backup_controls() -> None:
     assert 'id="create-backup-btn"' in index
     assert "createFullBackup" in api
     assert "ApiClient.createFullBackup()" in transfer
+    assert 'data-transfer-target="spreadsheet"' in index
+    assert 'data-transfer-target="json"' in index
+    assert 'id="json-import-file"' in index
+    assert 'id="import-preflight-result" class="import-preflight-scroll"' in index
+    assert "height:clamp(200px,28vh,360px)" in styles
+    assert ".import-resolution-group" in styles and "overflow-y:auto" in styles
+    assert "await refreshAllCounts()" in transfer
+    assert "await refreshAllCounts()" in actions
+    assert "setText('nav-parser-total', counts.total)" in app
+    assert index.index("spreadsheet-import-state.js") < index.index(
+        "spreadsheet-import-progress.js"
+    ) < index.index("spreadsheet-import-view.js")
+
+
+def test_desktop_cache_and_install_location_contract() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpt_cache_policy_") as temp_dir:
+        with patch.dict("os.environ", {
+            "JPT_DATA_DIR": temp_dir,
+            "JPT_RUNNING_FROM_DISK_IMAGE": "1",
+        }):
+            with TestClient(create_app()) as client:
+                index = client.get("/")
+                static = client.get("/static/js/i18n.js")
+                health = client.get("/api/health")
+    assert index.status_code == 200
+    assert index.headers["cache-control"] == "no-store, max-age=0"
+    assert static.status_code == 200
+    assert static.headers["cache-control"] == "no-store, max-age=0"
+    assert health.json()["running_from_disk_image"] is True
 
 
 def test_authenticated_desktop_shutdown() -> None:
@@ -142,9 +221,12 @@ def main() -> None:
     for test in (
         test_platform_data_paths,
         test_single_instance_lock,
+        test_disk_image_detection,
+        test_old_instance_guard,
         test_packaging_sources,
         test_frontend_is_locally_bootstrapped,
         test_frontend_language_and_backup_controls,
+        test_desktop_cache_and_install_location_contract,
         test_authenticated_desktop_shutdown,
     ):
         test()

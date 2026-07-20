@@ -84,6 +84,7 @@ def convert_presales(builder: CanonicalBuilder) -> None:
                 "quantity_text": text(row, 8) or None, "competitor": text(row, 12) or None,
                 "key_points": text(row, 13) or None, "concerns": text(row, 14) or None,
                 "progress_text": text(row, 15) or None, "next_action": text(row, 16) or None,
+                "supplemental_notes": text(row, 17) or None,
             })
             target_keys.append(task["external_key"])
         builder.add_trace(

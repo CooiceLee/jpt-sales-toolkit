@@ -55,6 +55,10 @@ function syncStageFilterInputs() {
         if (techSelect && techSelect.value !== State.stageFilters.techId) {
             techSelect.value = State.stageFilters.techId;
         }
+        const regionSelect = document.getElementById(`stage-region-${moduleKey}`);
+        if (regionSelect && regionSelect.value !== State.stageFilters.businessRegion) {
+            regionSelect.value = State.stageFilters.businessRegion;
+        }
     });
 }
 
@@ -64,6 +68,9 @@ function getSharedLeadFilters() {
     if (State.stageFilters.ownerId) filters.owner_id = State.stageFilters.ownerId;
     if (State.stageFilters.techId) filters.tech_id = State.stageFilters.techId;
     if (State.stageFilters.customerId) filters.customer_id = State.stageFilters.customerId;
+    if (State.stageFilters.businessRegion) {
+        filters.business_region = State.stageFilters.businessRegion;
+    }
     return filters;
 }
 
@@ -73,4 +80,3 @@ function reloadActiveStageModule() {
         loadModuleData(activeModule);
     }
 }
-

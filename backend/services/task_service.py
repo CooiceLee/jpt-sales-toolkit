@@ -5,6 +5,7 @@ Task services - pre-sales and after-sales task management.
 from __future__ import annotations
 
 import json
+import sqlite3
 from typing import Optional
 
 from ..repositories import (
@@ -32,7 +33,24 @@ class PreSalesTaskService:
 
     def create(self, lead_id: str, data: dict, actor_id: str) -> dict:
         """Create new pre-sales task."""
-        task_id = self.task_repo.create(lead_id, data, actor_id)
+        client_request_id = str(data.get("client_request_id") or "").strip() or None
+        if client_request_id:
+            data = {**data, "client_request_id": client_request_id}
+            existing = self.task_repo.get_by_client_request_id(
+                lead_id, client_request_id
+            )
+            if existing:
+                return existing
+        try:
+            task_id = self.task_repo.create(lead_id, data, actor_id)
+        except sqlite3.IntegrityError:
+            self.task_repo.conn.rollback()
+            existing = client_request_id and self.task_repo.get_by_client_request_id(
+                lead_id, client_request_id
+            )
+            if existing:
+                return existing
+            raise
 
         # Log audit
         self.audit_repo.log(

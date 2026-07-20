@@ -1,54 +1,74 @@
-window.mergeSelectedCustomers = async function() {
-    if (State.user?.role !== 'leader') return;
-    const source = State.customerMerge.source;
-    const target = State.customerMerge.target;
-    const resultEl = document.getElementById('customer-merge-result');
-    if (!source || !target) {
-        alert('Select both source and target customers.');
-        return;
-    }
-    if (source.id === target.id) {
-        alert('Source and target must be different customers.');
-        return;
-    }
-    if (!confirm(`Merge "${source.display_name}" into "${target.display_name}"? The source customer will be archived.`)) {
-        return;
+(function () {
+    'use strict';
+    const tr = (text, params = {}) => window.I18n?.t(text, params) || text;
+
+    function renderMergeResult(result) {
+        const target = document.getElementById('customer-merge-result');
+        if (!target) return;
+        target.innerHTML = `<div class="governance-report customer-merge-complete">
+            <h4>${escapeHtml(tr('Merge complete'))}</h4>
+            <div class="governance-kpis">
+                <span>${escapeHtml(tr('Leads moved'))}: <strong>${result.moved_leads || 0}</strong></span>
+                <span>${escapeHtml(tr('Contacts moved'))}: <strong>${result.moved_contacts || 0}</strong></span>
+                <span>${escapeHtml(tr('Aliases moved'))}: <strong>${result.moved_aliases || 0}</strong></span>
+                <span>${escapeHtml(tr('Domains moved'))}: <strong>${result.moved_domains || 0}</strong></span>
+            </div>
+        </div>`;
     }
 
-    try {
-        const result = await ApiClient.mergeCustomers({
-            source_customer_id: source.id,
-            target_customer_id: target.id,
-            source_row_version: source.row_version,
-            target_row_version: target.row_version
-        });
-        State.customerMerge.source = null;
-        State.customerMerge.target = null;
-        renderSelectedMergeCustomers();
-        if (resultEl) {
-            resultEl.innerHTML = `
-                <div class="governance-report">
-                    <h4>Merge complete</h4>
-                    <div class="governance-kpis">
-                        <span>Leads moved: ${result.moved_leads}</span>
-                        <span>Contacts moved: ${result.moved_contacts}</span>
-                        <span>Domains moved: ${result.moved_domains}</span>
-                    </div>
-                </div>
-            `;
+    async function refreshAfterMerge() {
+        State.inquiries = [];
+        const jobs = [refreshAllCounts()];
+        if (State.currentInquiry?.id && typeof refreshCurrentInquiryData === 'function') {
+            jobs.push(refreshCurrentInquiryData(State.currentInquiry.id));
         }
-        ['source', 'target'].forEach(side => {
-            const results = document.getElementById(`merge-${side}-results`);
-            if (results) results.innerHTML = '';
-            const input = document.getElementById(`merge-${side}-search`);
-            if (input) input.value = '';
-        });
-        notify('Customers merged');
-    } catch (err) {
-        console.error('Customer merge error:', err);
-        if (resultEl) {
-            resultEl.innerHTML = `<div class="empty-state compact error-state">${escapeHtml(err.message || 'Merge failed')}</div>`;
-        }
+        await Promise.allSettled(jobs);
     }
-};
 
+    window.mergeSelectedCustomers = async function() {
+        if (State.user?.role !== 'leader') return;
+        const source = State.customerMerge.source;
+        const target = State.customerMerge.target;
+        const resultEl = document.getElementById('customer-merge-result');
+        if (!source || !target) {
+            resultEl.innerHTML = `<div class="empty-state compact error-state">${escapeHtml(tr('Select both source and target customers.'))}</div>`;
+            return;
+        }
+        if (!CustomerMergePreview.matches()) {
+            resultEl.innerHTML = `<div class="empty-state compact error-state">${escapeHtml(tr('Run a successful preview before merging.'))}</div>`;
+            await previewSelectedMergeCustomers();
+            return;
+        }
+        const question = tr(
+            'Merge "{source}" into "{target}"? The source customer will be archived.',
+            { source: source.display_name, target: target.display_name }
+        );
+        if (!confirm(question)) return;
+
+        const button = document.getElementById('customer-merge-confirm');
+        try {
+            button.disabled = true;
+            button.textContent = tr('Merging...');
+            const result = await ApiClient.mergeCustomers(CustomerMergePreview.payload());
+            CustomerMergeView.clear();
+            renderMergeResult(result);
+            await refreshAfterMerge();
+            notify(tr('Customers merged'));
+        } catch (error) {
+            console.error('Customer merge error:', error);
+            resultEl.innerHTML = `<div class="empty-state compact error-state">${escapeHtml(error.message || tr('Merge failed'))}</div>`;
+            if (error.name === 'ConflictError') {
+                try {
+                    [State.customerMerge.source, State.customerMerge.target] = await Promise.all([
+                        ApiClient.getCustomer(source.id),
+                        ApiClient.getCustomer(target.id),
+                    ]);
+                    renderSelectedMergeCustomers();
+                } catch (refreshError) {
+                    console.error('Customer merge conflict refresh error:', refreshError);
+                }
+            }
+            await previewSelectedMergeCustomers();
+        }
+    };
+})();

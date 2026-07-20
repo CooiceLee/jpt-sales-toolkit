@@ -5,6 +5,7 @@ Base repository with database connection management.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,25 @@ from .member_identity_schema import apply_member_identity_schema
 # Database connection singleton
 _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
+_connection_init_lock = threading.RLock()
+_SQLITE_BUSY_TIMEOUT_MS = 5000
+
+
+def _open_connection(
+    db_path: Path,
+    *,
+    check_same_thread: bool = True,
+) -> sqlite3.Connection:
+    """Open a consistently configured SQLite connection."""
+    conn = sqlite3.connect(
+        str(db_path),
+        check_same_thread=check_same_thread,
+        cached_statements=0,
+    )
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {_SQLITE_BUSY_TIMEOUT_MS}")
+    return conn
 
 
 def _column_exists(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
@@ -57,6 +77,13 @@ def _apply_runtime_migrations(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "customers", "geocode_locked", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "lead_activities", "archived_at", "TEXT")
     _ensure_column(conn, "customer_contacts", "archived_at", "TEXT")
+    if _table_exists(conn, "pre_sales_tasks"):
+        _ensure_column(conn, "pre_sales_tasks", "client_request_id", "TEXT")
+        conn.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_pre_sales_client_request
+               ON pre_sales_tasks(lead_id, client_request_id)
+               WHERE client_request_id IS NOT NULL"""
+        )
     _repair_owner_assignments(conn)
     _repair_followup_stage_from_activities(conn)
     _repair_service_status_from_tasks(conn)
@@ -304,40 +331,57 @@ def _repair_followup_stage_from_activities(conn: sqlite3.Connection) -> None:
 def init_db(db_path: Union[Path, str]) -> None:
     """Initialize database path and create schema if needed."""
     global _db_path
-    _db_path = Path(db_path)
-
-    is_new_database = not _db_path.exists()
-    conn = sqlite3.connect(str(_db_path))
-    try:
-        conn.execute("PRAGMA foreign_keys = ON")
-        if is_new_database:
-            schema_path = Path(__file__).parent.parent / "schema.sql"
-            if schema_path.exists():
-                with open(schema_path, "r", encoding="utf-8") as f:
-                    conn.executescript(f.read())
-        _apply_runtime_migrations(conn)
-    finally:
-        conn.close()
+    with _connection_init_lock:
+        _db_path = Path(db_path)
+        is_new_database = not _db_path.exists()
+        conn = _open_connection(_db_path)
+        try:
+            if is_new_database:
+                schema_path = Path(__file__).parent.parent / "schema.sql"
+                if schema_path.exists():
+                    with open(schema_path, "r", encoding="utf-8") as f:
+                        conn.executescript(f.read())
+            _apply_runtime_migrations(conn)
+        finally:
+            conn.close()
 
 
 def get_db() -> sqlite3.Connection:
     """Get database connection (creates if needed)."""
     global _connection
     if _connection is None:
-        if _db_path is None:
-            raise RuntimeError("Database not initialized. Call init_db() first.")
-        _connection = sqlite3.connect(str(_db_path), check_same_thread=False)
-        _connection.row_factory = sqlite3.Row
-        _connection.execute("PRAGMA foreign_keys = ON")
+        with _connection_init_lock:
+            if _connection is None:
+                if _db_path is None:
+                    raise RuntimeError("Database not initialized. Call init_db() first.")
+                _connection = _open_connection(
+                    _db_path,
+                    check_same_thread=False,
+                )
     return _connection
+
+
+@contextmanager
+def request_db_connection() -> Generator[sqlite3.Connection, None, None]:
+    """Yield an isolated connection owned by one request and close it afterward."""
+    with _connection_init_lock:
+        db_path = _db_path
+    if db_path is None:
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+    conn = _open_connection(db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def close_db() -> None:
     """Close the shared database connection so the database file can be replaced."""
     global _connection
-    if _connection is not None:
-        _connection.close()
-        _connection = None
+    with _connection_init_lock:
+        if _connection is not None:
+            _connection.close()
+            _connection = None
 
 
 @contextmanager

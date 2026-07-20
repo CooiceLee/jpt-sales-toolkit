@@ -16,6 +16,7 @@ from ..repositories import OrganizationRepository, UserRepository
 from ..repositories.issuer_initialization_transaction import persist_initialized_issuer
 from .offline_authorization_service import OfflineAuthorizationService
 from .password_service import hash_password
+from .member_authorization_validation import require_business_region
 
 
 class FirstRunSetupService:
@@ -34,7 +35,9 @@ class FirstRunSetupService:
             raise ValueError("Display name cannot be empty")
         member = {
             "id": str(uuid4()), "username": username, "display_name": display_name,
-            "role": "leader", "region": data.get("region") or None, "is_active": True,
+            "role": "leader",
+            "region": require_business_region(data.get("region")),
+            "is_active": True,
         }
         password_hash = hash_password(data["password"])
         key_path = get_settings().runtime_config_dir / "authorization_issuer.pem"

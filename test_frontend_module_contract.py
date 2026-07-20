@@ -81,9 +81,11 @@ def main() -> None:
 
     capability_source = (MODULES / "role-capabilities.js").read_text(encoding="utf-8")
     sampling_actions = (MODULES / "sampling-actions.js").read_text(encoding="utf-8")
+    sampling_form_data = (MODULES / "sampling-form-data.js").read_text(encoding="utf-8")
     aftersales_actions = (MODULES / "aftersales-actions.js").read_text(encoding="utf-8")
     assert "new Set(['sampling', 'aftersales'])" in capability_source
-    assert "RoleCapabilities.isTech() ? resultData" in sampling_actions
+    assert "RoleCapabilities.isTech()" in sampling_actions
+    assert "PreSalesTaskModel.mergeResult" in sampling_form_data
     assert "RoleCapabilities.isTech()" in aftersales_actions
     assert "desktop-exit" in index
 

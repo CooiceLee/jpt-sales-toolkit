@@ -15,13 +15,13 @@
             (item.user_id || item.customer_id || item.id || '') === selected
         );
         const fallback = selected && selected !== '__CREATE__' && !selectedAvailable
-            ? `<option value="${safe(selected)}" selected>Matched ${safe(type)} · ${safe(selected)}</option>`
+            ? `<option value="${safe(selected)}" selected>${tr('Matched')} ${tr(type)} · ${safe(selected)}</option>`
             : '';
         return first + fallback + choices.map(item => {
             const id = item.user_id || item.customer_id || item.id || '';
             const label = item.username
                 ? `${item.display_name || item.username} · ${item.username} · ${item.role || ''}`
-                : `${item.display_name || item.name || id}${item.match_type ? ` · ${item.match_type}` : ''}`;
+                : `${item.display_name || item.name || id}${item.matched_by ? ` · ${item.matched_by}` : ''}`;
             return `<option value="${safe(id)}" ${id === selected ? 'selected' : ''}>${safe(label)}</option>`;
         }).join('');
     }
@@ -30,11 +30,12 @@
         const defaults = report.member_candidates || [];
         return asList(report.member_mappings || report.unresolved_members, 'source_name').map(item => {
             const name = item.source_name || item.token || '';
-            const selected = SpreadsheetImportState.resolutions().member_mappings[name]
-                || item.user_id || '';
+            const key = item.mapping_key || name;
+            const manual = SpreadsheetImportState.resolutions().member_mappings;
+            const selected = manual[key] || manual[name] || item.user_id || '';
             return `<label class="import-resolution-row">
-                <span><strong>${safe(name)}</strong><small>${safe(item.purpose || '')} · ${safe(tr(item.status || item.matched_by || 'unresolved'))}</small></span>
-                <select class="form-input" data-member-key="${safe(name)}">${candidateOptions(item.candidates || defaults, selected, 'member')}</select>
+                <span><strong>${safe(name)}</strong><small>${safe(tr(item.purpose || ''))} · ${safe(tr(item.status || item.matched_by || 'unresolved'))}</small></span>
+                <select class="form-input" data-member-key="${safe(key)}">${candidateOptions(item.candidates || defaults, selected, 'member')}</select>
             </label>`;
         }).join('');
     }
@@ -58,10 +59,17 @@
             const canExclude = ['error', 'blocker'].includes(item.severity)
                 && item.entity_type !== 'member' && key;
             return `<li class="import-issue import-issue-${safe(item.severity || 'info')}">
-                <span><strong>${safe((item.severity || 'info').toUpperCase())}</strong> · ${safe(item.code || item.issue_code)} · ${safe(item.message)}</span>
+                <span><strong>${safe((item.severity || 'info').toUpperCase())}</strong> · ${safe(item.code || item.issue_code)} · ${safe(tr(item.message))}</span>
                 ${canExclude ? `<label><input type="checkbox" data-exclude-key="${safe(key)}" ${excluded.has(key) ? 'checked' : ''}> ${tr('Exclude record')}</label>` : ''}
             </li>`;
         }).join('');
+    }
+
+    function resolutionGroup(title, rows, count, countLabel, open = false) {
+        return `<details class="import-resolution-group" ${open ? 'open' : ''}>
+            <summary>${tr(title)}<span><b>${count}</b> ${tr(countLabel)}</span></summary>
+            <div class="import-resolution-scroll">${rows}</div>
+        </details>`;
     }
 
     function render(report) {
@@ -72,8 +80,14 @@
             .reduce((total, count) => total + Number(count || 0), 0);
         const sourceRows = report.canonical_summary?.total_source_rows
             || summary.total_rows || summary.source_rows || 0;
+        const memberItems = asList(report.member_mappings || report.unresolved_members, 'source_name');
+        const customerItems = asList(report.customer_mappings || report.customer_matches, 'external_key');
+        const issues = report.issues || [];
         const members = memberRows(report);
         const customers = customerRows(report);
+        const openMembers = memberItems.some(item => item.status === 'blocker');
+        const openCustomers = !openMembers && customerItems.some(item => item.status === 'blocker');
+        const openIssues = !openMembers && !openCustomers && issues.length > 0;
         document.getElementById('import-preflight-result').innerHTML = `
             <div class="governance-report spreadsheet-preflight">
                 <div class="import-report-head"><h4>${tr('Spreadsheet Preflight')}</h4><span>${safe(report.format)} · ${safe(report.dataset_id)}</span></div>
@@ -83,36 +97,28 @@
                     <span>${tr('Errors')} <strong>${summary.error_count ?? summary.errors ?? summary.blockers ?? 0}</strong></span>
                     <span>${tr('Warnings')} <strong>${summary.warning_count ?? summary.warnings ?? 0}</strong></span>
                 </div>
-                ${members ? `<section class="import-resolution"><h5>${tr('Member account mapping')}</h5>${members}</section>` : ''}
-                ${customers ? `<section class="import-resolution"><h5>${tr('Customer matching')}</h5>${customers}</section>` : ''}
-                <section class="import-resolution"><h5>${tr('Issues and exclusions')}</h5><ul class="import-issue-list">${issueRows(report) || `<li>${tr('No issues found')}</li>`}</ul></section>
-                <button type="button" class="btn btn-secondary" onclick="recheckSpreadsheetImport()">${tr('Apply corrections & recheck')}</button>
-                <span class="import-commit-state">${tr(report.can_commit ? 'Ready to import' : 'Resolve or exclude all blockers before import')}</span>
+                ${members ? resolutionGroup('Member account mapping', members, memberItems.length, 'mappings', openMembers) : ''}
+                ${customers ? resolutionGroup('Customer matching', customers, customerItems.length, 'customers', openCustomers) : ''}
+                ${resolutionGroup('Issues and exclusions', `<ul class="import-issue-list">${issueRows(report) || `<li>${tr('No issues found')}</li>`}</ul>`, issues.length, 'issues', openIssues)}
             </div>`;
         bindResolutionInputs();
-        syncCommitButton();
+        SpreadsheetImportProgress.sync();
     }
 
     function bindResolutionInputs() {
         document.querySelectorAll('[data-member-key]').forEach(input => input.addEventListener('change', event => {
             SpreadsheetImportState.setMember(event.target.dataset.memberKey, event.target.value);
-            syncCommitButton();
+            SpreadsheetImportProgress.sync();
         }));
         document.querySelectorAll('[data-customer-key]').forEach(input => input.addEventListener('change', event => {
             SpreadsheetImportState.setCustomer(event.target.dataset.customerKey, event.target.value);
-            syncCommitButton();
+            SpreadsheetImportProgress.sync();
         }));
         document.querySelectorAll('[data-exclude-key]').forEach(input => input.addEventListener('change', event => {
             SpreadsheetImportState.toggleExcluded(event.target.dataset.excludeKey, event.target.checked);
-            syncCommitButton();
+            SpreadsheetImportProgress.sync();
         }));
     }
 
-    function syncCommitButton() {
-        const file = document.getElementById('import-file')?.files?.[0];
-        const button = document.getElementById('import-commit-btn');
-        if (button) button.disabled = SpreadsheetImportState.isSpreadsheet(file) && !SpreadsheetImportState.canCommit(file);
-    }
-
-    window.SpreadsheetImportView = { render, syncCommitButton };
+    window.SpreadsheetImportView = { render };
 })();

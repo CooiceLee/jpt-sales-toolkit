@@ -24,12 +24,12 @@ window.openCoordinateCorrectionFromReview = function(customerId) {
         return;
     }
 
-    const hasCoordinates = Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng));
+    const pair = MapSupport.coordinatePair(item.lat, item.lng);
     openCoordinateCorrection(
         item.customer_id || item.id,
         item.customer_name || item.name || 'Customer',
-        hasCoordinates ? item.lat : null,
-        hasCoordinates ? item.lng : null,
+        pair ? pair[0] : null,
+        pair ? pair[1] : null,
         {
             address: item.address,
             city: item.city,
@@ -38,4 +38,3 @@ window.openCoordinateCorrectionFromReview = function(customerId) {
         }
     );
 };
-

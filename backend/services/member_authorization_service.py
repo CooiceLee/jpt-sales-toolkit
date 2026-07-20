@@ -17,6 +17,7 @@ from .member_authorization_validation import (
     ensure_another_leader,
     validate_member_profile,
 )
+from .business_region_service import normalize_business_region
 
 
 class MemberAuthorizationService:
@@ -39,7 +40,7 @@ class MemberAuthorizationService:
                 password_hash=f"!unprovisioned:{uuid4()}",
                 display_name=data["display_name"].strip(),
                 role=data["role"],
-                region=(data.get("region") or None),
+                region=normalize_business_region(data.get("region")),
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError("Username already exists") from exc
@@ -51,6 +52,8 @@ class MemberAuthorizationService:
         validate_member_profile(data)
         if "username" in data:
             data["username"] = data["username"].strip()
+        if "region" in data:
+            data["region"] = normalize_business_region(data.get("region"))
         if current["role"] == "leader" and "role" in data and data["role"] != "leader":
             ensure_another_leader(self.users, user_id)
         try:

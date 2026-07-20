@@ -2,12 +2,15 @@ function renderTripMap() {
     if (!State.tripMap || !State.tripMapLayer) return;
     State.tripMapLayer.clearLayers();
     const bounds = [];
-    const selectedCustomerIds = new Set((State.currentTripPlan?.stops || []).map(stop => stop.customer_id));
+    const selectedCustomerIds = new Set(
+        (State.currentTripPlan?.stops || []).filter(Boolean).map(stop => stop.customer_id)
+    );
 
     (State.tripCandidates || []).forEach((candidate, index) => {
-        if (!Number.isFinite(Number(candidate.lat)) || !Number.isFinite(Number(candidate.lng))) return;
+        const pair = MapSupport.coordinatePair(candidate?.lat, candidate?.lng);
+        if (!pair) return;
         const selected = selectedCustomerIds.has(candidate.customer_id);
-        const marker = L.circleMarker([candidate.lat, candidate.lng], {
+        const marker = L.circleMarker(pair, {
             radius: selected ? 13 : Math.min(20, 7 + (candidate.open_count || 0) * 3),
             color: selected ? '#1f5135' : '#ffffff',
             weight: selected ? 3 : 2,
@@ -28,15 +31,15 @@ function renderTripMap() {
             </div>
         `);
         marker.addTo(State.tripMapLayer);
-        bounds.push([candidate.lat, candidate.lng]);
+        bounds.push(pair);
     });
 
     const plan = State.currentTripPlan;
     if (plan?.stops?.length) {
         const routePoints = [];
         const addPoint = (lat, lng, label, color) => {
-            if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return;
-            const point = [Number(lat), Number(lng)];
+            const point = MapSupport.coordinatePair(lat, lng);
+            if (!point) return;
             routePoints.push(point);
             bounds.push(point);
             L.circleMarker(point, {
@@ -48,12 +51,11 @@ function renderTripMap() {
             }).bindTooltip(label).addTo(State.tripMapLayer);
         };
         addPoint(plan.origin_lat, plan.origin_lng, plan.origin_name || 'Origin', '#2b6cb0');
-        (plan.stops || []).forEach(stop => {
-            if (Number.isFinite(Number(stop.lat)) && Number.isFinite(Number(stop.lng))) {
-                const point = [Number(stop.lat), Number(stop.lng)];
-                routePoints.push(point);
-                bounds.push(point);
-            }
+        (plan.stops || []).filter(Boolean).forEach(stop => {
+            const point = MapSupport.coordinatePair(stop.lat, stop.lng);
+            if (!point) return;
+            routePoints.push(point);
+            bounds.push(point);
         });
         addPoint(plan.destination_lat, plan.destination_lng, plan.destination_name || 'Destination', '#7c3aed');
         if (routePoints.length >= 2) {
@@ -73,10 +75,10 @@ function renderTripMap() {
 
 window.focusTripCandidate = function(index) {
     const item = State.tripCandidates[index];
-    if (!item || !Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))) {
+    const pair = MapSupport.coordinatePair(item?.lat, item?.lng);
+    if (!pair) {
         alert('This customer needs coordinate review before it can be shown on the map.');
         return;
     }
-    State.tripMap?.setView([item.lat, item.lng], 7);
+    State.tripMap?.setView(pair, 7);
 };
-

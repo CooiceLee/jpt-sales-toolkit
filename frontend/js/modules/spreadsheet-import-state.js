@@ -15,9 +15,9 @@
         return file ? `${file.name}:${file.size}:${file.lastModified}` : '';
     }
 
-    function useFile(file) {
+    function useFile(file, forceReset = false) {
         const next = signature(file);
-        if (state.fileSignature !== next) {
+        if (forceReset || state.fileSignature !== next) {
             state.fileSignature = next;
             state.report = null;
             state.dirty = false;
@@ -63,6 +63,8 @@
 
     window.SpreadsheetImportState = {
         useFile, setReport, setMember, setCustomer, toggleExcluded, canCommit, isSpreadsheet,
+        hasReport: () => Boolean(state.report),
+        isDirty: () => state.dirty,
         report: () => state.report,
         resolutions: () => JSON.parse(JSON.stringify(state.resolutions)),
         sourceHash: () => state.report?.source_hash || state.report?.source_sha256 || ''

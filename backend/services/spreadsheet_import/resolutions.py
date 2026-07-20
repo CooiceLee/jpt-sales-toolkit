@@ -40,7 +40,8 @@ def _mapping(value: object) -> dict[str, str]:
         for item in value:
             if not isinstance(item, dict):
                 raise SpreadsheetImportError("invalid_resolutions", "mapping entries must be objects", 400)
-            key = item.get("source_token") or item.get("external_key") or item.get("key")
+            key = (item.get("mapping_key") or item.get("source_token")
+                   or item.get("external_key") or item.get("key"))
             target = item.get("user_id") or item.get("customer_id") or item.get("target")
             if key and target:
                 result[str(key).strip()] = str(target).strip()

@@ -6,6 +6,11 @@ from ...repositories.authorization_schema import DEFAULT_ORGANIZATION_ID
 from ...repositories.base import generate_uuid, now_iso
 
 
+def external_keys(item: dict) -> tuple[str, ...]:
+    values = [item.get("external_key"), *(item.get("_binding_external_keys") or [])]
+    return tuple(dict.fromkeys(str(value) for value in values if value))
+
+
 def binding_id(conn, dataset_id: str, kind: str, key: str):
     row = conn.execute(
         """SELECT local_entity_id FROM import_bindings
@@ -17,8 +22,8 @@ def binding_id(conn, dataset_id: str, kind: str, key: str):
 
 
 def bound_entity_keys(conn, dataset_id: str, entities: dict) -> set[tuple[str, str]]:
-    scoped = {(kind, str(item.get("external_key")))
-              for kind, items in entities.items() for item in items}
+    scoped = {(kind, key) for kind, items in entities.items()
+              for item in items for key in external_keys(item)}
     rows = conn.execute(
         """SELECT entity_type, external_key FROM import_bindings
            WHERE organization_id = ? AND dataset_id = ?""",
