@@ -54,8 +54,19 @@ def apply_archive_action(conn, table: str, row_id: str, action: str, actor_id: s
         updates["updated_at"] = now_iso()
     if "updated_by" in columns:
         updates["updated_by"] = actor_id
-    assignments = ", ".join(f"{key} = ?" for key in updates)
-    conn.execute(f"UPDATE {table} SET {assignments} WHERE id = ?", (*updates.values(), row_id))
+    assignments = [f"{key} = ?" for key in updates]
+    if "row_version" in columns:
+        assignments.append("row_version = row_version + 1")
+    state_predicate = (
+        "archived_at IS NULL"
+        if action == "ARCHIVE"
+        else "archived_at IS NOT NULL"
+    )
+    conn.execute(
+        f"UPDATE {table} SET {', '.join(assignments)} "
+        f"WHERE id = ? AND {state_predicate}",
+        (*updates.values(), row_id),
+    )
     return True
 
 

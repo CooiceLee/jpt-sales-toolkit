@@ -94,16 +94,6 @@
             && item.activity_age_days >= threshold);
     }
 
-    function sortOldestActivity(items) {
-        return items.slice().sort((left, right) => {
-            const leftDate = calendarDay(left.activity_date);
-            const rightDate = calendarDay(right.activity_date);
-            if (!leftDate) return rightDate ? -1 : 0;
-            if (!rightDate) return 1;
-            return leftDate - rightDate;
-        });
-    }
-
     window.FollowupFilterModel = {
         annotate,
         calendarDay,
@@ -111,6 +101,5 @@
         effectiveActivity,
         filterActivity,
         filterPlanned,
-        sortOldestActivity,
     };
 })();

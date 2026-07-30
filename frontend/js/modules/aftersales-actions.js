@@ -1,13 +1,18 @@
+function afterSalesActionText(text, params = {}) {
+    return window.I18n?.t ? I18n.t(text, params) : Object.entries(params)
+        .reduce((value, [key, item]) => value.replace(`{${key}}`, item), text);
+}
+
 window.saveAfterSales = async function() {
     const desc = document.getElementById('as-description').value.trim();
     if (!RoleCapabilities.isTech() && !desc) {
-        alert('Please enter description');
+        alert(afterSalesActionText('Please enter an issue description.'));
         return;
     }
 
     const leadId = State.currentInquiry?.id;
     if (!leadId) {
-        alert('No lead selected');
+        alert(afterSalesActionText('No lead selected.'));
         return;
     }
 
@@ -22,13 +27,16 @@ window.saveAfterSales = async function() {
         created_at: document.getElementById('as-date').value || null
     };
 
+    const saveButton = document.getElementById('as-save-btn');
+    if (saveButton?.disabled) return;
+    if (saveButton) saveButton.disabled = true;
     try {
         const index = parseInt(document.getElementById('as-index').value, 10);
         const issue = Number.isInteger(index) && index >= 0
             ? State.currentInquiry?.after_sales?.[index]
             : null;
         if (RoleCapabilities.isTech() && !issue?.id) {
-            throw new Error('Only an assigned issue result can be updated.');
+            throw new Error(afterSalesActionText('Only an assigned issue result can be updated.'));
         }
         const data = RoleCapabilities.isTech()
             ? {
@@ -42,7 +50,7 @@ window.saveAfterSales = async function() {
 
         if (issue?.id) {
             if (!issue.row_version) {
-                throw new Error('Missing row version. Please refresh and try again.');
+                throw new Error(afterSalesActionText('Missing row version. Please refresh and try again.'));
             }
             await ApiClient.updateAfterSalesTask(issue.id, {
                 ...data,
@@ -58,11 +66,18 @@ window.saveAfterSales = async function() {
 
         renderPanelContent('aftersales');
         await refreshAllCounts();
-        notify(issue?.id ? 'Issue updated' : 'Issue logged');
+        notify(issue?.id
+            ? afterSalesActionText('Issue updated.')
+            : afterSalesActionText('Issue logged.'));
         hideAfterSalesForm();
     } catch (err) {
         console.error('After-sales save error:', err);
-        alert('Error saving issue: ' + (err.message || 'Unknown error'));
+        alert(afterSalesActionText('Error saving issue: {error}', {
+            error: afterSalesActionText(err?.message || 'Unknown error')
+        }));
+    } finally {
+        const currentButton = document.getElementById('as-save-btn');
+        if (currentButton) currentButton.disabled = false;
     }
 };
 
@@ -71,7 +86,7 @@ window.archiveAfterSales = async function(index) {
     const issue = State.currentInquiry?.after_sales?.[index];
     if (!issue || !issue.id) return;
 
-    if (!confirm('Archive this after-sales issue?')) return;
+    if (!confirm(afterSalesActionText('Archive this after-sales issue?'))) return;
 
     try {
         await ApiClient.archiveAfterSalesTask(issue.id);
@@ -80,6 +95,8 @@ window.archiveAfterSales = async function(index) {
         await refreshAllCounts();
     } catch (err) {
         console.error('After-sales archive error:', err);
-        alert('Error archiving issue: ' + (err.message || 'Unknown error'));
+        alert(afterSalesActionText('Error archiving issue: {error}', {
+            error: afterSalesActionText(err?.message || 'Unknown error')
+        }));
     }
 };

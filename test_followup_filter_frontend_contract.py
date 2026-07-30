@@ -31,6 +31,7 @@ def main() -> None:
     ):
         assert f'id="{element_id}"' in index
     assert index.index("followup-filter-model.js") < index.index("sales-worklists.js")
+    assert index.index("worklist-sort.js") < index.index("sales-worklists.js")
     assert "Next 7 days" in index and "This week" not in index
     assert "window.FollowupFilterControls?.init()" in stage_filters
     assert "...getSharedLeadFilters()" in worklist
@@ -57,6 +58,7 @@ const context = { console, Date };
 context.window = context;
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/followup-filter-model.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/worklist-sort.js', 'utf8'), context);
 const model = context.FollowupFilterModel;
 const now = new Date(2026, 6, 20, 12);
 const rows = model.annotate([
@@ -82,7 +84,6 @@ assert.strictEqual(rows[0].activity_date_source, 'follow_up');
 assert.strictEqual(rows[0].activity_age_days, 19);
 assert.strictEqual(rows[1].activity_date_source, 'inquiry');
 assert.strictEqual(rows[3].activity_date_source, 'created');
-assert.strictEqual(model.sortOldestActivity(rows)[0].id, 'd');
 const dstRow = model.annotate([
   { id: 'dst', latest_follow_up_at: '2026-03-08', inquiry_date: '2026-01-01' }
 ], new Date(2026, 2, 9, 12))[0];

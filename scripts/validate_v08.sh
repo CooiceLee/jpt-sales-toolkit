@@ -28,6 +28,7 @@ echo
 echo "Step 2/4: Python compile"
 "$PYTHON_BIN" -m py_compile \
   backend/config.py \
+  backend/database_access.py \
   backend/app_v2.py \
   backend/authorization/*.py \
   backend/routers/*.py \
@@ -35,7 +36,10 @@ echo "Step 2/4: Python compile"
   backend/repositories/*.py \
   backend/migration/*.py \
   test_*.py
-"$PYTHON_BIN" -m compileall -q backend/services/importing backend/services/spreadsheet_import
+"$PYTHON_BIN" -m compileall -q \
+  backend/services/geocoding \
+  backend/services/importing \
+  backend/services/spreadsheet_import
 
 echo
 echo "Step 3/4: core regression tests"
@@ -48,16 +52,32 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_authorization_role_boundary.py
 "$PYTHON_BIN" test_authorization_security_regressions.py
 "$PYTHON_BIN" test_desktop_packaging_contract.py
+"$PYTHON_BIN" test_release_hygiene.py
+"$PYTHON_BIN" test_lan_test_accounts_security.py
 "$PYTHON_BIN" test_version_contract.py
 "$PYTHON_BIN" test_windows_path_contract.py
 "$PYTHON_BIN" test_permissions.py
 "$PYTHON_BIN" test_role_permissions.py
+"$PYTHON_BIN" test_p1_data_integrity.py
+"$PYTHON_BIN" test_customer_write_permissions.py
+"$PYTHON_BIN" test_coordinate_integrity.py
+"$PYTHON_BIN" test_review_map_module_contract.py
 "$PYTHON_BIN" test_contact_validation.py
 "$PYTHON_BIN" test_stage_auto_progression.py
 "$PYTHON_BIN" test_backup_retention.py
 "$PYTHON_BIN" test_backup_runtime_config.py
 "$PYTHON_BIN" test_backup_api_cleanup.py
+"$PYTHON_BIN" test_admin_restore_upload_security.py
+"$PYTHON_BIN" test_database_access_gate.py
+"$PYTHON_BIN" test_restore_cancellation_gate.py
+"$PYTHON_BIN" test_restore_maintenance_gate.py
+"$PYTHON_BIN" test_safe_upgrade.py
 "$PYTHON_BIN" test_roundtrip_export_import.py
+"$PYTHON_BIN" test_json_sales_distribution.py
+"$PYTHON_BIN" test_json_import_record_atomicity.py
+"$PYTHON_BIN" test_json_recipient_export.py
+"$PYTHON_BIN" test_json_roundtrip_business_fields.py
+"$PYTHON_BIN" test_json_exchange_frontend_contract.py
 "$PYTHON_BIN" test_import_identity_schema.py
 "$PYTHON_BIN" test_member_identity_service.py
 "$PYTHON_BIN" test_spreadsheet_importing.py
@@ -68,17 +88,25 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_data_quality_frontend_contract.py
 "$PYTHON_BIN" test_operational_field_roundtrip.py
 "$PYTHON_BIN" test_operational_field_frontend_contract.py
+"$PYTHON_BIN" test_inquiry_atomic_save.py
+"$PYTHON_BIN" test_inquiry_atomic_frontend_contract.py
 "$PYTHON_BIN" test_v07_review_trip.py
 "$PYTHON_BIN" test_v09_filters_merge.py
 "$PYTHON_BIN" test_business_region_filters.py
 "$PYTHON_BIN" test_customer_merge_integrity.py
 "$PYTHON_BIN" test_customer_merge_frontend_contract.py
 "$PYTHON_BIN" test_map_frontend_contract.py
+"$PYTHON_BIN" test_geocoding_service.py
+"$PYTHON_BIN" test_geocoding_frontend_contract.py
+"$PYTHON_BIN" test_intake_router_module_contract.py
 "$PYTHON_BIN" test_runtime_contracts.py
 "$PYTHON_BIN" test_pre_sales_crud.py
 "$PYTHON_BIN" test_pre_sales_read_model.py
 "$PYTHON_BIN" test_sampling_frontend_contract.py
 "$PYTHON_BIN" test_i18n_frontend_contract.py
+"$PYTHON_BIN" test_worklist_ux_frontend_contract.py
+"$PYTHON_BIN" test_stable_ux_frontend_contract.py
+"$PYTHON_BIN" test_worklist_sort_frontend_contract.py
 "$PYTHON_BIN" test_followup_filter_frontend_contract.py
 "$PYTHON_BIN" test_frontend_module_contract.py
 "$PYTHON_BIN" test_lead_dynamic_fields.py

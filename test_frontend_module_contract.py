@@ -31,6 +31,27 @@ def main() -> None:
     assert script_sources.index("/static/js/modules/authorization-center.js") < script_sources.index(
         "/static/js/modules/authorization-center-view.js"
     )
+    sort_module = "/static/js/modules/worklist-sort.js"
+    for worklist in (
+        "/static/js/modules/sales-worklists.js",
+        "/static/js/modules/service-worklists.js",
+        "/static/js/modules/sampling.js",
+    ):
+        assert script_sources.index(sort_module) < script_sources.index(worklist)
+    coordinate_modules = [
+        "/static/js/modules/coordinate-state.js",
+        "/static/js/modules/coordinate-fields.js",
+        "/static/js/modules/coordinate-geocode-view.js",
+        "/static/js/modules/coordinate-panel.js",
+        "/static/js/modules/coordinate-actions.js",
+        "/static/js/modules/coordinate-save.js",
+    ]
+    assert [script_sources.index(source) for source in coordinate_modules] == sorted(
+        script_sources.index(source) for source in coordinate_modules
+    ), "coordinate modules must preserve state/view/action dependency order"
+    for source in coordinate_modules:
+        lines = (FRONTEND / source.removeprefix("/static/")).read_text(encoding="utf-8").splitlines()
+        assert len(lines) <= 125, f"coordinate module boundary exceeded: {source}"
 
     assert len(app_source.splitlines()) <= 600, "app.js has grown beyond its entry-file boundary"
     for extracted_marker in (

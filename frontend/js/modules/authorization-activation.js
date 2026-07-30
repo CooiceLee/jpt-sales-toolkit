@@ -2,17 +2,19 @@
     let activationStatus = null;
     let joiningFromSetup = false;
 
-    function setActivationMessage(message, error = false) {
+    function setActivationMessage(message, error = false, params = {}) {
         const element = document.getElementById('activation-message');
         if (!element) return;
-        element.textContent = message || '';
+        element.textContent = message ? I18n.t(message, params) : '';
         element.classList.toggle('error-state', error);
         element.style.display = message ? 'block' : 'none';
     }
 
     function renderStatus(status) {
         const setupMode = status.mode === 'setup';
-        setText('activation-modal-title', setupMode ? 'Set Up JPT Sales Toolkit' : 'Activate JPT Sales Toolkit');
+        setText('activation-modal-title', I18n.t(
+            setupMode ? 'Set Up JPT Sales Toolkit' : 'Activate JPT Sales Toolkit'
+        ));
         document.getElementById('activation-bootstrap-section')?.classList.toggle(
             'hidden', !setupMode || joiningFromSetup
         );
@@ -57,8 +59,20 @@
         try {
             AuthorizationActivation.setStatus(await ApiClient.getAuthorizationStatus());
         } catch (err) {
-            console.warn('Authorization status unavailable; using legacy login flow.', err);
-            return true;
+            console.error('Authorization status unavailable; login remains blocked.', err);
+            activationStatus = null;
+            ApiClient.clearAuth();
+            document.getElementById('app').style.display = 'none';
+            hideModal('login-modal');
+            ['activation-bootstrap-section', 'activation-member-section', 'activation-back-to-setup',
+                'activation-leader-recovery'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+            setText('activation-modal-title', I18n.t('Authorization Check Failed'));
+            setActivationMessage(
+                'Unable to verify authorization status. Restart JPT and try again.',
+                true
+            );
+            showModal('activation-modal');
+            return false;
         }
         if (!AuthorizationModel.requiresActivation(activationStatus)) return true;
         ApiClient.clearAuth();
@@ -77,7 +91,9 @@
             const result = await ApiClient.createDeviceRequest();
             downloadBlob(result.blob, result.filename);
             AuthorizationActivation.setStatus(await ApiClient.getAuthorizationStatus());
-            setActivationMessage(`Device request downloaded: ${result.filename}`);
+            setActivationMessage('Device request downloaded: {filename}', false, {
+                filename: result.filename
+            });
         } catch (err) {
             setActivationMessage(err.message || 'Unable to generate device request.', true);
         } finally {

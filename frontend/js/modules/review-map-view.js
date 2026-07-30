@@ -12,30 +12,38 @@
     }
 
     function qualityLabel(point) {
+        const confidenceKey = { high: 'High', medium: 'Medium', low: 'Low' }[
+            String(point.geocode_confidence || '').toLowerCase()
+        ];
         if (point.coordinate_quality === 'exact') {
-            return `${t('Precise customer location')}${point.geocode_source ? ` · ${escapeHtml(point.geocode_source)}` : ''}`;
+            return `${t('Precise customer location')}${point.geocode_source ? ` · ${escapeHtml(t(point.geocode_source))}` : ''}`;
         }
-        return `${t('Auto approximate location')}${point.geocode_confidence ? ` · ${escapeHtml(point.geocode_confidence)}` : ''} · ${t('verify')}`;
+        return `${t('Auto approximate location')}${confidenceKey ? ` · ${escapeHtml(t(confidenceKey))}` : ''} · ${t('verify')}`;
     }
 
     function pointPopup(point) {
         const leadLines = (point.leads || []).slice(0, 4).map(lead => `
             <div class="map-popup-lead">
                 <strong>${escapeHtml(lead.display_id || '')}</strong>
-                <span>${escapeHtml(lead.sales_stage || '')}</span>
+                <span>${escapeHtml(t(lead.sales_stage || ''))}</span>
             </div>
         `).join('');
-        const locked = point.geocode_locked ? '<span class="map-popup-locked">Locked</span>' : '';
+        const locked = point.geocode_locked
+            ? `<span class="map-popup-locked">${t('Locked')}</span>`
+            : '';
+        const fixAction = point.can_edit
+            ? `<button type="button" class="btn btn-secondary btn-sm" onclick="openCoordinateCorrectionFromMap('${escapeHtml(point.customer_id)}')">${t('Fix Location')}</button>`
+            : '';
         return `
             <div class="map-popup">
                 <div class="map-popup-title">${escapeHtml(point.customer_name)}</div>
                 <div class="map-popup-meta">${escapeHtml([point.city, point.country_name || point.country].filter(Boolean).join(', '))}</div>
                 <div class="map-popup-quality ${point.coordinate_quality === 'exact' ? 'exact' : 'fallback'}">${qualityLabel(point)}${locked}</div>
-                <div class="map-popup-stats"><span>${point.lead_count} leads</span><span>${point.won_count} won</span><span>${point.open_count} open</span></div>
+                <div class="map-popup-stats"><span>${t('{count} leads', { count: point.lead_count })}</span><span>${t('{count} won', { count: point.won_count })}</span><span>${t('{count} open', { count: point.open_count })}</span></div>
                 <div class="map-popup-leads">${leadLines}</div>
                 <div class="map-popup-actions">
-                    <button type="button" class="btn btn-primary btn-sm" onclick="openInquiryPanel('${escapeHtml(point.latest_lead_id)}')">Open Lead</button>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="openCoordinateCorrectionFromMap('${escapeHtml(point.customer_id)}')">Fix Location</button>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openInquiryPanel('${escapeHtml(point.latest_lead_id)}')">${t('Open Lead')}</button>
+                    ${fixAction}
                 </div>
             </div>
         `;
@@ -68,7 +76,7 @@
         const rows = group.points.slice(0, 4).map(point => `
             <div class="map-popup-lead">
                 <strong>${escapeHtml(point.customer_name)}</strong>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="openCoordinateCorrectionFromMap('${escapeHtml(point.customer_id)}')">Fix</button>
+                ${point.can_edit ? `<button type="button" class="btn btn-secondary btn-sm" onclick="openCoordinateCorrectionFromMap('${escapeHtml(point.customer_id)}')">${t('Fix')}</button>` : ''}
             </div>
         `).join('');
         return `
@@ -77,7 +85,7 @@
                 <div class="map-popup-quality fallback">${t('Country aggregate — not a precise customer location')}</div>
                 <div class="map-popup-meta">${t('{count} customers are grouped at the country center until precise coordinates are added.', { count: group.points.length })}</div>
                 <div class="map-popup-leads">${rows}</div>
-                <div class="map-popup-actions"><button type="button" class="btn btn-primary btn-sm" onclick="switchModule('coordinate-review')">Open Coordinate Review</button></div>
+                <div class="map-popup-actions"><button type="button" class="btn btn-primary btn-sm" onclick="switchModule('coordinate-review')">${t('Open Coordinate Review')}</button></div>
             </div>
         `;
     }

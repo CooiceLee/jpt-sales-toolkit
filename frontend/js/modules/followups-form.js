@@ -15,6 +15,7 @@ window.showFollowUpForm = function() {
 
 window.hideFollowUpForm = function() {
     document.getElementById('followup-form').classList.add('hidden');
+    window.PanelDirtyState?.reset?.();
 };
 
 window.editFollowUp = function(index) {
@@ -37,35 +38,5 @@ window.editFollowUp = function(index) {
 };
 
 async function refreshCurrentInquiryData(leadId) {
-    const taskOnly = RoleCapabilities.isTech();
-    const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
-        ApiClient.getLead(leadId),
-        taskOnly ? [] : ApiClient.listActivities(leadId).catch(() => []),
-        ApiClient.listPreSalesTasks({
-            lead_id: leadId, include_archived: true, limit: 100000
-        }),
-        ApiClient.listAfterSalesTasks({ lead_id: leadId }).catch(() => []),
-        taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
-    ]);
-
-    State.currentInquiry._lead = lead;
-    State.currentInquiry._customer = lead.customer;
-    State.currentInquiry.row_version = lead.row_version;
-    State.currentInquiry._activities = activities;
-    State.currentInquiry._preSalesTasks = preSalesTasks;
-    State.currentInquiry._afterSalesTasks = afterSalesTasks;
-    State.currentInquiry._attachments = attachments;
-    State.currentInquiry.attachments = attachments;
-    State.currentInquiry.sample_tasks = preSalesTasks.map(task => SamplingModule.toView(task));
-    State.currentInquiry.latest_follow_up = lead.latest_follow_up || null;
-    State.currentInquiry.latest_follow_up_at = lead.latest_follow_up_at
-        || lead.latest_follow_up?.created_at || '';
-    State.currentInquiry.latest_follow_up_at_raw =
-        lead.latest_follow_up?.occurred_at_raw || '';
-    State.currentInquiry.latest_follow_up_summary = lead.latest_follow_up_summary
-        || lead.latest_follow_up?.content || lead.latest_follow_up?.summary || '';
-    State.currentInquiry.follow_ups = activities
-        .filter(a => a.action_type === 'follow_up')
-        .map(mapFollowUpActivity);
-    State.currentInquiry.after_sales = afterSalesTasks.map(mapAfterSalesTask);
+    State.currentInquiry = await InquiryPanelData.load(leadId);
 }

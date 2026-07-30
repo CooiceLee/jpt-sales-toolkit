@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TEXT NOT NULL
 );
 
+-- Application-wide migration ledger. Unlike the authorization-only ledger
+-- above, this records every runtime schema step and the app build that applied it.
+CREATE TABLE IF NOT EXISTS app_schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    app_version TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

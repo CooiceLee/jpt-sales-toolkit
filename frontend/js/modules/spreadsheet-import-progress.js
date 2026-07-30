@@ -19,7 +19,10 @@
         const hasFile = SpreadsheetImportState.isSpreadsheet(file);
         const hasReport = SpreadsheetImportState.hasReport();
         const dirty = SpreadsheetImportState.isDirty();
-        const canCommit = !commitUnconfirmed && hasFile && SpreadsheetImportState.canCommit(file);
+        const preflightReady = !commitUnconfirmed
+            && hasFile
+            && SpreadsheetImportState.canCommit(file);
+        const canCommit = backupComplete && preflightReady;
         const report = SpreadsheetImportState.report();
         const blockers = Number(
             report?.summary?.error_count ?? report?.summary?.errors
@@ -45,6 +48,7 @@
             : commitComplete ? 'Import complete'
             : (!hasFile || !hasReport) ? 'Run preflight before import'
             : dirty ? 'Apply corrections & recheck'
+            : preflightReady && !backupComplete ? 'Create a full backup before import'
             : canCommit ? 'Ready to import'
             : `${blockers} ${tr('blocking issues remain — resolve mappings or exclude invalid records, then recheck.')}`;
         if (commit) {
@@ -97,6 +101,7 @@
             sync();
         },
         isBusy: () => Boolean(busyAction),
-        isCommitUnconfirmed: () => commitUnconfirmed
+        isCommitUnconfirmed: () => commitUnconfirmed,
+        isBackupComplete: () => backupComplete
     };
 })();

@@ -13,6 +13,8 @@ cryptography==46.0.7
 # Testing
 httpx==0.28.1
 requests==2.32.5
+# Explicit CA bundle for HTTPS services inside PyInstaller builds
+certifi==2026.6.17
 
 # JWT (optional - has stdlib fallback)
 # PyJWT>=2.8.0

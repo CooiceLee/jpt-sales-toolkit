@@ -1,19 +1,19 @@
 window.changeLeadOwner = async function() {
     const newOwnerId = document.getElementById('lead-owner-select').value;
     if (!newOwnerId) {
-        alert('Please select a new owner');
+        alert(I18n.t('Please select a new owner'));
         return;
     }
 
     const lead = State.currentInquiry._lead;
     if (newOwnerId === lead.owner_id) {
-        notify('Owner unchanged');
+        notify(I18n.t('Owner unchanged'));
         return;
     }
 
     try {
         await ApiClient.updateLead(lead.id, { owner_id: newOwnerId }, lead.row_version);
-        notify('Owner updated');
+        notify(I18n.t('Owner updated'));
 
         // Refresh lead
         const refreshed = await ApiClient.getLead(lead.id);
@@ -21,14 +21,16 @@ window.changeLeadOwner = async function() {
         renderPanelContent('basic');
     } catch (err) {
         console.error('Change owner error:', err);
-        alert('Error changing owner: ' + (err.message || 'Unknown error'));
+        alert(I18n.t('Error changing owner: {error}', {
+            error: I18n.t(err.message || 'Unknown error')
+        }));
     }
 };
 
 window.addWatcher = async function() {
     const userId = document.getElementById('watcher-select').value;
     if (!userId) {
-        alert('Please select a user');
+        alert(I18n.t('Please select a user'));
         return;
     }
 
@@ -36,7 +38,7 @@ window.addWatcher = async function() {
 
     try {
         await ApiClient.addAssignment(lead.id, userId, 'watcher');
-        notify('Watcher added');
+        notify(I18n.t('Watcher added'));
 
         // Refresh lead
         const refreshed = await ApiClient.getLead(lead.id);
@@ -44,14 +46,16 @@ window.addWatcher = async function() {
         renderPanelContent('basic');
     } catch (err) {
         console.error('Add watcher error:', err);
-        alert('Error adding watcher: ' + (err.message || 'Unknown error'));
+        alert(I18n.t('Error adding watcher: {error}', {
+            error: I18n.t(err.message || 'Unknown error')
+        }));
     }
 };
 
 window.addCollaborator = async function() {
     const userId = document.getElementById('collaborator-select').value;
     if (!userId) {
-        alert('Please select a user');
+        alert(I18n.t('Please select a user'));
         return;
     }
 
@@ -59,7 +63,7 @@ window.addCollaborator = async function() {
 
     try {
         await ApiClient.addAssignment(lead.id, userId, 'collaborator');
-        notify('Collaborator added');
+        notify(I18n.t('Collaborator added'));
 
         // Refresh lead
         const refreshed = await ApiClient.getLead(lead.id);
@@ -67,12 +71,14 @@ window.addCollaborator = async function() {
         renderPanelContent('basic');
     } catch (err) {
         console.error('Add collaborator error:', err);
-        alert('Error adding collaborator: ' + (err.message || 'Unknown error'));
+        alert(I18n.t('Error adding collaborator: {error}', {
+            error: I18n.t(err.message || 'Unknown error')
+        }));
     }
 };
 
 window.removeAssignment = async function(assignmentId) {
-    if (!confirm('Remove this assignment?')) {
+    if (!confirm(I18n.t('Remove this assignment?'))) {
         return;
     }
 
@@ -80,7 +86,7 @@ window.removeAssignment = async function(assignmentId) {
 
     try {
         await ApiClient.archiveAssignment(lead.id, assignmentId);
-        notify('Assignment removed');
+        notify(I18n.t('Assignment removed'));
 
         // Refresh lead
         const refreshed = await ApiClient.getLead(lead.id);
@@ -88,7 +94,9 @@ window.removeAssignment = async function(assignmentId) {
         renderPanelContent('basic');
     } catch (err) {
         console.error('Remove assignment error:', err);
-        alert('Error removing assignment: ' + (err.message || 'Unknown error'));
+        alert(I18n.t('Error removing assignment: {error}', {
+            error: I18n.t(err.message || 'Unknown error')
+        }));
     }
 };
 

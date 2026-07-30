@@ -44,6 +44,7 @@ pick_port() {
 
 LAN_IP="$(detect_lan_ip)"
 PORT="$(pick_port 8000)"
+VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
 DATA_DIR="$ROOT_DIR/data-test-server"
 ENV_FILE="$ROOT_DIR/deploy/test-server.env"
 ACCOUNT_REPORT="$DATA_DIR/lan_test_accounts.md"
@@ -61,7 +62,7 @@ JPT_ROLLBACK_BACKUP=$ROOT_DIR/data/backups/rollback_v0.6_crud_baseline_20260504_
 EOF
 
 echo
-echo "JPT Sales Toolkit v0.9.0 LAN Test Server"
+echo "JPT Sales Toolkit v$VERSION LAN Test Server"
 echo "--------------------------------------"
 echo "Project:        $ROOT_DIR"
 echo "Data directory: $DATA_DIR"
@@ -73,10 +74,9 @@ echo
 echo "Step 1/4: checking Python dependencies"
 python3 -m pip install -r requirements.txt >/dev/null
 
-echo "Step 2/4: creating or refreshing test accounts"
+echo "Step 2/4: creating isolated demo accounts"
 python3 scripts/create_test_accounts.py \
   --data-dir "$DATA_DIR" \
-  --include-existing-users \
   --report-path "$ACCOUNT_REPORT"
 
 echo
@@ -113,7 +113,8 @@ echo "$ACCOUNT_REPORT"
 echo
 echo "Included accounts:"
 echo "- Demo accounts: leader01 / sales01 / sales02 / sales03 / tech01 / tech02"
-echo "- Existing team users in this test database are also refreshed for LAN login"
+echo "- One-time random passwords are stored only in the permission-restricted account sheet"
+echo "- Existing team users and passwords are not changed"
 echo
 echo "Press Ctrl+C in this window to stop the server."
 echo

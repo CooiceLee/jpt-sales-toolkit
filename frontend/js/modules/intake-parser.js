@@ -9,6 +9,8 @@
 
     function initParser() {
         const textarea = document.getElementById('email-content');
+        if (!textarea || textarea.dataset.parserBound) return;
+        textarea.dataset.parserBound = '1';
         textarea?.addEventListener('input', () => {
             setText('char-count', textarea.value.length);
         });
@@ -23,7 +25,7 @@
                 setText('char-count', text.length);
             }
         } catch (err) {
-            alert('Cannot access clipboard. Please paste manually.');
+            alert(I18n.t('Cannot access clipboard. Please paste manually.'));
         }
     }
 
@@ -41,7 +43,7 @@
     async function parseEmail() {
         const content = document.getElementById('email-content')?.value?.trim();
         if (!content) {
-            alert('Please paste email content first');
+            alert(I18n.t('Please paste email content first'));
             return;
         }
 
@@ -60,7 +62,7 @@
             document.getElementById('parsed-result').style.display = 'block';
         } catch (err) {
             console.error('Parse error:', err);
-            alert('Error parsing email');
+            alert(I18n.t('Error parsing email'));
         }
     }
 

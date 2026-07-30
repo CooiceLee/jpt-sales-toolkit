@@ -1,11 +1,18 @@
 (() => {
+    let reviewMapRequestEpoch = 0;
+
     function markerRadius(leadCount) {
         return Math.min(16, 7 + Math.sqrt(Math.max(1, Number(leadCount) || 1)) * 2);
     }
 
+    function reviewMapText(text, params = {}) {
+        return window.I18n?.t ? I18n.t(text, params) : Object.entries(params)
+            .reduce((value, [key, item]) => value.replace(`{${key}}`, item), text);
+    }
+
     window.initMap = function() {
         if (State.map || !document.getElementById('world-map')) return;
-        State.map = L.map('world-map').setView([35, 20], 2);
+        State.map = L.map('world-map', { preferCanvas: true }).setView([35, 20], 2);
         MapSupport.addTileLayer(State.map, { containerId: 'world-map', style: 'light' });
         State.mapLayer = L.layerGroup().addTo(State.map);
     };
@@ -20,18 +27,28 @@
 
     window.loadReviewMap = async function() {
         if (!State.map || !State.mapLayer) return;
+        const requestEpoch = ++reviewMapRequestEpoch;
         try {
             const filters = getMapFilters();
             const mapData = await ApiClient.getMapData(filters);
+            if (requestEpoch !== reviewMapRequestEpoch) return null;
             State.mapData = mapData;
+            window.syncBatchGeocodeAccess?.(mapData);
             if (!filters.sales_stage && !filters.outcome && !filters.region) {
                 updateCoordinateReviewBadge(mapData);
             }
             renderReviewMap(mapData);
+            return mapData;
         } catch (err) {
+            if (requestEpoch !== reviewMapRequestEpoch) return null;
             console.error('Review map error:', err);
+            State.mapLayer.clearLayers();
+            State.mapCustomerMarkers = {};
+            State.mapData = null;
+            window.syncBatchGeocodeAccess?.(null);
             const summary = document.getElementById('map-summary');
-            if (summary) summary.textContent = window.I18n?.t ? I18n.t('Map data unavailable. Try again.') : 'Map data unavailable. Try again.';
+            if (summary) summary.textContent = reviewMapText('Map data unavailable. Try again.');
+            return null;
         }
     };
 
@@ -61,7 +78,7 @@
                 fillOpacity: exact ? 0.88 : 0.58,
                 dashArray: exact ? null : '4 3'
             });
-            marker.bindTooltip(`${point.customer_name} · ${point.lead_count}`);
+            marker.bindTooltip(escapeHtml(`${point.customer_name || ''} · ${Number(point.lead_count) || 0}`));
             marker.bindPopup(ReviewMapView.pointPopup(point), { minWidth: 260 });
             marker.addTo(State.mapLayer);
             State.mapCustomerMarkers[point.customer_id] = marker;
@@ -78,7 +95,9 @@
                 fillOpacity: 0.42,
                 dashArray: '6 4'
             });
-            marker.bindTooltip(`${group.label} · ${group.points.length} customers · country aggregate`);
+            marker.bindTooltip(escapeHtml(`${group.label || ''} · ${reviewMapText(
+                '{count} customers · country aggregate', { count: group.points.length }
+            )}`));
             marker.bindPopup(ReviewMapView.aggregatePopup(group), { minWidth: 290 });
             marker.addTo(State.mapLayer);
             group.points.forEach(point => { State.mapCustomerMarkers[point.customer_id] = marker; });

@@ -1,5 +1,32 @@
 // ===== Detail Panel =====
-const panelTr = text => window.I18n?.t(text) || text;
+const panelTr = (text, params) => window.I18n?.t(text, params) || text;
+let inquiryPanelRequestId = 0;
+
+function resetInquirySaveButton() {
+    const button = document.getElementById('panel-save-btn');
+    if (!button) return;
+    button.disabled = false;
+    delete button.dataset.inquirySaveEpoch;
+}
+
+function captureInquiryPanelSession() {
+    return Object.freeze({
+        leadId: State.currentInquiry?.id || null,
+        generation: inquiryPanelRequestId
+    });
+}
+
+function isInquiryPanelSessionCurrent(session) {
+    return !!session?.leadId
+        && inquiryPanelRequestId === session.generation
+        && State.currentInquiry?.id === session.leadId
+        && document.getElementById('detail-panel')?.classList.contains('open');
+}
+
+window.InquiryPanelSession = Object.freeze({
+    capture: captureInquiryPanelSession,
+    isCurrent: isInquiryPanelSessionCurrent
+});
 
 function panelTabForContext(context) {
     const tabMap = {
@@ -16,71 +43,51 @@ function panelTabForContext(context) {
 }
 
 window.openInquiryPanel = async function(leadId, targetContext = null) {
+    const panel = document.getElementById('detail-panel');
+    if (panel.classList.contains('open') && State.currentInquiry?.id === leadId) {
+        document.querySelector(`.panel-tab[data-tab="${panelTabForContext(targetContext)}"]`)?.click();
+        return;
+    }
+    if (!PanelDirtyState.confirmDiscard()) return;
+    const requestId = ++inquiryPanelRequestId;
+    resetInquirySaveButton();
+    State.currentInquiry = null;
+    WorklistUI.select(leadId, targetContext);
+    setText('panel-title', panelTr('Loading lead...'));
+    document.getElementById('panel-tabs').innerHTML = '';
+    document.getElementById('panel-content').innerHTML = `<div class="loading-state">${escapeHtml(panelTr('Loading lead details...'))}</div>`;
+    document.getElementById('panel-save-btn')?.classList.add('hidden');
+    panel.classList.add('open');
+    document.getElementById('app')?.classList.add('detail-open');
     try {
-        const taskOnly = RoleCapabilities.isTech();
-        const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
-            ApiClient.getLead(leadId),
-            taskOnly ? [] : ApiClient.listActivities(leadId).catch(() => []),
-            ApiClient.listPreSalesTasks({
-                lead_id: leadId, include_archived: true, limit: 100000
-            }),
-            ApiClient.listAfterSalesTasks({ lead_id: leadId }).catch(() => []),
-            taskOnly ? [] : ApiClient.listAttachments(leadId).catch(() => [])
-        ]);
-
-        const followUps = activities
-            .filter(a => a.action_type === 'follow_up')
-            .map(mapFollowUpActivity);
-        const afterSales = afterSalesTasks.map(mapAfterSalesTask);
-
-        const primaryContact = getLeadPrimaryContact(lead);
-
-        State.currentInquiry = {
-            id: lead.id,
-            inquiry_id: lead.display_id,
-            company_name: lead.customer?.display_name || '',
-            contact_name: primaryContact?.name || '',
-            email: primaryContact?.email || '',
-            phone: primaryContact?.phone || '',
-            country: lead.customer?.country || '',
-            city: lead.customer?.city || '',
-            stage: lead.sales_stage,
-            product: lead.product_category,
-            title: lead.title,
-            created_at: lead.created_at,
-            row_version: lead.row_version,
-            follow_ups: followUps,
-            after_sales: afterSales,
-            sample_tasks: preSalesTasks.map(task => SamplingModule.toView(task)),
-            latest_follow_up: lead.latest_follow_up || null,
-            latest_follow_up_at: lead.latest_follow_up_at
-                || lead.latest_follow_up?.created_at || '',
-            latest_follow_up_at_raw: lead.latest_follow_up?.occurred_at_raw || '',
-            latest_follow_up_summary: lead.latest_follow_up_summary
-                || lead.latest_follow_up?.content || lead.latest_follow_up?.summary || '',
-            attachments: attachments,
-            _lead: lead,
-            _customer: lead.customer,
-            _activities: activities,
-            _preSalesTasks: preSalesTasks,
-            _afterSalesTasks: afterSalesTasks,
-            _attachments: attachments
-        };
-
-        setText('panel-title', lead.display_id || leadId);
+        const inquiry = await InquiryPanelData.load(leadId);
+        if (requestId !== inquiryPanelRequestId) return;
+        State.currentInquiry = inquiry;
+        setText('panel-title', [inquiry.inquiry_id || leadId, inquiry.company_name].filter(Boolean).join(' · '));
         renderPanelTabs(panelTabForContext(targetContext));
-        document.getElementById('detail-panel').classList.add('open');
-        document.getElementById('app')?.classList.add('detail-open');
     } catch (err) {
+        if (requestId !== inquiryPanelRequestId) return;
         console.error('Panel error:', err);
-        alert(panelTr('Error loading lead'));
+        document.getElementById('panel-content').innerHTML = `<div class="empty-state compact error-state">
+            <strong>${escapeHtml(panelTr('Unable to load lead details'))}</strong>
+            <span>${escapeHtml(err.message || panelTr('Please retry.'))}</span>
+            <button type="button" class="btn btn-secondary" data-panel-retry>${escapeHtml(panelTr('Retry'))}</button>
+        </div>`;
+        document.querySelector('[data-panel-retry]')?.addEventListener('click', () => openInquiryPanel(leadId, targetContext));
     }
 };
 
 window.closePanel = function() {
-    document.getElementById('detail-panel').classList.remove('open');
+    const panel = document.getElementById('detail-panel');
+    if (panel.classList.contains('open') && !PanelDirtyState.confirmDiscard()) return false;
+    inquiryPanelRequestId += 1;
+    resetInquirySaveButton();
+    panel.classList.remove('open');
     document.getElementById('app')?.classList.remove('detail-open');
     State.currentInquiry = null;
+    WorklistUI.clear();
+    PanelDirtyState.reset();
+    return true;
 };
 
 function renderPanelTabs(activeTabId = 'basic') {
@@ -108,12 +115,18 @@ function renderPanelTabs(activeTabId = 'basic') {
 
     const tabsContainer = document.getElementById('panel-tabs');
     togglePanelSaveButton(validActiveTab);
-    tabsContainer.innerHTML = tabs.map(t =>
-        `<button type="button" class="panel-tab ${t.id === validActiveTab ? 'active' : ''}" data-tab="${t.id}">${escapeHtml(panelTr(t.label))}</button>`
-    ).join('');
+    const qualityCount = Number(lead?.quality_issue_count) || 0;
+    tabsContainer.innerHTML = tabs.map(t => {
+        const badge = t.id === 'quality'
+            ? `<span class="panel-tab-badge ${qualityCount ? '' : 'hidden'}" data-quality-tab-badge
+                aria-label="${escapeHtml(panelTr('{count} imported fields require review', { count: qualityCount }))}">${qualityCount}</span>`
+            : '';
+        return `<button type="button" class="panel-tab ${t.id === validActiveTab ? 'active' : ''}" data-tab="${t.id}"><span>${escapeHtml(panelTr(t.label))}</span>${badge}</button>`;
+    }).join('');
 
     tabsContainer.querySelectorAll('.panel-tab').forEach(tab => {
         tab.addEventListener('click', () => {
+            if (tab.classList.contains('active') || !PanelDirtyState.confirmDiscard()) return;
             tabsContainer.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             togglePanelSaveButton(tab.dataset.tab);

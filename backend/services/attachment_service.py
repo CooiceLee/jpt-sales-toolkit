@@ -32,8 +32,9 @@ class AttachmentService:
         max_size: int = DEFAULT_MAX_SIZE,
         allowed_mime_types: Tuple[str, ...] = DEFAULT_ALLOWED_MIME_TYPES,
         allowed_categories: Tuple[str, ...] = DEFAULT_ALLOWED_CATEGORIES,
+        repo: Optional[AttachmentRepository] = None,
     ):
-        self.repo = AttachmentRepository()
+        self.repo = repo or AttachmentRepository()
         self.upload_dir = upload_dir
         self.max_size = max_size
         self.allowed_mime_types = allowed_mime_types
@@ -81,6 +82,9 @@ class AttachmentService:
         """Upload and save attachment."""
         if not self.upload_dir:
             raise ValueError("Upload directory not configured")
+        if not isinstance(filename, str) or not filename.strip():
+            raise ValueError("Attachment filename is required")
+        filename = filename.strip()
 
         # Validate
         error = self.validate_upload(category, content, mime_type)
@@ -90,9 +94,15 @@ class AttachmentService:
         # Calculate file hash
         sha256 = hashlib.sha256(content).hexdigest()
 
-        # Check for duplicate by hash
-        existing = self.repo.find_by_sha256(sha256)
-        if existing and existing["lead_id"] == lead_id:
+        # Only collapse an exact logical duplicate. Identical bytes uploaded
+        # under another category or name are separate user-visible records.
+        existing = self.repo.find_duplicate(
+            lead_id,
+            category,
+            filename,
+            sha256,
+        )
+        if existing:
             return existing
 
         # Determine version
@@ -111,18 +121,26 @@ class AttachmentService:
         with open(file_path, "wb") as f:
             f.write(content)
 
-        # Create database record
-        attachment_id = self.repo.create(
-            lead_id=lead_id,
-            category=category,
-            stored_name=stored_name,
-            original_name=filename,
-            mime_type=mime_type,
-            size_bytes=len(content),
-            sha256=sha256,
-            uploaded_by=uploaded_by,
-            version_no=version_no,
-        )
+        try:
+            attachment_id = self.repo.create(
+                lead_id=lead_id,
+                category=category,
+                stored_name=stored_name,
+                original_name=filename,
+                mime_type=mime_type,
+                size_bytes=len(content),
+                sha256=sha256,
+                uploaded_by=uploaded_by,
+                version_no=version_no,
+                commit=False,
+            )
+            self.repo.conn.commit()
+        except Exception:
+            try:
+                self.repo.conn.rollback()
+            finally:
+                file_path.unlink(missing_ok=True)
+            raise
 
         return self.repo.get_by_id(attachment_id)
 
@@ -174,20 +192,44 @@ class AttachmentService:
             if not name:
                 raise ValueError("original_name cannot be empty")
             update_data["original_name"] = name
+        if not update_data:
+            return attachment
 
         old_category = attachment["category"]
+        old_path = None
+        new_path = None
+        moved = False
         if category and category != old_category and self.upload_dir:
             old_path = self.upload_dir / lead_id / old_category / attachment["stored_name"]
             new_dir = self.upload_dir / lead_id / category
             new_path = new_dir / attachment["stored_name"]
-            if old_path.exists():
-                new_dir.mkdir(parents=True, exist_ok=True)
-                old_path.replace(new_path)
+            if not old_path.exists():
+                raise ValueError("Attachment file is missing")
+            if new_path.exists():
+                raise ValueError("Attachment destination already exists")
+            new_dir.mkdir(parents=True, exist_ok=True)
+            old_path.replace(new_path)
+            moved = True
 
-        updated = self.repo.update_metadata(attachment_id, update_data)
-        if not updated:
-            raise ValueError("Attachment not found")
-        return updated
+        try:
+            updated = self.repo.update_metadata(
+                attachment_id,
+                update_data,
+                commit=False,
+            )
+            if not updated:
+                raise ValueError("Attachment not found")
+            self.repo.conn.commit()
+            return updated
+        except Exception:
+            try:
+                self.repo.conn.rollback()
+            finally:
+                if moved and old_path is not None and new_path is not None:
+                    old_path.parent.mkdir(parents=True, exist_ok=True)
+                    if new_path.exists() and not old_path.exists():
+                        new_path.replace(old_path)
+            raise
 
     def get_file_path(self, attachment_id: str) -> Optional[Path]:
         """Get physical file path for download."""

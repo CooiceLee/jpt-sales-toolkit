@@ -32,7 +32,7 @@ window.closeCurrentLead = async function() {
     const reasonCode = document.getElementById('lead-close-reason-code')?.value?.trim() || null;
     const reasonText = document.getElementById('lead-close-reason-text')?.value?.trim() || null;
     if (!reasonCode && !reasonText) {
-        alert('Enter a close reason before closing the lead.');
+        alert(I18n.t('Enter a close reason before closing the lead.'));
         return;
     }
 
@@ -44,16 +44,17 @@ window.closeCurrentLead = async function() {
         }, lead.row_version);
         await refreshCurrentInquiryData(lead.id);
         State.currentInquiry.stage = 'Lost';
-        notify('Lead closed and grouped under Deal / Lost');
+        notify(I18n.t('Lead closed and grouped under Deal / Lost'));
         renderPanelTabs('deal');
         await refreshAllCounts();
     } catch (err) {
         console.error('Close lead error:', err);
         if (err.name === 'ConflictError') {
-            alert('This lead was updated by another user. Refresh and try again.');
+            alert(I18n.t('This lead was updated by another user. Refresh and try again.'));
             return;
         }
-        alert('Error closing lead: ' + (err.message || 'Unknown error'));
+        alert(I18n.t('Error closing lead: {error}', {
+            error: I18n.t(err.message || 'Unknown error')
+        }));
     }
 };
-

@@ -1,72 +1,125 @@
 // ===== Coordinate Correction =====
 let coordinatePickerMap = null;
 let coordinatePickerMarker = null;
-let coordinateEditState = { customerId: null, customerName: null, normalizedAddress: null };
+let coordinateEditGeneration = 0;
+let coordinateGeocodeRequestEpoch = 0;
+let coordinateSaveRequestEpoch = 0;
+let coordinateGeocodeInFlightEpoch = null;
+let coordinateSaveInFlightEpoch = null;
+let coordinateEditState = {
+    customerId: null,
+    customerName: null,
+    customerRowVersion: null,
+    normalizedAddress: null,
+    geocodeProvider: null,
+    candidates: [],
+    generation: 0
+};
+function beginCoordinateEdit(customerId, customerName, customerRowVersion = null) {
+    coordinateEditGeneration += 1;
+    coordinateGeocodeRequestEpoch += 1;
+    coordinateSaveRequestEpoch += 1;
+    coordinateGeocodeInFlightEpoch = null;
+    coordinateSaveInFlightEpoch = null;
+    coordinateEditState = {
+        customerId,
+        customerName,
+        customerRowVersion: customerRowVersion != null
+            && customerRowVersion !== ''
+            && Number.isInteger(Number(customerRowVersion))
+            && Number(customerRowVersion) >= 1
+            ? Number(customerRowVersion) : null,
+        normalizedAddress: null,
+        geocodeProvider: null,
+        candidates: [],
+        generation: coordinateEditGeneration
+    };
+    return coordinateEditGeneration;
+}
+function invalidateCoordinateEdit() {
+    coordinateEditGeneration += 1;
+    coordinateGeocodeRequestEpoch += 1;
+    coordinateSaveRequestEpoch += 1;
+    coordinateGeocodeInFlightEpoch = null;
+    coordinateSaveInFlightEpoch = null;
+    coordinateEditState = {
+        customerId: null,
+        customerName: null,
+        customerRowVersion: null,
+        normalizedAddress: null,
+        geocodeProvider: null,
+        candidates: [],
+        generation: coordinateEditGeneration
+    };
+}
+function invalidateCoordinateGeocode() {
+    coordinateGeocodeRequestEpoch += 1;
+    coordinateGeocodeInFlightEpoch = null;
+    return coordinateGeocodeRequestEpoch;
+}
+function beginCoordinateGeocodeRequest(fields) {
+    if (isCoordinateSaveInFlight()) return null;
+    const request = Object.freeze({
+        customerId: coordinateEditState.customerId,
+        generation: coordinateEditState.generation,
+        requestEpoch: ++coordinateGeocodeRequestEpoch,
+        fields: Object.freeze({ ...fields })
+    });
+    coordinateGeocodeInFlightEpoch = request.requestEpoch;
+    return request;
+}
+function finishCoordinateGeocodeRequest(request) {
+    if (coordinateGeocodeInFlightEpoch === request?.requestEpoch) {
+        coordinateGeocodeInFlightEpoch = null;
+    }
+}
+function isCoordinateGeocodeInFlight() {
+    return coordinateGeocodeInFlightEpoch !== null;
+}
+function coordinateFieldsMatch(snapshot) {
+    const current = readCoordinateAddressFields();
+    return ['address', 'city', 'postal_code', 'country']
+        .every(field => current[field] === snapshot[field]);
+}
+function isCoordinateGeocodeRequestCurrent(request) {
+    return !!request
+        && coordinateEditState.customerId === request.customerId
+        && coordinateEditState.generation === request.generation
+        && coordinateGeocodeRequestEpoch === request.requestEpoch
+        && coordinateFieldsMatch(request.fields);
+}
+function beginCoordinateSaveRequest(snapshot) {
+    if (isCoordinateGeocodeInFlight() || isCoordinateSaveInFlight()) return null;
+    const request = Object.freeze({
+        customerId: coordinateEditState.customerId,
+        customerRowVersion: coordinateEditState.customerRowVersion,
+        generation: coordinateEditState.generation,
+        requestEpoch: ++coordinateSaveRequestEpoch,
+        snapshot: Object.freeze({ ...snapshot })
+    });
+    coordinateSaveInFlightEpoch = request.requestEpoch;
+    return request;
+}
 
-function setCoordinateField(id, value) {
-    const field = document.getElementById(id);
-    if (field) {
-        field.value = value ?? '';
+function finishCoordinateSaveRequest(request) {
+    if (coordinateSaveInFlightEpoch === request?.requestEpoch) {
+        coordinateSaveInFlightEpoch = null;
     }
 }
 
-function readCoordinateAddressFields() {
-    return {
-        address: document.getElementById('coord-address')?.value?.trim() || '',
-        city: document.getElementById('coord-city')?.value?.trim() || '',
-        country: document.getElementById('coord-country')?.value?.trim() || ''
-    };
+function isCoordinateSaveInFlight() {
+    return coordinateSaveInFlightEpoch !== null;
 }
 
-function setCoordinateGeocodeResult(message, status = '') {
-    const resultEl = document.getElementById('coord-geocode-result');
-    if (!resultEl) return;
-    resultEl.textContent = message || '';
-    resultEl.className = `coord-geocode-result${status ? ` ${status}` : ''}`;
+function isCoordinateSaveRequestCurrent(request) {
+    return !!request
+        && coordinateEditState.customerId === request.customerId
+        && coordinateEditState.generation === request.generation
+        && coordinateSaveRequestEpoch === request.requestEpoch
+        && coordinateSaveInFlightEpoch === request.requestEpoch;
 }
 
-window.clearCoordinateGeocodeResult = function() {
-    coordinateEditState.normalizedAddress = null;
-    setCoordinateGeocodeResult('');
-};
-
-function buildCountryDisplayLookup() {
-    const lookup = {
-        codeToName: {},
-        nameToName: {},
-        aliases: { UK: 'GB', UAE: 'AE', USA: 'US' }
-    };
-    const regions = State.config?.regions?.regions || {};
-
-    Object.values(regions).forEach(region => {
-        Object.entries(region.countries || {}).forEach(([code, country]) => {
-            const name = country?.name || code;
-            lookup.codeToName[code.toUpperCase()] = name;
-            if (country?.name) lookup.nameToName[country.name.toLowerCase()] = name;
-            if (country?.name_cn) lookup.nameToName[country.name_cn.toLowerCase()] = name;
-        });
-    });
-
-    return lookup;
+function coordinateText(text, params = {}) {
+    return window.I18n?.t ? I18n.t(text, params) : Object.entries(params)
+        .reduce((value, [key, item]) => value.replace(`{${key}}`, item), text);
 }
-
-function normalizeCoordinateCountryForSave(country) {
-    const raw = String(country || '').trim();
-    if (!raw) return '';
-
-    const lookup = buildCountryDisplayLookup();
-    const upper = raw.toUpperCase();
-    const code = lookup.aliases[upper] || upper;
-    if (lookup.codeToName[code]) return lookup.codeToName[code];
-
-    return lookup.nameToName[raw.toLowerCase()] || raw;
-}
-
-function bindCoordinateMarkerDrag(marker) {
-    marker.on('dragend', function(e) {
-        const pos = e.target.getLatLng();
-        document.getElementById('coord-lat').value = pos.lat.toFixed(6);
-        document.getElementById('coord-lng').value = pos.lng.toFixed(6);
-    });
-}
-

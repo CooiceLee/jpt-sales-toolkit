@@ -1,4 +1,6 @@
-window.updateCoordinateMarker = function() {
+window.updateCoordinateMarker = function(preserveGeocodeResult = false) {
+    if (isCoordinateSaveInFlight()) return;
+    if (!preserveGeocodeResult) clearCoordinateGeocodeResult();
     const lat = parseFloat(document.getElementById('coord-lat').value);
     const lng = parseFloat(document.getElementById('coord-lng').value);
 
@@ -14,117 +16,96 @@ window.updateCoordinateMarker = function() {
 };
 
 window.geocodeCoordinateAddress = async function() {
-    const { address, city, country } = readCoordinateAddressFields();
-    if (!address && !city && !country) {
-        alert('Please enter an address, city, or country first.');
+    const fields = readCoordinateAddressFields();
+    if (!fields.address && !fields.city && !fields.postal_code && !fields.country) {
+        alert(coordinateText('Please enter an address, city, postal code, or country first.'));
         return;
     }
+    const request = beginCoordinateGeocodeRequest(fields);
+    if (!request) return;
+    syncCoordinateActionButtons();
 
     const btn = document.getElementById('coord-geocode-btn');
-    const originalText = btn?.textContent || 'Find on map';
+    const originalText = btn?.textContent || coordinateText('Find on map');
     if (btn) {
         btn.disabled = true;
-        btn.textContent = 'Finding...';
+        btn.textContent = coordinateText('Finding...');
+        btn.dataset.coordinateRequestEpoch = String(request.requestEpoch);
     }
-    setCoordinateGeocodeResult('Searching address...');
+    setCoordinateGeocodeResult(coordinateText('Searching address...'));
+    renderCoordinateCandidates([]);
 
     try {
-        const result = await ApiClient.geocode(address, city, country);
-        const lat = Number(result.lat);
-        const lng = Number(result.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-            throw new Error('Address result did not include valid coordinates');
+        const result = await ApiClient.searchGeocode(fields, 5);
+        if (!isCoordinateGeocodeRequestCurrent(request)) return;
+        const candidates = (result.candidates || []).filter(candidate =>
+            Number.isFinite(Number(candidate.lat)) && Number.isFinite(Number(candidate.lng))
+        );
+        coordinateEditState.geocodeProvider = result.provider || null;
+        coordinateEditState.candidates = candidates;
+        renderCoordinateCandidates(candidates);
+        if (!candidates.length) {
+            coordinateEditState.normalizedAddress = null;
+            setCoordinateGeocodeResult(
+                coordinateText('No matching address was found. Add a postal code/country or place the marker manually.'),
+                'error'
+            );
+            return;
         }
-
-        document.getElementById('coord-lat').value = lat.toFixed(6);
-        document.getElementById('coord-lng').value = lng.toFixed(6);
-        coordinateEditState.normalizedAddress = result.normalized_address || null;
-        updateCoordinateMarker();
-
-        const label = result.normalized_address || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        setCoordinateGeocodeResult(`Found: ${label}`, 'success');
+        applyCoordinateCandidate(0);
+        if (candidates.length > 1) {
+            setCoordinateGeocodeResult(
+                coordinateText('Found {count} matches via {provider}. The first is selected; choose another below if needed.', {
+                    count: candidates.length,
+                    provider: result.provider || coordinateText('External service')
+                }),
+                'success'
+            );
+        }
     } catch (err) {
+        if (!isCoordinateGeocodeRequestCurrent(request)) return;
         console.error('Address geocode error:', err);
         coordinateEditState.normalizedAddress = null;
-        const message = 'Address not found. Check spelling, try English address text, add city/country, or place the marker manually.';
-        setCoordinateGeocodeResult(message, 'error');
-        alert(message);
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = originalText;
-        }
-    }
-};
-
-window.saveCoordinates = async function() {
-    const lat = parseFloat(document.getElementById('coord-lat').value);
-    const lng = parseFloat(document.getElementById('coord-lng').value);
-    const { address, city, country } = readCoordinateAddressFields();
-
-    if (isNaN(lat) || isNaN(lng)) {
-        alert('Please enter valid coordinates or click on the map');
-        return;
-    }
-
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-        alert('Coordinates out of range. Latitude: -90 to 90, Longitude: -180 to 180');
-        return;
-    }
-
-    try {
-        // Get current customer row_version
-        const customer = await ApiClient.getCustomer(coordinateEditState.customerId);
-        const payload = {
-            lat: lat,
-            lng: lng,
-            geocode_source: 'manual',
-            geocode_confidence: 'high',
-            geocode_locked: true
+        coordinateEditState.geocodeProvider = null;
+        coordinateEditState.candidates = [];
+        renderCoordinateCandidates([]);
+        const code = err?.details?.code || (err?.message === 'Failed to fetch' ? 'network_error' : 'unknown');
+        const messages = {
+            tls_error: coordinateText('Secure connection to the map service failed. Restart the updated app and retry.'),
+            timeout: coordinateText('The map service timed out. Please retry.'),
+            network_error: coordinateText('The map service could not be reached. Check the network and retry.'),
+            provider_quota: coordinateText('The map service request limit was reached. Please try again later.'),
+            provider_auth: coordinateText('The configured map service key or permission is invalid.'),
+            provider_disabled: coordinateText('The selected map service is not configured on this device.'),
+            invalid_request: coordinateText('Enter an address, city, postal code, or country.'),
+            unknown: coordinateText('The address search service failed. You can retry or place the marker manually.')
         };
-
-        if (address) payload.address = address;
-        if (city) payload.city = city;
-        const countryForSave = normalizeCoordinateCountryForSave(country);
-        if (countryForSave) payload.country = countryForSave;
-        if (coordinateEditState.normalizedAddress) {
-            payload.normalized_address = coordinateEditState.normalizedAddress;
-        }
-
-        // Update with manual coordinates
-        await ApiClient.updateCustomer(coordinateEditState.customerId, payload, customer.row_version);
-
-        closeCoordinateModal();
-        notify('Coordinates saved');
-
-        // Refresh any coordinate views that may be visible.
-        await loadReviewMap();
-        if (document.getElementById('module-coordinate-review')?.classList.contains('active')) {
-            await loadCoordinateReview();
-        }
-    } catch (err) {
-        console.error('Save coordinates error:', err);
-        if (err?.name === 'ConflictError') {
-            alert('Coordinate save conflict: this customer was updated elsewhere. The latest data will be loaded; please retry.');
-            closeCoordinateModal();
-            await loadReviewMap();
-            if (document.getElementById('module-coordinate-review')?.classList.contains('active')) {
-                await loadCoordinateReview();
-            }
-        } else {
-            alert('Error saving coordinates: ' + (err.message || 'Unknown error'));
+        const message = messages[code] || err?.message || messages.unknown;
+        setCoordinateGeocodeResult(message, 'error');
+    } finally {
+        const isCurrent = isCoordinateGeocodeRequestCurrent(request);
+        finishCoordinateGeocodeRequest(request);
+        if (btn && isCurrent
+            && btn.dataset.coordinateRequestEpoch === String(request.requestEpoch)) {
+            btn.textContent = originalText;
+            delete btn.dataset.coordinateRequestEpoch;
+            syncCoordinateActionButtons();
         }
     }
 };
 
-window.closeCoordinateModal = function() {
+window.closeCoordinateModal = function(force = false) {
+    if (isCoordinateSaveInFlight() && !force) return;
     hideModal('coordinate-modal');
-    coordinateEditState = { customerId: null, customerName: null, normalizedAddress: null };
+    invalidateCoordinateEdit();
+    resetCoordinateEditorLocks();
     setCoordinateGeocodeResult('');
+    renderCoordinateCandidates([]);
+    resetCoordinateGeocodeButton();
+    resetCoordinateSaveButton();
     if (coordinatePickerMap) {
         coordinatePickerMap.remove();
         coordinatePickerMap = null;
         coordinatePickerMarker = null;
     }
 };
-

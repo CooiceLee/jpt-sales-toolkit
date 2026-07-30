@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Import Excel data from 欧洲小分队进度记录.xlsx into JPT Sales Toolkit.
+Legacy one-off Excel-to-SQLite migration utility.
 
 This script:
 1. Creates users (sales team members)
@@ -8,6 +8,10 @@ This script:
 3. Imports leads from all 4 sheets
 4. Creates pre_sales_tasks and after_sales_tasks
 5. Generates a redundancy report
+
+The supported application workflow is the Leader-controlled XLSX import UI.
+This utility writes directly to SQLite and therefore requires an explicit
+verified-backup confirmation plus caller-supplied source and target paths.
 """
 
 import json
@@ -25,12 +29,9 @@ from typing import Optional
 
 # Configuration
 XLSX_EXTRACTED_PATH = "/tmp/xlsx_extract"
-DEFAULT_XLSX_PATH = "/Users/liliang/Desktop/欧洲小分队进度记录 (1).xlsx"
-DEFAULT_DB_PATH = "/Users/liliang/Desktop/jpt-sales-toolkit/data/jpt_v2.db"
-DEFAULT_REPORT_PATH = "/Users/liliang/Desktop/jpt-sales-toolkit/data/import_report_excel.md"
-XLSX_PATH = DEFAULT_XLSX_PATH
-DB_PATH = DEFAULT_DB_PATH
-REPORT_PATH = DEFAULT_REPORT_PATH
+XLSX_PATH = ""
+DB_PATH = ""
+REPORT_PATH = ""
 
 # XML namespace
 NS = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
@@ -977,24 +978,32 @@ def generate_report(all_stats: dict):
 def main():
     global XLSX_PATH, DB_PATH, REPORT_PATH
 
-    parser = argparse.ArgumentParser(description="Import Excel data into a target JPT database")
+    parser = argparse.ArgumentParser(
+        description="Legacy direct Excel-to-SQLite migration (prefer the app import UI)"
+    )
     parser.add_argument(
         "--xlsx-path",
-        default=DEFAULT_XLSX_PATH,
+        required=True,
         help="Path to the source Excel workbook.",
     )
-    parser.add_argument(
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument(
         "--db-path",
-        default=DEFAULT_DB_PATH,
         help="Path to the target SQLite database file.",
     )
-    parser.add_argument(
+    target.add_argument(
         "--data-dir",
         help="Target data directory. If provided, database path becomes <data-dir>/database.sqlite.",
     )
     parser.add_argument(
         "--report-path",
         help="Optional markdown report output path. Defaults to <db dir>/import_report_excel.md.",
+    )
+    parser.add_argument(
+        "--confirm-direct-write",
+        required=True,
+        choices=["I_HAVE_A_VERIFIED_BACKUP"],
+        help="Required acknowledgement that the target database has a verified backup.",
     )
     args = parser.parse_args()
 
@@ -1004,6 +1013,7 @@ def main():
         DB_PATH = str(data_dir / "database.sqlite")
         REPORT_PATH = str((data_dir / "import_report_excel.md").resolve())
     else:
+        assert args.db_path
         DB_PATH = str(Path(args.db_path).expanduser().resolve())
         REPORT_PATH = str((Path(DB_PATH).resolve().parent / "import_report_excel.md").resolve())
     if args.report_path:

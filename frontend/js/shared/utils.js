@@ -1,11 +1,65 @@
 // ===== Modal Helpers =====
+const modalFocusOrigins = new Map();
+
+function modalFocusableElements(modal) {
+    return [...modal.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+        + 'textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+    )].filter(element => !element.hidden && element.offsetParent !== null);
+}
+
 function showModal(id) {
-    document.getElementById(id)?.classList.add('show');
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    if (!modal.classList.contains('show')) {
+        modalFocusOrigins.set(id, document.activeElement);
+    }
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    const app = document.getElementById('app');
+    if (app) app.inert = true;
+    requestAnimationFrame(() => {
+        const preferred = modal.querySelector(
+            '[autofocus], #login-username, #activation-file, #coord-address'
+        );
+        (preferred || modalFocusableElements(modal)[0])?.focus();
+    });
 }
 
 function hideModal(id) {
-    document.getElementById(id)?.classList.remove('show');
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    if (!document.querySelector('.modal.show')) {
+        const app = document.getElementById('app');
+        if (app) app.inert = false;
+    }
+    const origin = modalFocusOrigins.get(id);
+    modalFocusOrigins.delete(id);
+    if (origin?.isConnected) origin.focus();
 }
+
+document.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const openModals = [...document.querySelectorAll('.modal.show')];
+    const modal = openModals.at(-1);
+    if (!modal) return;
+    const focusable = modalFocusableElements(modal);
+    if (!focusable.length) {
+        event.preventDefault();
+        return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+});
 
 // ===== Utility Functions =====
 function setText(id, text) {
@@ -94,6 +148,8 @@ function escapeHtml(value) {
 function notify(message) {
     const toast = document.createElement('div');
     toast.className = 'app-toast';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
     toast.textContent = message;
     document.body.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('show'));

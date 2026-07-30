@@ -76,12 +76,14 @@
                 lead: buildLead(fields, parsedData.original_email),
                 owner_id: State.user.id,
             });
-            alert(`Lead created: ${result.display_id || result.lead_id}`);
+            alert(I18n.t('Lead created: {id}', { id: result.display_id || result.lead_id }));
             window.clearParser();
             switchModule('handler');
         } catch (err) {
             console.error('Save error:', err);
-            alert('Error creating lead: ' + (err.message || 'Unknown error'));
+            alert(I18n.t('Error creating lead: {error}', {
+                error: I18n.t(err.message || 'Unknown error')
+            }));
         }
     }
 

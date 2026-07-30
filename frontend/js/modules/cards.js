@@ -17,10 +17,17 @@
 
     function bindCardActions(container) {
         container.querySelectorAll('[data-inquiry-card]').forEach(card => {
-            card.addEventListener('click', () => {
+            const activate = () => {
                 openInquiryPanel(card.dataset.inquiryId, card.dataset.cardContext);
+            };
+            card.addEventListener('click', activate);
+            card.addEventListener('keydown', event => {
+                if (!['Enter', ' '].includes(event.key)) return;
+                event.preventDefault();
+                activate();
             });
         });
+        WorklistUI.syncCards(container);
     }
 
     function renderCards(containerId, inquiries, type = 'handler', emptyCopy = null) {

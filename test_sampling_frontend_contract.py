@@ -34,6 +34,7 @@ def main() -> None:
     ]
     positions = [index.index(script) for script in scripts]
     assert positions == sorted(positions)
+    assert index.index("worklist-sort.js") < index.index("sampling.js")
     for task_status in ("Open", "In Progress", "Completed", "Cancelled"):
         assert f'data-filter="{task_status}"' in index
 
@@ -55,6 +56,9 @@ def main() -> None:
     inquiry_panel_js = (
         ROOT / "frontend" / "js" / "modules" / "inquiry-panel.js"
     ).read_text(encoding="utf-8")
+    inquiry_panel_data_js = (
+        ROOT / "frontend" / "js" / "modules" / "inquiry-panel-data.js"
+    ).read_text(encoding="utf-8")
     followups_form_js = (
         ROOT / "frontend" / "js" / "modules" / "followups-form.js"
     ).read_text(encoding="utf-8")
@@ -65,15 +69,18 @@ def main() -> None:
     assert "...getSharedLeadFilters()" in sampling_js
     assert "limit: 100000" in sampling_js
     assert "listPreSalesTasks({ limit: 100000 })" in sampling_js
+    assert "WorklistSort.sampling" in sampling_js
     assert "Unable to load pre-sales tasks. Please retry." in sampling_js
-    assert "listPreSalesTasks({" in inquiry_panel_js
-    assert "listPreSalesTasks({" in followups_form_js
-    for source in (inquiry_panel_js, followups_form_js):
-        task_call = source[
-            source.index("listPreSalesTasks({"):
-            source.index("listAfterSalesTasks", source.index("listPreSalesTasks({"))
-        ]
-        assert ".catch(" not in task_call
+    assert "InquiryPanelData.load" in inquiry_panel_js
+    assert "InquiryPanelData.load" in followups_form_js
+    assert "listPreSalesTasks({" in inquiry_panel_data_js
+    task_call = inquiry_panel_data_js[
+        inquiry_panel_data_js.index("listPreSalesTasks({"):
+        inquiry_panel_data_js.index(
+            "listAfterSalesTasks", inquiry_panel_data_js.index("listPreSalesTasks({")
+        )
+    ]
+    assert ".catch(" not in task_call
     assert "SamplingFormData.collect(task)" in actions_js
     for field in (
         *REQUEST_FIELDS, *RESULT_FIELDS,

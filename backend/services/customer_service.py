@@ -66,14 +66,20 @@ class CustomerService:
         self.alias_repo = CustomerAliasRepository(self.customer_repo.conn)
         self.country_service = CountryService()
 
-    def create(self, data: dict, actor_id: str) -> dict:
+    def create(
+        self,
+        data: dict,
+        actor_id: str,
+        *,
+        commit: bool = True,
+    ) -> dict:
         """Create new customer."""
         # Normalize name
         if "display_name" in data:
             data["normalized_name"] = normalize_name(data["display_name"])
         self.country_service.normalize_customer_payload(data)
 
-        customer_id = self.customer_repo.create(data, actor_id)
+        customer_id = self.customer_repo.create(data, actor_id, commit=commit)
 
         # Log audit
         self.audit_repo.log(
@@ -82,6 +88,7 @@ class CustomerService:
             event_type="create",
             actor_id=actor_id,
             after_json=json.dumps(data),
+            commit=commit,
         )
 
         return self.get(customer_id)
@@ -105,6 +112,8 @@ class CustomerService:
         data: dict,
         actor_id: str,
         row_version: int,
+        *,
+        commit: bool = True,
     ) -> dict:
         """Update customer with conflict detection."""
         # Get current state for audit
@@ -116,7 +125,13 @@ class CustomerService:
         self.country_service.normalize_customer_payload(data)
 
         try:
-            updated = self.customer_repo.update(customer_id, data, actor_id, row_version)
+            updated = self.customer_repo.update(
+                customer_id,
+                data,
+                actor_id,
+                row_version,
+                commit=commit,
+            )
 
             # Log audit
             self.audit_repo.log(
@@ -126,6 +141,7 @@ class CustomerService:
                 actor_id=actor_id,
                 before_json=json.dumps(dict(before)) if before else None,
                 after_json=json.dumps(data),
+                commit=commit,
             )
             if before and self._coordinate_payload_changed(before, updated, data):
                 self.audit_repo.log(
@@ -135,6 +151,7 @@ class CustomerService:
                     actor_id=actor_id,
                     before_json=json.dumps(self._coordinate_snapshot(before)),
                     after_json=json.dumps(self._coordinate_snapshot(updated)),
+                    commit=commit,
                 )
 
             return updated
@@ -274,23 +291,43 @@ class CustomerService:
         """Add domain to customer."""
         return self.customer_repo.add_domain(customer_id, domain, is_primary)
 
-    def add_contact(self, customer_id: str, contact_data: dict, actor_id: str) -> str:
+    def add_contact(
+        self,
+        customer_id: str,
+        contact_data: dict,
+        actor_id: str,
+        *,
+        commit: bool = True,
+    ) -> str:
         """Add contact to customer with validation."""
         # Validate contact data
         self._validate_contact_data(customer_id, contact_data)
         self._prepare_contact_payload(contact_data, contact_data)
 
-        contact_id = self.customer_repo.add_contact(customer_id, contact_data)
+        contact_id = self.customer_repo.add_contact(
+            customer_id,
+            contact_data,
+            commit=commit,
+        )
         self.audit_repo.log(
             entity_type="customer_contact",
             entity_id=contact_id,
             event_type="create",
             actor_id=actor_id,
             after_json=json.dumps(contact_data),
+            commit=commit,
         )
         return contact_id
 
-    def update_contact(self, contact_id: str, contact_data: dict, actor_id: str) -> dict:
+    def update_contact(
+        self,
+        contact_id: str,
+        contact_data: dict,
+        actor_id: str,
+        *,
+        expected_updated_at: Optional[str] = None,
+        commit: bool = True,
+    ) -> dict:
         """Update customer contact with validation."""
         before = self.customer_repo.get_contact_by_id(contact_id)
         if not before:
@@ -305,7 +342,12 @@ class CustomerService:
         self._validate_contact_data(before["customer_id"], validation_data, contact_id)
         self._prepare_contact_payload(contact_data, validation_data)
 
-        updated = self.customer_repo.update_contact(contact_id, contact_data)
+        updated = self.customer_repo.update_contact(
+            contact_id,
+            contact_data,
+            expected_updated_at=expected_updated_at,
+            commit=commit,
+        )
         self.audit_repo.log(
             entity_type="customer_contact",
             entity_id=contact_id,
@@ -313,6 +355,7 @@ class CustomerService:
             actor_id=actor_id,
             before_json=json.dumps(dict(before)) if before else None,
             after_json=json.dumps(contact_data),
+            commit=commit,
         )
         return updated
 
@@ -335,7 +378,12 @@ class CustomerService:
         if "name" in payload:
             payload["name"] = str(payload.get("name") or "").strip()
         if "email" in payload:
-            payload["email"] = str(payload.get("email") or "").strip().lower()
+            normalized_email = str(payload.get("email") or "").strip().lower()
+            # SQLite treats multiple NULL values as distinct for the
+            # UNIQUE(customer_id, email) constraint.  Persisting a missing
+            # address as "" incorrectly makes the second name-only contact a
+            # duplicate of the first one.
+            payload["email"] = normalized_email or None
 
         resolved_name = str(resolved_data.get("name") or "").strip()
         resolved_email = str(resolved_data.get("email") or "").strip()
@@ -360,8 +408,8 @@ class CustomerService:
             ValueError: If validation fails
         """
         # Check required fields
-        name = contact_data.get("name", "").strip()
-        email = contact_data.get("email", "").strip()
+        name = str(contact_data.get("name") or "").strip()
+        email = str(contact_data.get("email") or "").strip()
 
         # At least one of name or email must be provided
         if not name and not email:
@@ -380,7 +428,7 @@ class CustomerService:
                     continue
 
                 # Check for duplicate email
-                if contact.get("email", "").lower() == email.lower():
+                if str(contact.get("email") or "").lower() == email.lower():
                     raise ValueError(
                         f"A contact with email '{email}' already exists for this customer"
                     )

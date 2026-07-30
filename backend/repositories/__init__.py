@@ -6,7 +6,16 @@ a clean interface for services. This layer enables future migration
 from SQLite to other databases.
 """
 
-from .base import BaseRepository, close_db, get_db, get_transaction, init_db
+from .base import (
+    APP_SCHEMA_VERSION,
+    BaseRepository,
+    close_db,
+    database_requires_schema_migration,
+    get_db,
+    get_transaction,
+    init_db,
+    read_app_schema_version,
+)
 from .user_repository import UserRepository
 from .customer_repository import CustomerRepository
 from .customer_alias_repository import CustomerAliasRepository
@@ -25,10 +34,13 @@ from .user_credential_repository import UserCredentialRepository
 
 __all__ = [
     "BaseRepository",
+    "APP_SCHEMA_VERSION",
     "close_db",
+    "database_requires_schema_migration",
     "get_db",
     "get_transaction",
     "init_db",
+    "read_app_schema_version",
     "UserRepository",
     "CustomerRepository",
     "CustomerAliasRepository",

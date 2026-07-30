@@ -24,6 +24,7 @@
             sample_result: task?.sample_result || '',
             pre_sales_owner: task?.assignee_name || '',
             sample_due_date: task?.due_date || '',
+            sample_task_updated_at: task?.updated_at || task?.created_at || '',
             sample_progress: task?.progress_text || '',
             sample_next_action: task?.next_action || '',
             sample_request: task?.request_description || '',
@@ -58,9 +59,9 @@
                 group.push(task);
                 tasksByLead.set(task.lead_id, group);
             });
-            const items = leads
+            const items = WorklistSort.sampling(leads
                 .filter(lead => tasksByLead.has(lead.id))
-                .map(lead => cardItem(lead, tasksByLead.get(lead.id)));
+                .map(lead => cardItem(lead, tasksByLead.get(lead.id))));
             const displayedTaskCount = items.reduce(
                 (total, item) => total + item._sampleTasks.length, 0
             );

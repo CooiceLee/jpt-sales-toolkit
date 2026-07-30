@@ -25,7 +25,7 @@
                 stopId,
                 readStopPayload(stopId)
             );
-            notify('Visit saved');
+            notify(I18n.t('Visit saved'));
             TripPlannerModule.renderVisitExecution(State.currentTripPlan);
             renderCurrentTripPlan();
             renderTripMap();
@@ -42,25 +42,36 @@
         const input = document.getElementById(`visit-file-${stopId}`);
         const files = Array.from(input?.files || []);
         if (!stop?.lead_id || !files.length) {
-            alert('Choose one or more files for a stop linked to a Lead.');
+            alert(I18n.t('Choose one or more files for a stop linked to a Lead.'));
             return;
         }
+        let uploaded = 0;
         try {
             setTripBusy(true);
-            for (const file of files) await ApiClient.uploadAttachment(stop.lead_id, 'other', file);
-            input.value = '';
-            notify('Visit files uploaded');
+            for (const file of files) {
+                await ApiClient.uploadAttachment(stop.lead_id, 'other', file);
+                uploaded += 1;
+            }
+            notify(I18n.t('Visit files uploaded'));
         } catch (err) {
             console.error('Upload visit files error:', err);
-            alert('Error uploading files: ' + (err.message || 'Unknown error'));
+            const remaining = files.slice(uploaded).map(file => file.name).join(', ');
+            alert(I18n.t('{count} files uploaded. Reselect only the files not uploaded: {files}. Error: {error}', {
+                count: uploaded,
+                files: remaining || '-',
+                error: I18n.t(err.message || 'Unknown error'),
+            }));
         } finally {
+            // Always clear the selection so a retry cannot duplicate files that
+            // were already committed before a later file failed.
+            if (input) input.value = '';
             setTripBusy(false);
         }
     }
 
     async function exportVisitDay() {
         if (!State.currentTripPlan?.id) {
-            alert('Select a trip plan first');
+            alert(I18n.t('Select a trip plan first'));
             return;
         }
         try {
@@ -71,7 +82,9 @@
             downloadBlob(result.blob, result.filename);
         } catch (err) {
             console.error('Export visit day error:', err);
-            alert('Error exporting visit day: ' + (err.message || 'Unknown error'));
+            alert(I18n.t('Error exporting visit day: {error}', {
+                error: I18n.t(err.message || 'Unknown error')
+            }));
         }
     }
 

@@ -49,7 +49,7 @@
             }
             setMemberForm();
             await refreshAuthorizationCenter();
-            notify('Member saved');
+            notify(I18n.t('Member saved'));
         } catch (err) {
             showAuthorizationCenterMessage(err.message || 'Unable to save member.', true);
         } finally {
@@ -71,13 +71,16 @@
 
     window.deactivateAuthorizationMember = async function(memberId) {
         const member = AuthorizationCenterState.members.find(item => String(item.id) === String(memberId));
-        if (!member || !confirm(`Deactivate ${member.displayName}? Existing offline data will remain on their device.`)) return;
+        if (!member || !confirm(I18n.t(
+            'Deactivate {name}? Existing offline data will remain on their device.',
+            { name: member.displayName }
+        ))) return;
         try {
             showAuthorizationCenterMessage('Deactivating member...');
             await ApiClient.deactivateAuthorizationMember(member.id);
             if (String(AuthorizationCenterState.editingMemberId) === String(member.id)) setMemberForm();
             await refreshAuthorizationCenter();
-            notify('Member deactivated');
+            notify(I18n.t('Member deactivated'));
         } catch (err) {
             showAuthorizationCenterMessage(err.message || 'Unable to deactivate member.', true);
         }
@@ -88,7 +91,7 @@
             showAuthorizationCenterMessage('Reactivating member...');
             await ApiClient.reactivateAuthorizationMember(memberId);
             await refreshAuthorizationCenter();
-            notify('Member reactivated');
+            notify(I18n.t('Member reactivated'));
         } catch (err) {
             showAuthorizationCenterMessage(err.message || 'Unable to reactivate member.', true);
         }

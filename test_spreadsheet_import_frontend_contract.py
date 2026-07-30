@@ -41,6 +41,9 @@ def main() -> None:
     assert "requestNonce" in progress and "input.disabled = pickerDisabled" in progress
     assert "selectionEpoch" in progress and "ticket.file === file" in progress
     assert "markCommitUnconfirmed" in progress and "commitUnconfirmed" in progress
+    assert "const canCommit = backupComplete && preflightReady" in progress
+    assert "Create a full backup before import" in progress
+    assert "isBackupComplete" in progress
     assert "selectionChanged" in actions and "error.outcomeUnconfirmed" in actions
     assert "refreshAllCounts().catch" in actions and "Import completed, but navigation counts" in actions
     assert "picker.setAttribute('aria-disabled'" in progress

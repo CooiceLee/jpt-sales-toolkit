@@ -33,7 +33,7 @@ window.loadTripPlanner = async function(options = {}) {
             renderTripMap();
             setPanelError('trip-candidate-list', 'Unable to load candidates');
         } else {
-            notify('Could not load more candidates');
+            notify(I18n.t('Could not load more candidates'));
         }
     }
 

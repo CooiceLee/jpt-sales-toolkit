@@ -24,6 +24,55 @@ _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
 _connection_init_lock = threading.RLock()
 _SQLITE_BUSY_TIMEOUT_MS = 5000
+APP_SCHEMA_VERSION = 1
+APP_SCHEMA_MIGRATIONS = (
+    # Historical migration numbers are immutable. Future schema versions must
+    # append a new explicit tuple instead of rebinding the v1 record.
+    (1, "runtime_schema_v1"),
+)
+_APP_SCHEMA_LEDGER_DDL = """
+CREATE TABLE IF NOT EXISTS app_schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    app_version TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+)
+"""
+_RUNTIME_REQUIRED_TABLES = {
+    "organizations",
+    "user_credentials",
+    "device_authorizations",
+    "authorization_events",
+    "member_import_aliases",
+    "import_batches",
+    "import_bindings",
+    "data_quality_issues",
+    "customer_domains",
+    "customer_aliases",
+    "trip_plans",
+    "trip_plan_stops",
+}
+_RUNTIME_REQUIRED_COLUMNS = {
+    "customers": {
+        "normalized_address",
+        "geocode_source",
+        "geocode_confidence",
+        "geocode_locked",
+    },
+    "lead_activities": {"archived_at"},
+    "customer_contacts": {"archived_at"},
+    "pre_sales_tasks": {"client_request_id"},
+    "leads": {"primary_contact_id", "quantity_text"},
+    "after_sales_tasks": {"customer_satisfaction", "lessons_learned", "remarks"},
+    "customer_domains": {"updated_at", "updated_by", "archived_at"},
+    "customer_aliases": {"updated_at", "updated_by", "archived_at"},
+}
+_RUNTIME_REQUIRED_INDEXES = {
+    "idx_pre_sales_client_request",
+    "idx_users_username_nocase",
+    "idx_device_auth_active_device",
+    "idx_data_quality_issues_batch",
+}
 
 
 def _open_connection(
@@ -69,8 +118,93 @@ def _ensure_column(
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
 
-def _apply_runtime_migrations(conn: sqlite3.Connection) -> None:
-    """Apply lightweight schema fixes needed for existing local databases."""
+def _app_schema_version(conn: sqlite3.Connection) -> int:
+    """Read the newest audited application-schema version."""
+    if not _table_exists(conn, "app_schema_migrations"):
+        return 0
+    row = conn.execute("SELECT MAX(version) FROM app_schema_migrations").fetchone()
+    return int(row[0] or 0)
+
+
+def read_app_schema_version(db_path: Union[Path, str]) -> int:
+    """Inspect a database without creating or migrating it."""
+    path = Path(db_path)
+    if not path.is_file():
+        return 0
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return _app_schema_version(conn)
+    finally:
+        conn.close()
+
+
+def _runtime_schema_has_drift(conn: sqlite3.Connection) -> bool:
+    tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ).fetchall()
+    }
+    if not _RUNTIME_REQUIRED_TABLES <= tables:
+        return True
+    for table, columns in _RUNTIME_REQUIRED_COLUMNS.items():
+        if table not in tables:
+            return True
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not columns <= existing:
+            return True
+    indexes = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        ).fetchall()
+    }
+    return not _RUNTIME_REQUIRED_INDEXES <= indexes
+
+
+def database_requires_schema_migration(db_path: Union[Path, str]) -> bool:
+    """Read-only check used to decide whether startup must back up first."""
+    path = Path(db_path)
+    if not path.is_file():
+        return False
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return (
+            _app_schema_version(conn) < APP_SCHEMA_VERSION
+            or _runtime_schema_has_drift(conn)
+        )
+    finally:
+        conn.close()
+
+
+def _validate_app_schema_ledger(conn: sqlite3.Connection) -> None:
+    expected = dict(APP_SCHEMA_MIGRATIONS)
+    rows = conn.execute(
+        "SELECT version, name FROM app_schema_migrations ORDER BY version"
+    ).fetchall()
+    for version, name in rows:
+        if version not in expected:
+            raise RuntimeError(
+                f"Database schema version {version} is newer than this application"
+            )
+        if expected[version] != name:
+            raise RuntimeError(
+                f"Application schema version {version} belongs to {name!r}, "
+                f"expected {expected[version]!r}"
+            )
+    recorded_versions = [int(row[0]) for row in rows]
+    expected_prefix = [version for version, _ in APP_SCHEMA_MIGRATIONS][
+        : len(recorded_versions)
+    ]
+    if recorded_versions != expected_prefix:
+        raise RuntimeError(
+            "Application schema ledger has a gap: "
+            f"recorded={recorded_versions}, expected={expected_prefix}"
+        )
+
+
+def _apply_runtime_schema_v1(conn: sqlite3.Connection) -> None:
+    """Bring pre-ledger desktop databases to the v1 runtime schema."""
     _ensure_column(conn, "customers", "normalized_address", "TEXT")
     _ensure_column(conn, "customers", "geocode_source", "TEXT")
     _ensure_column(conn, "customers", "geocode_confidence", "TEXT")
@@ -91,7 +225,41 @@ def _apply_runtime_migrations(conn: sqlite3.Connection) -> None:
     apply_authorization_schema_migration(conn)
     apply_member_identity_schema(conn)
     apply_import_governance_schema(conn)
-    conn.commit()
+
+
+def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> None:
+    """Apply audited, transactional and idempotent runtime migrations."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(_APP_SCHEMA_LEDGER_DDL)
+        _validate_app_schema_ledger(conn)
+        current = _app_schema_version(conn)
+        migration_steps = {
+            1: _apply_runtime_schema_v1,
+        }
+        for version, name in APP_SCHEMA_MIGRATIONS:
+            if version <= current:
+                continue
+            migration_steps[version](conn)
+            conn.execute(
+                "INSERT INTO app_schema_migrations "
+                "(version, name, app_version, applied_at) VALUES (?, ?, ?, ?)",
+                (
+                    version,
+                    name,
+                    app_version,
+                    now_iso(),
+                ),
+            )
+            current = version
+        if current == APP_SCHEMA_VERSION and _runtime_schema_has_drift(conn):
+            _apply_runtime_schema_v1(conn)
+        if int(conn.execute("PRAGMA user_version").fetchone()[0]) != current:
+            conn.execute(f"PRAGMA user_version = {current}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _ensure_trip_planning_tables(conn: sqlite3.Connection) -> None:
@@ -328,7 +496,7 @@ def _repair_followup_stage_from_activities(conn: sqlite3.Connection) -> None:
     )
 
 
-def init_db(db_path: Union[Path, str]) -> None:
+def init_db(db_path: Union[Path, str], app_version: Optional[str] = None) -> None:
     """Initialize database path and create schema if needed."""
     global _db_path
     with _connection_init_lock:
@@ -341,7 +509,11 @@ def init_db(db_path: Union[Path, str]) -> None:
                 if schema_path.exists():
                     with open(schema_path, "r", encoding="utf-8") as f:
                         conn.executescript(f.read())
-            _apply_runtime_migrations(conn)
+            if app_version is None:
+                from ..config import APP_VERSION
+
+                app_version = APP_VERSION
+            _apply_runtime_migrations(conn, app_version)
         finally:
             conn.close()
 

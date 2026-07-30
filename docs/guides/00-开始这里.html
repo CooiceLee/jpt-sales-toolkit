@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT Sales Toolkit 0.11.4 团队使用入口</title>
+  <title>JPT Sales Toolkit 0.11.7 团队使用入口</title>
   <style>
     :root{--wine:#8b1a1a;--wine-dark:#611010;--ink:#1d1d1f;--muted:#65615e;--line:#ddd7d3;--paper:#fff;--bg:#f4f3f1;--soft:#f7efec;--ok:#176b3a;--warn:#915700;--shadow:0 18px 52px rgba(52,35,29,.09)}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:linear-gradient(145deg,#faf9f7,#efedea);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
@@ -19,21 +19,22 @@
   </style>
 </head>
 <body>
-  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="文档导航"><a href="01-团队成员安装与日常操作.html">成员指南</a><a href="02-Leader账号导入与治理.html">Leader 指南</a><a href="#gates">验收顺序</a></nav></div></header>
+  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="文档导航"><a href="01-团队成员安装与日常操作.html">成员指南</a><a href="02-Leader账号导入与治理.html">Leader 指南</a><a href="03-团队测试与反馈.html">测试反馈</a><a href="#gates">验收顺序</a></nav></div></header>
   <section class="hero"><div class="wrap">
-    <div class="eyebrow">JPT Sales Toolkit · Internal Stable Candidate</div>
+    <div class="eyebrow">JPT Sales Toolkit · Team Stable Internal</div>
     <h1>先装好程序，再导入数据。<br>权限、同步各自验证。</h1>
-    <p class="lead">这是 v0.11.4-internal 团队稳定候选的离线操作入口。安装、Excel、账号权限和 JSON 数据同步是四条相互独立的验收链路；任何一条失败，都应保留证据并停止进入下一条。</p>
-    <div class="pills"><span class="pill">v0.11.4-internal</span><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon / Intel</span><span class="pill">UNSIGNED-INTERNAL</span></div>
+    <p class="lead">这是 v0.11.7-internal 团队内部稳定版的离线操作入口。安装、Excel、账号权限和 JSON 数据同步是四条相互独立的验收链路；任何一条失败，都应保留证据并停止进入下一条。</p>
+    <div class="pills"><span class="pill">v0.11.7-internal</span><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon / Intel</span><span class="pill">UNSIGNED-INTERNAL</span></div>
   </div></section>
   <main><div class="wrap">
-    <aside class="callout"><strong>安装包不携带业务数据。</strong>Excel 工作簿、账号授权、JSON 同步包和完整备份均独立分发。不要把真实客户数据、授权文件或签发口令放入公共安装包、公共群或代码仓库。</aside>
+    <aside class="callout"><strong>安装包不携带业务数据。</strong>Excel 工作簿、账号授权、JSON 同步包和完整备份均独立分发。覆盖升级会在任何数据库迁移前自动生成并验证本机 <code>pre_upgrade</code> 完整备份；卸载也不会删除用户数据目录。不要把真实客户数据、授权文件或签发口令放入公共安装包、公共群或代码仓库。</aside>
+    <aside class="callout warn"><strong>地址搜索和批量地理编码会连接外部服务。</strong>地址字段可能发送给高德后再因可回退故障发送给 Nominatim；界面会显示实际候选服务商。高德不替换 CARTO/OpenStreetMap 底图，打开地图还会产生外部瓦片请求。公共 Nominatim 只用于小规模一次性查询。不允许外发的客户地址请改用人工经纬度或地图选点；任何地图 Key 均不得放入 GitHub、前端或安装包。</aside>
 
     <section class="gates" id="gates" aria-label="四个验收门">
       <article class="gate"><b>A</b><h3>安装与基础程序</h3><p>选择正确平台包，完成安装、授权、登录、基础增删改查、退出重启和备份。</p><div class="pass">通过：无 Excel 也能独立运行</div></article>
       <article class="gate"><b>B</b><h3>Excel 导入与更新</h3><p>Leader 独立执行完整备份、预检、人工修正、原子提交、重复导入和更新验证。</p><div class="pass">通过：可审查、可修正、可回滚</div></article>
       <article class="gate"><b>C</b><h3>账号与权限</h3><p>用 Leader、目标/非目标 Sales、目标/非目标 Tech 检查数据归属和敏感字段边界。</p><div class="pass">通过：归属准确、无越权</div></article>
-      <article class="gate"><b>D</b><h3>JSON 分发与同步</h3><p>两个独立终端之间验证导出、预检、合并、幂等和附件边界。</p><div class="pass">通过：可重复且不产生副本</div></article>
+      <article class="gate"><b>D</b><h3>JSON 分发与同步</h3><p>Leader 选择目标 Sales 后定向导出；两个独立终端验证接收账号、联系人、合并、幂等和附件边界。</p><div class="pass">通过：归属准确且不产生副本</div></article>
     </section>
 
     <h2>按角色进入</h2>
@@ -41,10 +42,10 @@
       <article class="card"><h3>团队成员：安装与日常操作</h3><p>Windows / macOS 安装、设备申请、授权激活、升级退出、业务地区、计划到期、长期未跟进和地图坐标质量。</p><a class="button" href="01-团队成员安装与日常操作.html">打开成员指南</a></article>
       <article class="card"><h3>Leader：账号、Excel 与数据治理</h3><p>账号地区、四步 Excel 导入、客户名称/别名模糊候选、安全合并、地图复核和 JSON 终端同步。</p><a class="button" href="02-Leader账号导入与治理.html">打开 Leader 指南</a></article>
       <article class="card"><h3>标准工作簿口径</h3><p>查阅工作表、外部键、更新语义、账号角色、客户别名、文件安全和重复导入规则。</p><a class="button secondary" href="../import-workbook-standard.md">打开标准格式说明</a></article>
-      <article class="card"><h3>团队验收手册</h3><p>按 Gate A–D 记录平台、角色、输入、预期、实际、证据、严重级别和是否阻塞。</p><a class="button secondary" href="../deployment/team-trial-guide.md">打开验收手册</a></article>
+      <article class="card"><h3>团队验收与问题反馈</h3><p>离线记录 Gate A–D、平台、角色、预期、实际、证据和严重级别，并导出 CSV / JSON。</p><a class="button secondary" href="03-团队测试与反馈.html">打开反馈表</a></article>
     </section>
 
-    <h2>0.11.4 关键业务口径</h2>
+    <h2>0.11.7 关键业务口径</h2>
     <table>
       <thead><tr><th>功能</th><th>本版口径</th><th>不要这样理解</th></tr></thead>
       <tbody>
@@ -53,6 +54,8 @@
         <tr><td><strong>长期未跟进</strong></td><td>按最近正式跟进，缺失则询盘日期，再缺失则创建日期</td><td>与计划到期是两套独立条件</td></tr>
         <tr><td><strong>客户合并</strong></td><td>名称/别名模糊候选和分数帮助 Leader 选对象；先预览再一次合并</td><td>高分不代表可以自动合并</td></tr>
         <tr><td><strong>地图</strong></td><td>精确、近似、缺失三种坐标质量；离线时列表和修正仍可用</td><td>近似点不能作为准确拜访地址</td></tr>
+        <tr><td><strong>卡片排序</strong></td><td>各工作页按阶段、计划日和关键业务日期稳定排序</td><td>不是统一按客户名称，也不依赖数据库偶然顺序</td></tr>
+        <tr><td><strong>定向 JSON</strong></td><td>Leader 先选择目标 Sales，只导出该成员负责的 Lead；同一文件预检无错误、无权限跳过后才可导入</td><td>不能把 Leader 全量包直接发给任意成员，也不能把“部分完成”当成完整成功</td></tr>
       </tbody>
     </table>
 
@@ -67,6 +70,6 @@
     </table>
     <p class="fine">本指南不包含真实账号、客户、文件哈希或密钥。离线打开时，页面本身不访问互联网。</p>
   </div></main>
-  <footer class="footer"><div class="wrap">JPT Sales Toolkit v0.11.4-internal · 团队稳定候选操作资料 · 2026-07</div></footer>
+  <footer class="footer"><div class="wrap">JPT Sales Toolkit v0.11.7-internal · 团队内部稳定版操作资料 · 2026-07</div></footer>
 </body>
 </html>

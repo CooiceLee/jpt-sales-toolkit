@@ -1,15 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
 ROOT = Path(SPECPATH).parent
 APP_NAME = "JPT Sales Toolkit"
 BUILD_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 BUNDLE_VERSION = BUILD_VERSION.split("-", 1)[0]
+TARGET_ARCH = os.environ.get("JPT_PYINSTALLER_TARGET_ARCH") or None
+if TARGET_ARCH not in {None, "x86_64", "arm64", "universal2"}:
+    raise ValueError(f"Unsupported JPT_PYINSTALLER_TARGET_ARCH: {TARGET_ARCH}")
 
 
 def collect_runtime_assets():
@@ -26,6 +30,9 @@ def collect_runtime_assets():
                 assets.append((str(source), str(source.parent.relative_to(ROOT))))
     for name in ("fields.json", "products.json", "regions.json"):
         assets.append((str(ROOT / "config" / name), "config"))
+    # urllib's platform OpenSSL path may not exist inside a frozen desktop app.
+    # Ship the certifi trust store used explicitly by geocoding transport.
+    assets.extend(collect_data_files("certifi"))
     return assets
 
 analysis = Analysis(
@@ -56,6 +63,7 @@ executable = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
+    target_arch=TARGET_ARCH,
 )
 
 bundle = COLLECT(

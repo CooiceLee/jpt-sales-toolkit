@@ -20,6 +20,7 @@ window.showAttachmentForm = function() {
 
 window.hideAttachmentForm = function() {
     document.getElementById('attachment-form')?.classList.add('hidden');
+    window.PanelDirtyState?.reset?.();
 };
 
 window.editAttachment = function(index) {
@@ -42,4 +43,3 @@ window.editAttachment = function(index) {
     if (saveBtn) saveBtn.textContent = 'Update';
     document.getElementById('attachment-form')?.scrollIntoView({ block: 'nearest' });
 };
-

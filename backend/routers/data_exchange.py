@@ -5,9 +5,10 @@ Data exchange router - export and import functionality.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Generator, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -25,7 +26,9 @@ from ..repositories.task_repository import (
 from ..repositories.user_repository import UserRepository
 from ..repositories.base import get_transaction
 from ..services import CountryService, CustomerService, LeadService
-from .deps import get_actor_role_for_lead, get_current_user, require_role
+from ..services.lead_extra_fields import EXTRA_JSON_FIELDS
+from ..services.lead_service import COLLABORATOR_ALLOWED_FIELDS
+from .deps import can_write_customer, get_actor_role_for_lead, get_current_user, require_role
 
 router = APIRouter(
     prefix="/data",
@@ -33,9 +36,45 @@ router = APIRouter(
     dependencies=[Depends(require_role("leader", "sales"))],
 )
 
+# Explicit JSON round-trip contract for mutable Lead business data. Identity,
+# ownership, customer linkage and audit metadata are deliberately excluded. Raw
+# extra_json remains in the package for source identity, but is excluded from an
+# existing-record patch; its public fields are synchronized individually so local
+# source_lead_id metadata survives and an explicit null/empty value can clear data.
+LEAD_JSON_EXTRA_FIELDS = frozenset(EXTRA_JSON_FIELDS)
+LEAD_JSON_SYNC_FIELDS = frozenset({
+    "title",
+    "source_channel",
+    "original_email",
+    "sales_stage",
+    "fulfillment_status",
+    "service_status",
+    "quality_grade",
+    "urgency",
+    "estimated_value",
+    "product_category",
+    "product_series",
+    "power_range",
+    "wavelength",
+    "application",
+    "material",
+    "quantity_text",
+    "currency",
+    "deal_amount",
+    "quotation_id",
+    "quotation_date",
+    "po_number",
+    "po_date",
+    "next_followup_date",
+    "inquiry_date",
+    "lost_reason_code",
+    "lost_reason_text",
+}) | LEAD_JSON_EXTRA_FIELDS
+
 
 class ExportRequest(BaseModel):
     lead_ids: Optional[List[str]] = None  # If None, export all user's leads
+    recipient_user_id: Optional[str] = None
 
 
 class ImportReport(BaseModel):
@@ -62,8 +101,8 @@ class BatchRepairRequest(BaseModel):
     lead_ids: Optional[List[str]] = None
     country: Optional[str] = None
     region: Optional[str] = None
-    lat: Optional[float] = None
-    lng: Optional[float] = None
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lng: Optional[float] = Field(None, ge=-180, le=180)
     owner_id: Optional[str] = None
     product_category: Optional[str] = None
     application: Optional[str] = None
@@ -78,6 +117,20 @@ def _can_export_lead(lead: Optional[dict], user: dict) -> bool:
     return get_actor_role_for_lead(lead["id"], user) in {"owner", "collaborator", "watcher"}
 
 
+@contextmanager
+def _record_savepoint(conn, name: str) -> Generator[None, None, None]:
+    """Rollback one failed import record without discarding valid records."""
+    conn.execute(f"SAVEPOINT {name}")
+    try:
+        yield
+    except Exception:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
+        conn.execute(f"RELEASE SAVEPOINT {name}")
+        raise
+    else:
+        conn.execute(f"RELEASE SAVEPOINT {name}")
+
+
 @router.post("/export")
 async def export_data(
     request: ExportRequest,
@@ -86,19 +139,45 @@ async def export_data(
     """Export user's data to JSON format."""
     user_id = user["id"]
 
+    user_repo = UserRepository()
     lead_repo = LeadRepository()
     customer_repo = CustomerRepository()
     activity_repo = ActivityRepository()
     pre_sales_repo = PreSalesTaskRepository()
     after_sales_repo = AfterSalesTaskRepository()
     attachment_repo = AttachmentRepository()
+    recipient = None
+    recipient_user_id = getattr(request, "recipient_user_id", None)
+    if recipient_user_id:
+        if user.get("role") != "leader":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only leaders can create a recipient-scoped package",
+            )
+        recipient = user_repo.get_by_id(recipient_user_id)
+        if (
+            not recipient
+            or not recipient.get("is_active")
+            or recipient.get("role") != "sales"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Recipient must be an active Sales member",
+            )
 
     # Get leads to export.
     if request.lead_ids:
         leads = [lead_repo.get_by_id(lid) for lid in request.lead_ids]
         leads = [lead for lead in leads if _can_export_lead(lead, user)]
+        if recipient:
+            leads = [
+                lead for lead in leads
+                if lead.get("owner_id") == recipient["id"]
+            ]
     else:
-        if user.get("role") == "leader":
+        if recipient:
+            leads = lead_repo.list(owner_id=recipient["id"], limit=10000)
+        elif user.get("role") == "leader":
             leads = lead_repo.list(limit=10000)
         else:
             # Export all leads the user can see as owner/collaborator/watcher.
@@ -110,6 +189,9 @@ async def export_data(
         "exported_by": user_id,
         "exporter_name": user.get("display_name", ""),
         "version": "v2.0",
+        "recipient_user_id": recipient["id"] if recipient else None,
+        "recipient_name": recipient["display_name"] if recipient else None,
+        "export_scope": "owner" if recipient else "visible",
         "customers": {},
         "leads": []
     }
@@ -140,7 +222,7 @@ async def export_data(
         attachments = attachment_repo.list_for_lead(lead["id"])
 
         lead_export = {
-            "lead": lead,
+            "lead": _export_lead_payload(lead),
             "activities": activities,
             "pre_sales_tasks": pre_sales,
             "after_sales_tasks": after_sales,
@@ -179,6 +261,7 @@ async def preflight_import(
 ):
     """Read an import file and return a non-mutating data quality report."""
     import_data = await _read_import_file(file)
+    _require_matching_recipient(import_data, user)
     return _build_preflight_report(import_data, user)
 
 
@@ -319,6 +402,7 @@ async def import_data(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid export file format"
         )
+    _require_matching_recipient(import_data, user)
 
     # Initialize report
     report = {
@@ -347,7 +431,7 @@ async def import_data(
     lead_service = LeadService()
     user_repo = UserRepository()
 
-    with get_transaction():
+    with get_transaction() as transaction:
         # STEP 0: Pre-filter leads by permission to determine allowed customers
         # This prevents customer pollution when non-owner imports someone else's file
         allowed_leads = []
@@ -393,6 +477,7 @@ async def import_data(
 
         # STEP 1: Import/merge only allowed customers
         customer_id_map = {}  # old_id -> new_id
+        contact_id_map = {}  # exported contact ID -> local contact ID
 
         for old_customer_id, raw_customer_data in import_data["customers"].items():
             # Skip customers that have no allowed leads
@@ -400,204 +485,247 @@ async def import_data(
                 continue
 
             try:
-                customer_data = deepcopy(raw_customer_data)
-                # Check if customer already exists by matching email or company name
-                email = None
-                if customer_data.get("contacts"):
-                    email = customer_data["contacts"][0].get("email")
+                new_customers = 0
+                updated_customers = 0
+                merged_contacts = 0
+                mapped_contacts: dict[str, str] = {}
+                local_customer_id: Optional[str] = None
 
-                company_name = customer_data.get("display_name")
+                with _record_savepoint(transaction, "customer_import_record"):
+                    customer_data = deepcopy(raw_customer_data)
+                    # Check if customer already exists by matching email or company name
+                    email = None
+                    if customer_data.get("contacts"):
+                        email = customer_data["contacts"][0].get("email")
 
-                matches = customer_service.match(email, company_name)
+                    company_name = customer_data.get("display_name")
 
-                if matches:
-                    # Customer exists, update if needed
-                    existing_id = matches[0]["id"]
-                    customer_id_map[old_customer_id] = existing_id
+                    matches = customer_service.match(email, company_name)
+                    # Never let a visible watcher (or a name collision with an
+                    # unrelated customer) mutate the existing customer.  When no
+                    # eligible target remains, a separate customer record keeps
+                    # the import isolated for Leader review and later merge.
+                    matches = [
+                        match
+                        for match in matches
+                        if can_write_customer(match["id"], user)
+                    ]
 
-                    # Update customer fields if they have newer data
-                    update_data = {}
-                    for field in [
-                        "website",
-                        "industry",
-                        "customer_type",
-                        "country",
-                        "city",
-                        "postal_code",
-                        "address",
-                        "region",
-                        "language",
-                        "company_size",
-                        "company_description",
-                        "lat",
-                        "lng",
-                        "normalized_address",
-                        "geocode_source",
-                        "geocode_confidence",
-                        "geocode_locked",
-                    ]:
-                        if field in customer_data and customer_data[field]:
-                            update_data[field] = customer_data[field]
+                    if matches:
+                        local_customer_id = matches[0]["id"]
 
-                    if update_data:
-                        existing = customer_service.get(existing_id)
-                        customer_service.update(
-                            existing_id,
-                            update_data,
+                        update_data = {}
+                        for field in [
+                            "website",
+                            "industry",
+                            "customer_type",
+                            "country",
+                            "city",
+                            "postal_code",
+                            "address",
+                            "region",
+                            "language",
+                            "company_size",
+                            "company_description",
+                            "lat",
+                            "lng",
+                            "normalized_address",
+                            "geocode_source",
+                            "geocode_confidence",
+                            "geocode_locked",
+                        ]:
+                            if field in customer_data and customer_data[field]:
+                                update_data[field] = customer_data[field]
+
+                        if update_data:
+                            existing = customer_service.get(local_customer_id)
+                            customer_service.update(
+                                local_customer_id,
+                                update_data,
+                                user_id,
+                                existing["row_version"],
+                                commit=False,
+                            )
+                            updated_customers = 1
+
+                        merged_contacts, mapped_contacts = _merge_contacts(
+                            local_customer_id,
+                            customer_data.get("contacts", []),
                             user_id,
-                            existing["row_version"]
+                            customer_service,
+                            commit=False,
                         )
-                        report["updated_customers"] += 1
+                    else:
+                        contacts = customer_data.get("contacts", [])
+                        sanitized_customer = _sanitize_customer_data(customer_data)
+                        new_customer = customer_service.create(
+                            sanitized_customer,
+                            user_id,
+                            commit=False,
+                        )
+                        local_customer_id = new_customer["id"]
 
-                    report["merged_contacts"] += _merge_contacts(
-                        existing_id,
-                        customer_data.get("contacts", []),
-                        user_id,
-                        customer_service,
-                    )
-                else:
-                    # Create new customer
-                    contacts = customer_data.get("contacts", [])
-                    customer_data = _sanitize_customer_data(customer_data)
+                        for contact in contacts:
+                            local_contact_id = customer_service.add_contact(
+                                local_customer_id,
+                                _sanitize_contact_data(contact),
+                                user_id,
+                                commit=False,
+                            )
+                            if contact.get("id"):
+                                mapped_contacts[contact["id"]] = local_contact_id
+                            merged_contacts += 1
+                        new_customers = 1
 
-                    new_customer = customer_service.create(customer_data, user_id)
-                    new_id = new_customer["id"]
-                    customer_id_map[old_customer_id] = new_id
-
-                    # Add contacts
-                    for contact in contacts:
-                        customer_service.add_contact(new_id, _sanitize_contact_data(contact), user_id)
-                        report["merged_contacts"] += 1
-
-                    report["new_customers"] += 1
+                customer_id_map[old_customer_id] = local_customer_id
+                contact_id_map.update(mapped_contacts)
+                report["new_customers"] += new_customers
+                report["updated_customers"] += updated_customers
+                report["merged_contacts"] += merged_contacts
 
             except Exception as e:
                 report["errors"].append(f"Customer {old_customer_id}: {str(e)}")
 
         # STEP 2: Import/merge allowed leads
         for lead_item in allowed_leads:
+            lead_data = deepcopy(lead_item["lead"])
+            lead_label = _lead_label(lead_data)
             try:
-                lead_data = deepcopy(lead_item["lead"])
                 old_customer_id = lead_data["customer_id"]
 
                 # Map to new customer ID
                 if old_customer_id not in customer_id_map:
-                    report["errors"].append(f"Lead {lead_data.get('display_id', 'unknown')}: customer not found")
+                    report["errors"].append(f"Lead {lead_label}: customer not found")
                     report["skipped_records"] += 1
                     continue
 
-                new_customer_id = customer_id_map[old_customer_id]
-                lead_data["customer_id"] = new_customer_id
+                new_leads = 0
+                updated_leads = 0
+                merged_activities = 0
+                merged_pre_sales = 0
+                merged_after_sales = 0
+                record_warnings: list[str] = []
 
-                existing_lead = _find_existing_lead(lead_service.lead_repo, lead_data)
+                with _record_savepoint(transaction, "lead_import_record"):
+                    lead_data["customer_id"] = customer_id_map[old_customer_id]
+                    source_primary_contact_id = lead_data.get("primary_contact_id")
+                    if source_primary_contact_id:
+                        local_primary_contact_id = contact_id_map.get(
+                            source_primary_contact_id
+                        )
+                        if not local_primary_contact_id:
+                            raise ValueError(
+                                "source primary contact is missing from the "
+                                "exported customer contact set"
+                            )
+                        lead_data["primary_contact_id"] = local_primary_contact_id
 
-                if existing_lead:
-                    target_role = get_actor_role_for_lead(existing_lead["id"], user)
-                    if not _can_import_existing_lead(target_role):
-                        report["skipped_records"] += 1
-                        continue
-
-                    # Update existing lead fields
-                    update_fields = {}
-                    for field in ["title", "product_category", "application", "deal_amount", "quotation_id", "po_number"]:
-                        if field in lead_data and lead_data[field]:
-                            update_fields[field] = lead_data[field]
-
-                    if update_fields:
-                        lead_service.update(
+                    existing_lead = _find_existing_lead(
+                        lead_service.lead_repo,
+                        lead_data,
+                    )
+                    if existing_lead:
+                        target_role = get_actor_role_for_lead(
                             existing_lead["id"],
-                            update_fields,
-                            user_id,
+                            user,
+                        )
+                        if not _can_import_existing_lead(target_role):
+                            report["skipped_records"] += 1
+                            continue
+
+                        update_fields = _lead_import_update_fields(
+                            lead_data,
                             target_role,
-                            existing_lead["row_version"]
                         )
+                        if (
+                            target_role in {"leader", "owner"}
+                            and "primary_contact_id" in lead_data
+                        ):
+                            update_fields["primary_contact_id"] = lead_data[
+                                "primary_contact_id"
+                            ]
 
-                    report["updated_leads"] += 1
+                        if update_fields:
+                            lead_service.update(
+                                existing_lead["id"],
+                                update_fields,
+                                user_id,
+                                target_role,
+                                existing_lead["row_version"],
+                                commit=False,
+                            )
+                        updated_leads = 1
+                        target_lead_id = existing_lead["id"]
+                    else:
+                        source_display_id = lead_data.pop("display_id", None)
+                        source_lead_id = _get_source_lead_id(lead_data)
+                        for field in (
+                            "id",
+                            "created_at",
+                            "created_by",
+                            "updated_at",
+                            "updated_by",
+                            "row_version",
+                            "archived_at",
+                        ):
+                            lead_data.pop(field, None)
+                        if source_display_id or source_lead_id:
+                            lead_data["extra_json"] = _merge_extra_json(
+                                lead_data.get("extra_json"),
+                                {
+                                    "source_lead_id": source_lead_id,
+                                    "source_display_id": source_display_id,
+                                    "source_exported_by": report["source_user"],
+                                    "source_export_time": report["source_time"],
+                                },
+                            )
 
-                    # FIX: Merge activities for existing lead (was missing before)
+                        owner_id, owner_error = _resolve_active_user(
+                            user_repo,
+                            lead_data.get("owner_id"),
+                            allowed_roles={"leader", "sales"},
+                        )
+                        if owner_error:
+                            raise ValueError(f"owner_id {owner_error}")
+                        lead_data["owner_id"] = owner_id
+                        new_lead = lead_service.create(
+                            lead_data,
+                            user_id,
+                            commit=False,
+                        )
+                        new_leads = 1
+                        target_lead_id = new_lead["id"]
+
                     merged_activities = _merge_activities(
-                        existing_lead["id"],
+                        target_lead_id,
                         lead_item.get("activities", []),
-                        report["warnings"],
+                        record_warnings,
+                        commit=False,
                     )
-                    report["merged_activities"] += merged_activities
-
                     merged_pre_sales = _merge_pre_sales_tasks(
-                        existing_lead["id"],
+                        target_lead_id,
                         lead_item.get("pre_sales_tasks", []),
                         user_id,
-                        report["warnings"],
+                        record_warnings,
+                        commit=False,
                     )
                     merged_after_sales = _merge_after_sales_tasks(
-                        existing_lead["id"],
+                        target_lead_id,
                         lead_item.get("after_sales_tasks", []),
                         user_id,
-                        report["warnings"],
+                        record_warnings,
+                        commit=False,
                     )
-                    _add_task_counts(report, merged_pre_sales, merged_after_sales)
 
-                else:
-                    # Create new lead
-                    source_display_id = lead_data.pop("display_id", None)
-                    source_lead_id = _get_source_lead_id(lead_data)
-                    lead_data.pop("id", None)
-                    lead_data.pop("created_at", None)
-                    lead_data.pop("created_by", None)
-                    lead_data.pop("updated_at", None)
-                    lead_data.pop("updated_by", None)
-                    lead_data.pop("row_version", None)
-                    lead_data.pop("archived_at", None)
-                    if source_display_id or source_lead_id:
-                        lead_data["extra_json"] = _merge_extra_json(
-                            lead_data.get("extra_json"),
-                            {
-                                "source_lead_id": source_lead_id,
-                                "source_display_id": source_display_id,
-                                "source_exported_by": report["source_user"],
-                                "source_export_time": report["source_time"],
-                            },
-                        )
-
-                    # Preserve a valid source owner. Sales imports have already
-                    # been restricted to their own identity in STEP 0.
-                    owner_id, owner_error = _resolve_active_user(
-                        user_repo,
-                        lead_data.get("owner_id"),
-                        allowed_roles={"leader", "sales"},
-                    )
-                    if owner_error:
-                        raise ValueError(f"owner_id {owner_error}")
-                    lead_data["owner_id"] = owner_id
-
-                    new_lead = lead_service.create(lead_data, user_id)
-                    report["new_leads"] += 1
-
-                    # Import activities for new lead
-                    merged_activities = _merge_activities(
-                        new_lead["id"],
-                        lead_item.get("activities", []),
-                        report["warnings"],
-                    )
-                    report["merged_activities"] += merged_activities
-
-                    merged_pre_sales = _merge_pre_sales_tasks(
-                        new_lead["id"],
-                        lead_item.get("pre_sales_tasks", []),
-                        user_id,
-                        report["warnings"],
-                    )
-                    merged_after_sales = _merge_after_sales_tasks(
-                        new_lead["id"],
-                        lead_item.get("after_sales_tasks", []),
-                        user_id,
-                        report["warnings"],
-                    )
-                    _add_task_counts(report, merged_pre_sales, merged_after_sales)
-
+                report["new_leads"] += new_leads
+                report["updated_leads"] += updated_leads
+                report["merged_activities"] += merged_activities
+                _add_task_counts(report, merged_pre_sales, merged_after_sales)
+                report["warnings"].extend(record_warnings)
                 report["attachments_skipped"] += len(lead_item.get("attachments", []))
 
             except Exception as e:
-                report["errors"].append(f"Lead {lead_data.get('display_id', 'unknown')}: {str(e)}")
+                report["errors"].append(f"Lead {lead_label}: {str(e)}")
                 report["skipped_records"] += 1
 
     report["snapshot_after"] = _data_snapshot()
@@ -608,6 +736,20 @@ async def import_data(
 def _can_import_existing_lead(actor_role: str) -> bool:
     """Return whether a user can merge data into an existing target lead."""
     return actor_role in {"leader", "owner", "collaborator"}
+
+
+def _require_matching_recipient(import_data: dict, user: dict) -> None:
+    """Prevent a member-scoped package from being imported by another member."""
+    recipient_user_id = import_data.get("recipient_user_id")
+    if (
+        recipient_user_id
+        and user.get("role") != "leader"
+        and recipient_user_id != user.get("id")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This JSON package was issued for a different member account",
+        )
 
 
 async def _read_import_file(file: UploadFile) -> dict:
@@ -871,6 +1013,9 @@ def _find_existing_lead(lead_repo: LeadRepository, lead_data: dict) -> Optional[
             return existing_by_id
     source_lead_id = _get_source_lead_id(lead_data)
     if source_lead_id:
+        original = lead_repo.get_by_id(source_lead_id)
+        if original and not original.get("archived_at"):
+            return original
         return _find_lead_by_source_id(lead_repo, source_lead_id)
     return None
 
@@ -896,6 +1041,29 @@ def _find_lead_by_source_id(lead_repo: LeadRepository, source_lead_id: str) -> O
         if extra_json.get("source_lead_id") == source_lead_id:
             return lead
     return None
+
+
+def _export_lead_payload(lead: dict) -> dict:
+    """Expose JSON-backed business fields without changing source metadata."""
+    payload = dict(lead)
+    extra_json = _parse_json_object(payload.get("extra_json"))
+    for field in LEAD_JSON_EXTRA_FIELDS:
+        payload[field] = extra_json.get(field)
+    return payload
+
+
+def _lead_import_update_fields(lead_data: dict, actor_role: str) -> dict:
+    """Select explicitly present fields that the target actor may update."""
+    allowed_fields = LEAD_JSON_SYNC_FIELDS
+    if actor_role == "collaborator":
+        allowed_fields = LEAD_JSON_SYNC_FIELDS & COLLABORATOR_ALLOWED_FIELDS
+        if "extra_json" in COLLABORATOR_ALLOWED_FIELDS:
+            allowed_fields |= LEAD_JSON_EXTRA_FIELDS
+    return {
+        field: lead_data[field]
+        for field in allowed_fields
+        if field in lead_data
+    }
 
 
 def _sanitize_customer_data(customer_data: dict) -> dict:
@@ -947,10 +1115,12 @@ def _merge_contacts(
     contacts: list,
     user_id: str,
     customer_service: CustomerService,
-) -> int:
-    """Merge contacts into an existing customer."""
+    *,
+    commit: bool = True,
+) -> tuple[int, dict[str, str]]:
+    """Merge contacts and map exported contact IDs to local contact IDs."""
     if not contacts:
-        return 0
+        return 0, {}
 
     existing_contacts = customer_service.customer_repo.get_contacts(customer_id)
     existing_by_signature = {
@@ -958,29 +1128,43 @@ def _merge_contacts(
     }
 
     merged = 0
+    contact_id_map: dict[str, str] = {}
     for raw_contact in contacts:
         contact = _sanitize_contact_data(raw_contact)
         signature = _contact_signature(contact)
         if signature in existing_by_signature:
             existing = existing_by_signature[signature]
+            local_contact_id = existing["id"]
             update_data = {}
             for field in ("name", "position", "email", "phone", "whatsapp", "is_primary"):
                 value = contact.get(field)
                 if value not in (None, "") and value != existing.get(field):
                     update_data[field] = value
             if update_data:
-                customer_service.update_contact(existing["id"], update_data, user_id)
+                customer_service.update_contact(
+                    local_contact_id,
+                    update_data,
+                    user_id,
+                    commit=commit,
+                )
                 merged += 1
         else:
-            contact_id = customer_service.add_contact(customer_id, contact, user_id)
+            local_contact_id = customer_service.add_contact(
+                customer_id,
+                contact,
+                user_id,
+                commit=commit,
+            )
             existing_by_signature[signature] = {
                 **contact,
-                "id": contact_id,
+                "id": local_contact_id,
                 "customer_id": customer_id,
             }
             merged += 1
+        if raw_contact.get("id"):
+            contact_id_map[raw_contact["id"]] = local_contact_id
 
-    return merged
+    return merged, contact_id_map
 
 
 def _parse_json_object(value: Any) -> dict:
@@ -1124,7 +1308,13 @@ def _append_related_identity_issues(
                 ))
 
 
-def _merge_activities(lead_id: str, activities: list, warnings: list[str]) -> int:
+def _merge_activities(
+    lead_id: str,
+    activities: list,
+    warnings: list[str],
+    *,
+    commit: bool = True,
+) -> int:
     """Merge activities into a lead, avoiding source and content duplicates.
 
     Returns the number of activities added.
@@ -1178,6 +1368,7 @@ def _merge_activities(lead_id: str, activities: list, warnings: list[str]) -> in
             before_value=activity.get("before_value"),
             after_value=activity.get("after_value"),
             created_at=activity.get("created_at"),
+            commit=commit,
         )
         existing_signatures.add(_activity_signature(resolved_activity))
         added += 1
@@ -1245,6 +1436,8 @@ def _merge_pre_sales_tasks(
     tasks: list,
     user_id: str,
     warnings: list[str],
+    *,
+    commit: bool = True,
 ) -> int:
     """Merge pre-sales tasks with stable timestamps and identity-safe assignees."""
     if not tasks:
@@ -1269,13 +1462,18 @@ def _merge_pre_sales_tasks(
         if candidate_signatures & existing_signatures:
             continue
 
-        task_id = task_repo.create(lead_id, {
-            "assignee_id": assignee_id,
-            "status": task.get("status", "Open"),
-            "request_json": _json_storage_value(task.get("request_json")),
-            "result_json": _json_storage_value(task.get("result_json")),
-            "due_date": task.get("due_date"),
-        }, user_id)
+        task_id = task_repo.create(
+            lead_id,
+            {
+                "assignee_id": assignee_id,
+                "status": task.get("status", "Open"),
+                "request_json": _json_storage_value(task.get("request_json")),
+                "result_json": _json_storage_value(task.get("result_json")),
+                "due_date": task.get("due_date"),
+            },
+            user_id,
+            commit=commit,
+        )
         if task.get("created_at") or task.get("updated_at"):
             task_repo.conn.execute(
                 "UPDATE pre_sales_tasks SET created_at = ?, updated_at = ? WHERE id = ?",
@@ -1286,7 +1484,8 @@ def _merge_pre_sales_tasks(
                     task_id,
                 ),
             )
-            task_repo.conn.commit()
+            if commit:
+                task_repo.conn.commit()
         existing_signatures.add(_pre_sales_task_signature(resolved_task))
         added += 1
     return added
@@ -1297,6 +1496,8 @@ def _merge_after_sales_tasks(
     tasks: list,
     user_id: str,
     warnings: list[str],
+    *,
+    commit: bool = True,
 ) -> int:
     """Merge after-sales tasks into a lead, avoiding timestamp/content duplicates.
 
@@ -1352,6 +1553,7 @@ def _merge_after_sales_tasks(
             user_id,
             created_at=task.get("created_at"),
             updated_at=task.get("updated_at"),
+            commit=commit,
         )
         existing_signatures.add(_after_sales_task_signature(resolved_task))
         added += 1

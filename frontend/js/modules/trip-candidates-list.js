@@ -1,10 +1,15 @@
 async function handleTripError(err, action) {
     if (err?.name === 'ConflictError') {
-        alert(`${action} conflict: this plan was updated elsewhere. The latest data will be loaded; please retry.`);
+        alert(I18n.t('{action} conflict: this plan was updated elsewhere. The latest data will be loaded; please retry.', {
+            action: I18n.t(action)
+        }));
         await loadTripPlanner();
         return;
     }
-    alert(`Error ${action}: ${err.message || 'Unknown error'}`);
+    alert(I18n.t('Error {action}: {error}', {
+        action: I18n.t(action),
+        error: I18n.t(err.message || 'Unknown error')
+    }));
 }
 
 function renderTripCandidates() {
@@ -64,4 +69,3 @@ window.loadMoreTripCandidates = async function() {
     State.tripCandidatePagination.offset = (pagination.offset || 0) + (pagination.limit || 25);
     await loadTripPlanner({ appendCandidates: true });
 };
-

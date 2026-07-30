@@ -1,7 +1,7 @@
 function renderCoordinateReviewList() {
     const container = document.getElementById('coordinate-review-list');
     if (!coordinateReviewData) {
-        container.innerHTML = '<div class="empty-state">No data available</div>';
+        container.innerHTML = `<div class="empty-state">${escapeHtml(coordinateText('No data available'))}</div>`;
         return;
     }
 
@@ -15,14 +15,14 @@ function renderCoordinateReviewList() {
             status: p.needs_geocode ? 'needs_review' : (isVerified ? 'verified' : 'auto'),
             hasCoordinates: Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)),
             statusLabel: p.needs_geocode ?
-                (p.coordinate_quality === 'country_fallback' ? 'Country Fallback' : 'Auto Approximate') :
-                (isVerified ? 'Verified' : 'Auto Exact')
+                coordinateText(p.coordinate_quality === 'country_fallback' ? 'Country Fallback' : 'Auto Approximate') :
+                coordinateText(isVerified ? 'Verified' : 'Auto Exact')
         };
     });
     const missingItems = missing.map(m => ({
         ...m,
         status: 'missing',
-        statusLabel: 'Missing',
+        statusLabel: coordinateText('Missing'),
         hasCoordinates: false,
         lat: null,
         lng: null
@@ -36,7 +36,7 @@ function renderCoordinateReviewList() {
             ...p,
             status: 'needs_review',
             hasCoordinates: Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)),
-            statusLabel: p.coordinate_quality === 'country_fallback' ? 'Country Fallback' : 'Auto Approximate'
+            statusLabel: coordinateText(p.coordinate_quality === 'country_fallback' ? 'Country Fallback' : 'Auto Approximate')
         }));
     } else if (coordinateReviewFilter === 'missing') {
         items = missingItems;
@@ -57,58 +57,28 @@ function renderCoordinateReviewList() {
     }
 
     if (items.length === 0) {
-        container.innerHTML = `<div class="empty-state">${
-            query ? `No matches for "${escapeHtml(coordinateReviewSearch.trim())}"` : 'No customers match this filter'
-        }</div>`;
+        const emptyMessage = query
+            ? coordinateText('No matches for "{query}"', { query: coordinateReviewSearch.trim() })
+            : coordinateText('No customers match this filter');
+        container.innerHTML = `<div class="empty-state">${escapeHtml(emptyMessage)}</div>`;
         return;
     }
 
     // Sort by lead count (most important first)
     items.sort((a, b) => (b.lead_count || 0) - (a.lead_count || 0));
+    const totalPages = Math.max(1, Math.ceil(items.length / COORDINATE_REVIEW_PAGE_SIZE));
+    coordinateReviewPage = Math.min(Math.max(1, coordinateReviewPage), totalPages);
+    const start = (coordinateReviewPage - 1) * COORDINATE_REVIEW_PAGE_SIZE;
+    const pageItems = items.slice(start, start + COORDINATE_REVIEW_PAGE_SIZE);
+    const shownFrom = items.length ? start + 1 : 0;
+    const shownTo = items.length ? Math.min(start + pageItems.length, items.length) : 0;
 
-    container.innerHTML = `
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Customer</th>
-                    <th>Location</th>
-                    <th>Status</th>
-                    <th style="text-align:center;">Leads</th>
-                    <th>Coordinates</th>
-                    <th style="width:120px;">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${items.map(item => `
-                    <tr>
-                        <td>
-                            <div style="font-weight:500;">${escapeHtml(item.customer_name || item.name)}</div>
-                            ${item.region ? `<div style="font-size:12px;color:var(--ink-500);">${escapeHtml(item.region)}</div>` : ''}
-                        </td>
-                        <td>
-                            <div>${escapeHtml([item.city, item.country].filter(Boolean).join(', '))}</div>
-                            ${item.address ? `<div style="font-size:12px;color:var(--ink-500);">${escapeHtml(item.address)}</div>` : ''}
-                        </td>
-                        <td>
-                            <span class="coord-status-badge status-${item.status}">${escapeHtml(item.statusLabel)}</span>
-                        </td>
-                        <td style="text-align:center;">${item.lead_count || 0}</td>
-                        <td style="font-family:var(--mono-font);font-size:12px;">
-                            ${item.hasCoordinates ?
-                                `${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}` :
-                                '<span style="color:var(--ink-400);">—</span>'
-                            }
-                        </td>
-                        <td>
-                            <button type="button" class="btn btn-secondary btn-sm"
-                                onclick="openCoordinateCorrectionFromReview('${item.customer_id || item.id}')">
-                                ${item.status === 'missing' ? 'Add' : 'Fix'}
-                            </button>
-                        </td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
-    `;
+    container.innerHTML = CoordinateReviewTable.table(pageItems) +
+        CoordinateReviewTable.pagination({
+            page: coordinateReviewPage,
+            totalPages,
+            shownFrom,
+            shownTo,
+            total: items.length
+        });
 }
-

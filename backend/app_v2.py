@@ -15,7 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .config import APP_VERSION, init_settings
-from .repositories import init_db
+from .database_access import database_access_gate
+from .startup_upgrade import initialize_database_safely
 from .routers import (
     auth_router,
     config_router,
@@ -30,6 +31,7 @@ from .routers import (
     desktop_router,
     spreadsheet_import_router,
     data_quality_issues_router,
+    inquiry_aggregate_router,
 )
 
 # Application root directory
@@ -60,6 +62,24 @@ def create_app() -> FastAPI:
     )
 
     @app.middleware("http")
+    async def database_maintenance_policy(request, call_next):
+        """Drain API work before an online restore replaces the database."""
+        path = request.url.path
+        if path != "/api" and not path.startswith("/api/"):
+            return await call_next(request)
+        is_restore = (
+            request.method == "POST"
+            and path.rstrip("/") == "/api/admin/restore"
+        )
+        access = (
+            database_access_gate.exclusive
+            if is_restore
+            else database_access_gate.shared
+        )
+        async with access():
+            return await call_next(request)
+
+    @app.middleware("http")
     async def desktop_cache_policy(request, call_next):
         """Never let an upgraded desktop app reuse stale HTML or static assets."""
         response = await call_next(request)
@@ -84,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(desktop_router, prefix="/api")
     app.include_router(spreadsheet_import_router, prefix="/api")
     app.include_router(data_quality_issues_router, prefix="/api")
+    app.include_router(inquiry_aggregate_router, prefix="/api")
 
     @app.get("/api/health", include_in_schema=False)
     async def health_check():
@@ -99,8 +120,8 @@ def create_app() -> FastAPI:
     async def startup():
         # Initialize settings first
         settings = init_settings(APP_ROOT)
-        # Initialize database
-        init_db(settings.db_path)
+        # Back up and verify existing user data before any schema migration.
+        app.state.startup_upgrade = initialize_database_safely(settings)
 
     # Serve frontend static files
     frontend_dir = APP_ROOT / "frontend"

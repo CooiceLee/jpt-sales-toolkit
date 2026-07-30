@@ -50,21 +50,36 @@
     function addTileLayer(map, options = {}) {
         const source = TILE_SOURCES[options.style || 'light'] || TILE_SOURCES.light;
         const status = ensureNetworkStatus(options.containerId);
-        const layer = L.tileLayer(source.url, { attribution: source.attribution });
+        const layer = L.tileLayer(source.url, {
+            attribution: source.attribution,
+            updateWhenIdle: true,
+            updateWhenZooming: false,
+            keepBuffer: 1,
+            maxZoom: 19
+        });
+        let failedTiles = 0;
         const unavailable = () => setNetworkStatus(
             status,
             typeof navigator !== 'undefined' && navigator.onLine === false
                 ? 'Map background unavailable while offline. Points and lists still work.'
                 : 'Map background could not load. Points and lists still work.'
         );
-        const restored = () => setNetworkStatus(status, '');
+        const beginLoad = () => { failedTiles = 0; };
+        const tileFailed = () => {
+            failedTiles += 1;
+            unavailable();
+        };
+        const restored = () => {
+            if (failedTiles === 0) setNetworkStatus(status, '');
+        };
         const reconnect = () => {
             setNetworkStatus(status, 'Reconnecting map background...');
             layer.redraw();
         };
 
+        layer.on('loading', beginLoad);
         layer.on('load', restored);
-        layer.on('tileerror', unavailable);
+        layer.on('tileerror', tileFailed);
         layer.addTo(map);
 
         if (typeof window.addEventListener === 'function') {

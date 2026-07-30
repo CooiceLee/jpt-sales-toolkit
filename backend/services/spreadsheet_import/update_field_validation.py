@@ -1,5 +1,6 @@
 """Validate partial-update fields before a transaction reaches SQLite."""
 
+from ...coordinate_validation import CoordinateValidationError, validated_coordinate_payload
 from .persistence_common import CLEAR_TOKEN
 from .value_normalization import boolean_value
 
@@ -21,6 +22,7 @@ ACTIVITY_ENUMS = {
 
 def update_field_issues(entities: dict) -> list[dict]:
     result = []
+    result.extend(_coordinate_issues(entities.get("customers", [])))
     for kind, fields in NON_NULL_FIELDS.items():
         for item in entities[kind]:
             if str(item.get("action") or "UPSERT").upper() != "UPSERT":
@@ -33,6 +35,24 @@ def update_field_issues(entities: dict) -> list[dict]:
                     ))
             if kind == "activities":
                 result.extend(_activity_issues(item))
+    return result
+
+
+def _coordinate_issues(customers: list[dict]) -> list[dict]:
+    result = []
+    for item in customers:
+        if str(item.get("action") or "UPSERT").upper() != "UPSERT":
+            continue
+        for field in ("lat", "lng"):
+            value = item.get(field)
+            if value in (None, "", CLEAR_TOKEN):
+                continue
+            try:
+                validated_coordinate_payload({field: value})
+            except CoordinateValidationError as exc:
+                result.append(_issue(
+                    "invalid_coordinate", "customers", item, field, str(exc),
+                ))
     return result
 
 

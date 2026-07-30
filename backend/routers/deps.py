@@ -192,3 +192,70 @@ def can_access_customer(customer_id: str, user: dict) -> bool:
         (customer_id, user["id"], user["id"]),
     ).fetchone()
     return row is not None
+
+
+def can_write_customer(customer_id: str, user: dict) -> bool:
+    """Return whether the user may change customer-owned data.
+
+    Customer visibility is intentionally broader than mutation rights: a
+    watcher can read the customer attached to a visible lead, but only a
+    Leader, commercial owner, or collaborator may change the customer,
+    contacts, or coordinates.  The creator is treated as a provisional owner
+    only while the customer has no active leads; the first active lead ends
+    that bootstrap permission and makes lead assignments authoritative.
+    """
+    from ..repositories import LeadRepository
+
+    lead_repo = LeadRepository()
+    if user["role"] == "leader":
+        row = lead_repo.conn.execute(
+            "SELECT 1 FROM customers WHERE id = ? AND archived_at IS NULL",
+            (customer_id,),
+        ).fetchone()
+        return row is not None
+
+    if user["role"] != "sales":
+        return False
+
+    row = lead_repo.conn.execute(
+        """
+        SELECT 1
+        FROM leads l
+        WHERE l.customer_id = ?
+          AND l.archived_at IS NULL
+          AND (
+              l.owner_id = ?
+              OR EXISTS (
+                  SELECT 1
+                  FROM lead_assignments a
+                  WHERE a.lead_id = l.id
+                    AND a.user_id = ?
+                    AND a.assignment_type = 'collaborator'
+                    AND a.archived_at IS NULL
+              )
+          )
+        LIMIT 1
+        """,
+        (customer_id, user["id"], user["id"]),
+    ).fetchone()
+    if row is not None:
+        return True
+
+    provisional = lead_repo.conn.execute(
+        """
+        SELECT 1
+        FROM customers c
+        WHERE c.id = ?
+          AND c.archived_at IS NULL
+          AND c.created_by = ?
+          AND NOT EXISTS (
+              SELECT 1
+              FROM leads l
+              WHERE l.customer_id = c.id
+                AND l.archived_at IS NULL
+          )
+        LIMIT 1
+        """,
+        (customer_id, user["id"]),
+    ).fetchone()
+    return provisional is not None

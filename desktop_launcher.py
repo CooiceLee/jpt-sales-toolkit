@@ -34,6 +34,11 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--data-dir", help="Override writable data directory")
     parser.add_argument("--port", type=int, default=8765, help="Preferred loopback port")
     parser.add_argument("--no-browser", action="store_true", help="Do not open a browser")
+    parser.add_argument(
+        "--recover-backup",
+        type=Path,
+        help="Validate and restore SQLite from a pre-upgrade backup, then exit",
+    )
     return parser.parse_args()
 
 
@@ -90,6 +95,41 @@ def show_instance_version_warning(status: dict, logger) -> None:
             logger.exception("Unable to show the Windows version warning")
 
 
+def show_recovery_result(success: bool, message: str, logger) -> None:
+    """Show an offline-recovery result even for windowed desktop builds."""
+    if os.environ.get("JPT_SUPPRESS_RECOVERY_DIALOG") == "1":
+        return
+    title = "JPT recovery complete" if success else "JPT recovery failed"
+    if sys.platform == "darwin":
+        script = (
+            'on run argv\n'
+            'display alert (item 1 of argv) message (item 2 of argv) '
+            f'as {"informational" if success else "critical"} '
+            'buttons {"OK"} default button "OK"\n'
+            'end run'
+        )
+        try:
+            subprocess.run(
+                ["osascript", "-e", script, title, message],
+                check=False,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            logger.exception("Unable to show the macOS recovery result")
+    elif sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                message,
+                title,
+                0x40 if success else 0x10,
+            )
+        except (AttributeError, OSError):
+            logger.exception("Unable to show the Windows recovery result")
+
+
 def main() -> int:
     multiprocessing.freeze_support()
     args = arguments()
@@ -114,6 +154,37 @@ def main() -> int:
         return 1
 
     try:
+        recovery_backup = getattr(args, "recover_backup", None)
+        if recovery_backup:
+            from backend.services.admin_service import AdminService
+
+            try:
+                result = AdminService(data_dir=data_dir).restore_database_from_backup(
+                    recovery_backup.expanduser().resolve(),
+                    preserve_current=True,
+                )
+                message = (
+                    "The pre-upgrade database was restored. The database present "
+                    "before recovery was preserved at:\n"
+                    f"{result['safety_database']}"
+                )
+                logger.info(
+                    "Recovered JPT database from validated pre-upgrade backup: %s; "
+                    "preserved previous database: %s",
+                    result["source_backup"],
+                    result["safety_database"],
+                )
+                show_recovery_result(True, message, logger)
+                return 0
+            except Exception as exc:
+                logger.exception("Offline pre-upgrade recovery failed")
+                show_recovery_result(
+                    False,
+                    "No database was replaced. Check data/logs/launcher.log and "
+                    "confirm that the selected file is an automatic pre-upgrade backup.",
+                    logger,
+                )
+                return 1
         port = find_available_port(args.port)
         write_instance_port(data_dir / "config", port)
         from backend.app_v2 import create_app

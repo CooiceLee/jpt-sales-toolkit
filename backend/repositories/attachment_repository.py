@@ -25,6 +25,8 @@ class AttachmentRepository(BaseRepository):
         sha256: str,
         uploaded_by: str,
         version_no: int = 1,
+        *,
+        commit: bool = True,
     ) -> str:
         """Create new attachment record. Returns attachment ID."""
         attachment_id = generate_uuid()
@@ -50,7 +52,8 @@ class AttachmentRepository(BaseRepository):
                 now_iso(),
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return attachment_id
 
     def list_for_lead(
@@ -101,7 +104,13 @@ class AttachmentRepository(BaseRepository):
         self.conn.commit()
         return cursor.rowcount > 0
 
-    def update_metadata(self, attachment_id: str, data: dict) -> Optional[dict]:
+    def update_metadata(
+        self,
+        attachment_id: str,
+        data: dict,
+        *,
+        commit: bool = True,
+    ) -> Optional[dict]:
         """Update editable attachment metadata."""
         allowed = {"category", "version_no", "original_name"}
         update_data = {key: value for key, value in data.items() if key in allowed}
@@ -109,11 +118,37 @@ class AttachmentRepository(BaseRepository):
             return self.get_by_id(attachment_id)
 
         sql, params = self._build_update(attachment_id, update_data)
+        sql += " AND archived_at IS NULL"
         cursor = self.conn.execute(sql, params)
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         if cursor.rowcount == 0:
             return None
         return self.get_by_id(attachment_id)
+
+    def find_duplicate(
+        self,
+        lead_id: str,
+        category: str,
+        original_name: str,
+        sha256: str,
+    ) -> Optional[dict]:
+        """Find the same logical attachment, not merely the same file bytes."""
+        cursor = self.conn.execute(
+            """
+            SELECT * FROM attachments
+            WHERE lead_id = ?
+              AND category = ?
+              AND original_name = ?
+              AND sha256 = ?
+              AND archived_at IS NULL
+            ORDER BY uploaded_at DESC
+            LIMIT 1
+            """,
+            (lead_id, category, original_name, sha256),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
     def find_by_sha256(self, sha256: str) -> Optional[dict]:
         """Find attachment by SHA256 hash (for deduplication)."""

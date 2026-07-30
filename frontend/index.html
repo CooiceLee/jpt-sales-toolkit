@@ -10,10 +10,10 @@
 </head>
 <body>
     <!-- Login Modal -->
-    <div id="login-modal" class="modal">
+    <div id="login-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
         <div class="modal-content" style="max-width:400px;">
             <div class="modal-header">
-                <h2 class="modal-title">JPT Sales Toolkit</h2>
+                <h2 class="modal-title" id="login-modal-title">JPT Sales Toolkit</h2>
                 <button type="button" class="language-toggle" data-language-toggle onclick="I18n.toggle()" aria-label="Switch to 中文">中</button>
             </div>
             <div class="modal-body">
@@ -27,7 +27,7 @@
                         <label class="form-label">Password</label>
                         <input type="password" id="login-password" class="form-input" required placeholder="Enter password" autocomplete="current-password">
                     </div>
-                    <div id="login-error" style="color:var(--error);margin-bottom:12px;display:none;"></div>
+                    <div id="login-error" role="alert" aria-live="assertive" style="color:var(--error);margin-bottom:12px;display:none;"></div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -37,7 +37,7 @@
     </div>
 
     <!-- First-run Offline Authorization -->
-    <div id="activation-modal" class="modal">
+    <div id="activation-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="activation-modal-title">
         <div class="modal-content activation-modal-content">
             <div class="modal-header">
                 <h2 class="modal-title" id="activation-modal-title">Activate JPT Sales Toolkit</h2>
@@ -105,21 +105,22 @@
                         </div>
                     </div>
                 </div>
-                <div id="activation-message" class="activation-message" style="display:none;"></div>
+                <div id="activation-message" class="activation-message" role="status" aria-live="polite" style="display:none;"></div>
             </div>
         </div>
     </div>
 
     <!-- Coordinate Correction Modal -->
-    <div id="coordinate-modal" class="modal">
+    <div id="coordinate-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="coordinate-modal-title">
         <div class="modal-content" style="max-width:720px;">
             <div class="modal-header">
-                <h2 class="modal-title">Correct Location</h2>
-                <button type="button" class="btn btn-text" onclick="closeCoordinateModal()" style="position:absolute;right:16px;top:16px;">&times;</button>
+                <h2 class="modal-title" id="coordinate-modal-title">Correct Location</h2>
+                <button type="button" class="btn btn-text" onclick="closeCoordinateModal()" aria-label="Close location editor" style="position:absolute;right:16px;top:16px;">&times;</button>
             </div>
             <div class="modal-body">
                 <p style="margin-bottom:12px;font-weight:500;" id="coord-customer-name"></p>
-                <p style="margin-bottom:16px;color:var(--ink-600);font-size:14px;">Paste an address from email, click on the map, or enter coordinates manually. Drag the marker to fine-tune.</p>
+                <p style="margin-bottom:8px;color:var(--ink-600);font-size:14px;">Paste an address from email, click on the map, or enter coordinates manually. Drag the marker to fine-tune.</p>
+                <p style="margin-bottom:16px;color:var(--ink-500);font-size:12px;">Address search sends these location fields to one or more configured external geocoding services.</p>
                 <div class="coord-address-grid">
                     <div class="form-group coord-address-main">
                         <label class="form-label">Address</label>
@@ -142,11 +143,11 @@
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
                     <div class="form-group">
                         <label class="form-label">Latitude</label>
-                        <input type="number" id="coord-lat" class="form-input" step="any" min="-90" max="90" placeholder="e.g. 48.8566" onchange="updateCoordinateMarker()">
+                        <input type="number" id="coord-lat" class="form-input" step="any" min="-90" max="90" placeholder="e.g. 48.8566" oninput="clearCoordinateGeocodeResult()" onchange="updateCoordinateMarker()">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Longitude</label>
-                        <input type="number" id="coord-lng" class="form-input" step="any" min="-180" max="180" placeholder="e.g. 2.3522" onchange="updateCoordinateMarker()">
+                        <input type="number" id="coord-lng" class="form-input" step="any" min="-180" max="180" placeholder="e.g. 2.3522" oninput="clearCoordinateGeocodeResult()" onchange="updateCoordinateMarker()">
                     </div>
                 </div>
                 <p style="margin-top:8px;font-size:12px;color:var(--ink-500);">This will mark the location as manually verified and lock it from auto-geocoding.</p>
@@ -217,9 +218,16 @@
                 <div class="sidebar-subtitle" id="sidebar-subtitle">Q2 · 2026</div>
             </div>
             <div class="sidebar-search">
-                <div class="search-box">
+                <div class="search-box" role="search">
                     <span class="icon">&#128269;</span>
-                    <input type="text" id="global-search" placeholder="Jump to inquiry, country...">
+                    <input type="search" id="global-search" placeholder="Search and open accessible leads..."
+                        autocomplete="off" role="combobox" aria-autocomplete="list"
+                        aria-controls="global-search-list" aria-expanded="false"
+                        aria-label="Search and open accessible leads">
+                </div>
+                <div class="global-search-results hidden" id="global-search-results">
+                    <div class="global-search-status" id="global-search-status" aria-live="polite">Type at least 2 characters to search accessible leads.</div>
+                    <div class="global-search-list" id="global-search-list" role="listbox"></div>
                 </div>
             </div>
             <nav class="sidebar-nav">
@@ -291,16 +299,17 @@
                     <span class="nav-label">Team & Authorization</span>
                 </div>
             </nav>
-            <div class="sidebar-footer" id="user-footer" style="position:relative;">
+            <div class="sidebar-footer" id="user-footer" role="button" tabindex="0"
+                aria-haspopup="menu" aria-expanded="false" style="position:relative;">
                 <div class="user-avatar" id="user-avatar">U</div>
                 <div class="user-info">
                     <div class="user-name" id="user-name">User</div>
                     <div class="user-role" id="user-role">Sales</div>
                 </div>
-                <div class="user-menu" id="user-menu">
-                    <div class="user-menu-item" onclick="switchAccount()">&#128100; Switch Account</div>
-                    <div class="user-menu-item" onclick="logout()">&#128682; Logout</div>
-                    <button type="button" class="user-menu-item hidden" id="desktop-exit" onclick="exitApplication()">&#9209; Exit JPT</button>
+                <div class="user-menu" id="user-menu" role="menu">
+                    <button type="button" class="user-menu-item" role="menuitem" onclick="switchAccount()">&#128100; Switch Account</button>
+                    <button type="button" class="user-menu-item" role="menuitem" onclick="logout()">&#128682; Logout</button>
+                    <button type="button" class="user-menu-item hidden" role="menuitem" id="desktop-exit" onclick="exitApplication()">&#9209; Exit JPT</button>
                 </div>
             </div>
         </aside>
@@ -324,6 +333,7 @@
                 <!-- Dashboard Module -->
                 <div id="module-dashboard" class="module active">
                     <h1 class="module-title">Dashboard</h1>
+                    <div id="dashboard-status" class="dashboard-status hidden" role="status" aria-live="polite"></div>
 
                     <div class="kpi-grid">
                         <div class="kpi-card">
@@ -377,18 +387,18 @@
                                         <option value="lost">Lost</option>
                                     </select>
                                     <select class="filter-select" id="map-region-filter" title="Customer geographic region" aria-label="Customer geographic region">
-                                        <option value="">All customer geographies</option>
+                                        <option value="">All regions</option>
                                         <option value="EU">Europe</option>
+                                        <option value="AM">North America / Canada / Australia</option>
+                                        <option value="RIMEA">Russia / Turkey / Middle East</option>
                                         <option value="SEA">Southeast Asia</option>
-                                        <option value="AM">Americas</option>
-                                        <option value="RIMEA">Russia/India/ME</option>
                                     </select>
                                     <select class="filter-select" id="map-quality-filter" title="Coordinate quality">
                                         <option value="">All mapped coordinates</option>
                                         <option value="exact">Exact only</option>
                                         <option value="needs_geocode">Approximate only</option>
                                     </select>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="batchGeocode()" title="Re-geocode customers without precise coordinates" id="batch-geocode-btn" style="white-space:nowrap;">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="batchGeocode()" title="Re-geocode customers without precise coordinates" id="batch-geocode-btn" style="white-space:nowrap;" hidden>
                                         Batch Geocode
                                     </button>
                                 </div>
@@ -438,19 +448,20 @@
                 <div id="module-handler" class="module">
                     <h1 class="module-title">Step 02 · Inquiry Handler</h1>
                     <div class="filters-bar">
-                        <select class="filter-select" id="filter-stage">
-                            <option value="New" selected>New</option>
-                            <option value="">All stages</option>
-                            <option value="Assigned">Assigned</option>
-                            <option value="Following">Following</option>
-                            <option value="Quoted">Quoted</option>
-                            <option value="Won">Won</option>
-                            <option value="Lost">Lost</option>
-                        </select>
-                        <input type="text" class="form-input" id="search-inquiry" placeholder="Search company, ID, country..." style="max-width:250px;">
+                        <div class="filter-primary">
+                            <select class="filter-select" id="filter-stage">
+                                <option value="New" selected>New</option>
+                                <option value="">All stages</option>
+                                <option value="Assigned">Assigned</option>
+                                <option value="Following">Following</option>
+                                <option value="Quoted">Quoted</option>
+                                <option value="Won">Won</option>
+                                <option value="Lost">Lost</option>
+                            </select>
+                        </div>
                         <span class="filter-spacer"></span>
-                        <span id="inquiry-count" style="color:var(--ink-500);font-size:13px;">0 inquiries</span>
-                        <button type="button" class="btn btn-primary" onclick="showNewInquiryModal()">+ New Inquiry</button>
+                        <span class="filter-summary" id="inquiry-count">0 inquiries</span>
+                        <button type="button" class="btn btn-primary filter-action" onclick="showNewInquiryModal()">+ New Inquiry</button>
                     </div>
                     <div class="cards-grid" id="handler-cards"></div>
                 </div>
@@ -459,15 +470,17 @@
                 <div id="module-followup" class="module">
                     <h1 class="module-title">Step 03 · Follow-up Tracker</h1>
                     <div class="filters-bar">
-                        <div class="filter-tabs">
-                            <button type="button" class="filter-tab active" data-filter="all">All Active</button>
-                            <button type="button" class="filter-tab" data-filter="overdue">Overdue</button>
-                            <button type="button" class="filter-tab" data-filter="today">Due today</button>
-                            <button type="button" class="filter-tab" data-filter="week">Next 7 days</button>
+                        <div class="filter-primary">
+                            <div class="filter-tabs">
+                                <button type="button" class="filter-tab active" data-filter="all">All Active</button>
+                                <button type="button" class="filter-tab" data-filter="overdue">Overdue</button>
+                                <button type="button" class="filter-tab" data-filter="today">Due today</button>
+                                <button type="button" class="filter-tab" data-filter="week">Next 7 days</button>
+                            </div>
                         </div>
                         <span class="filter-spacer"></span>
-                        <span id="followup-count" style="color:var(--ink-500);font-size:13px;">0 active</span>
-                        <button type="button" class="btn btn-primary" onclick="logFollowUp()">+ Log follow-up</button>
+                        <span class="filter-summary" id="followup-count">0 active</span>
+                        <button type="button" class="btn btn-primary filter-action" onclick="logFollowUp()">+ Log follow-up</button>
                     </div>
                     <div class="followup-activity-bar">
                         <label for="followup-activity-filter">Last activity</label>
@@ -500,16 +513,18 @@
                 <div id="module-sampling" class="module">
                     <h1 class="module-title">Step 04 · Pre-sales / Sampling</h1>
                     <div class="filters-bar">
-                        <div class="filter-tabs" id="sampling-tabs">
-                            <button type="button" class="filter-tab active" data-filter="all">All tasks</button>
-                            <button type="button" class="filter-tab" data-filter="Open">Open</button>
-                            <button type="button" class="filter-tab" data-filter="In Progress">In Progress</button>
-                            <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
-                            <button type="button" class="filter-tab" data-filter="Cancelled">Cancelled</button>
+                        <div class="filter-primary">
+                            <div class="filter-tabs" id="sampling-tabs">
+                                <button type="button" class="filter-tab active" data-filter="all">All tasks</button>
+                                <button type="button" class="filter-tab" data-filter="Open">Open</button>
+                                <button type="button" class="filter-tab" data-filter="In Progress">In Progress</button>
+                                <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
+                                <button type="button" class="filter-tab" data-filter="Cancelled">Cancelled</button>
+                            </div>
                         </div>
                         <span class="filter-spacer"></span>
-                        <span id="sampling-count" style="color:var(--ink-500);font-size:13px;">0 leads · 0 tasks</span>
-                        <button type="button" class="btn btn-primary" data-task-manager onclick="newSampleRequest()">+ New pre-sales task</button>
+                        <span class="filter-summary" id="sampling-count">0 leads · 0 tasks</span>
+                        <button type="button" class="btn btn-primary filter-action" data-task-manager onclick="newSampleRequest()">+ New pre-sales task</button>
                     </div>
                     <div class="cards-grid" id="sampling-cards"></div>
                 </div>
@@ -517,7 +532,7 @@
                 <!-- Deal Module -->
                 <div id="module-deal" class="module">
                     <h1 class="module-title">Step 05 · Deal Closer</h1>
-                    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="kpi-grid kpi-grid-4">
                         <div class="kpi-card">
                             <div class="kpi-label">Quoting</div>
                             <div class="kpi-value" id="deal-quoting">0</div>
@@ -536,13 +551,15 @@
                         </div>
                     </div>
                     <div class="filters-bar">
-                        <div class="filter-tabs" id="deal-tabs">
-                            <button type="button" class="filter-tab active" data-filter="all">All deals</button>
-                            <button type="button" class="filter-tab" data-filter="Quoted">Quoted</button>
-                            <button type="button" class="filter-tab" data-filter="Lost">Lost</button>
+                        <div class="filter-primary">
+                            <div class="filter-tabs" id="deal-tabs">
+                                <button type="button" class="filter-tab active" data-filter="all">All deals</button>
+                                <button type="button" class="filter-tab" data-filter="Quoted">Quoted</button>
+                                <button type="button" class="filter-tab" data-filter="Lost">Lost</button>
+                            </div>
                         </div>
                         <span class="filter-spacer"></span>
-                        <button type="button" class="btn btn-primary" onclick="createQuote()">+ Create quote</button>
+                        <button type="button" class="btn btn-primary filter-action" onclick="createQuote()">+ Create quote</button>
                     </div>
                     <div class="cards-grid" id="deal-cards"></div>
                 </div>
@@ -551,15 +568,17 @@
                 <div id="module-fulfillment" class="module">
                     <h1 class="module-title">Step 06 · Order Fulfillment</h1>
                     <div class="filters-bar">
-                        <div class="filter-tabs" id="fulfillment-tabs">
-                            <button type="button" class="filter-tab active" data-filter="all">All orders</button>
-                            <button type="button" class="filter-tab" data-filter="Not Started">Not started</button>
-                            <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
-                            <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
+                        <div class="filter-primary">
+                            <div class="filter-tabs" id="fulfillment-tabs">
+                                <button type="button" class="filter-tab active" data-filter="all">All orders</button>
+                                <button type="button" class="filter-tab" data-filter="Not Started">Not started</button>
+                                <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
+                                <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
+                            </div>
                         </div>
                         <span class="filter-spacer"></span>
-                        <span id="fulfillment-count" style="color:var(--ink-500);font-size:13px;">0 orders</span>
-                        <button type="button" class="btn btn-primary" onclick="logStatus()">+ Log status</button>
+                        <span class="filter-summary" id="fulfillment-count">0 orders</span>
+                        <button type="button" class="btn btn-primary filter-action" onclick="logStatus()">+ Log status</button>
                     </div>
                     <div class="cards-grid" id="fulfillment-cards"></div>
                 </div>
@@ -568,15 +587,17 @@
                 <div id="module-aftersales" class="module">
                     <h1 class="module-title">Step 07 · After-sales</h1>
                     <div class="filters-bar">
-                        <div class="filter-tabs" id="aftersales-tabs">
-                            <button type="button" class="filter-tab active" data-filter="all">All issues</button>
-                            <button type="button" class="filter-tab" data-filter="Open">Open</button>
-                            <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
-                            <button type="button" class="filter-tab" data-filter="Resolved">Resolved</button>
+                        <div class="filter-primary">
+                            <div class="filter-tabs" id="aftersales-tabs">
+                                <button type="button" class="filter-tab active" data-filter="all">All issues</button>
+                                <button type="button" class="filter-tab" data-filter="Open">Open</button>
+                                <button type="button" class="filter-tab" data-filter="In Progress">In progress</button>
+                                <button type="button" class="filter-tab" data-filter="Resolved">Resolved</button>
+                            </div>
                         </div>
                         <span class="filter-spacer"></span>
-                        <span id="aftersales-count" style="color:var(--ink-500);font-size:13px;">0 issues</span>
-                        <button type="button" class="btn btn-primary" onclick="logIssue()">+ Log issue</button>
+                        <span class="filter-summary" id="aftersales-count">0 issues</span>
+                        <button type="button" class="btn btn-primary filter-action" onclick="logIssue()">+ Log issue</button>
                     </div>
                     <div class="cards-grid" id="aftersales-cards"></div>
                 </div>
@@ -597,9 +618,9 @@
                         <select class="filter-select" id="review-region">
                             <option value="">All regions</option>
                             <option value="EU">Europe</option>
+                            <option value="AM">North America / Canada / Australia</option>
+                            <option value="RIMEA">Russia / Turkey / Middle East</option>
                             <option value="SEA">Southeast Asia</option>
-                            <option value="AM">Americas</option>
-                            <option value="RIMEA">Russia/India/ME</option>
                         </select>
                         <select class="filter-select" id="review-stage">
                             <option value="">All stages</option>
@@ -613,7 +634,7 @@
                         <span class="filter-spacer"></span>
                         <button type="button" class="btn btn-primary" onclick="loadDataReview()">Refresh</button>
                     </div>
-                    <div class="kpi-grid" style="grid-template-columns: repeat(5, 1fr);">
+                    <div class="kpi-grid kpi-grid-5">
                         <div class="kpi-card"><div class="kpi-label">Open Leads</div><div class="kpi-value" id="review-open">0</div></div>
                         <div class="kpi-card"><div class="kpi-label">Won Leads</div><div class="kpi-value" id="review-won">0</div></div>
                         <div class="kpi-card highlight"><div class="kpi-label">Won Value</div><div class="kpi-value">$<span id="review-won-value">0</span><span class="kpi-unit">K</span></div></div>
@@ -650,11 +671,11 @@
                     <h1 class="module-title">Trip Planner</h1>
                     <div class="filters-bar">
                         <select class="filter-select" id="trip-region" title="Customer geographic region" aria-label="Customer geographic region">
-                            <option value="">All customer geographies</option>
+                            <option value="">All regions</option>
                             <option value="EU">Europe</option>
+                            <option value="AM">North America / Canada / Australia</option>
+                            <option value="RIMEA">Russia / Turkey / Middle East</option>
                             <option value="SEA">Southeast Asia</option>
-                            <option value="AM">Americas</option>
-                            <option value="RIMEA">Russia/India/ME</option>
                         </select>
                         <select class="filter-select" id="trip-stage">
                             <option value="">All stages</option>
@@ -732,7 +753,7 @@
                 <!-- Coordinate Review Module -->
                 <div id="module-coordinate-review" class="module">
                     <h1 class="module-title">Coordinate Review</h1>
-                    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 24px;">
+                    <div class="kpi-grid kpi-grid-3">
                         <div class="kpi-card">
                             <div class="kpi-label">Needs Review</div>
                             <div class="kpi-value" id="coord-needs-review">0</div>
@@ -906,8 +927,8 @@
 
                     <section id="transfer-json" class="transfer-workspace">
                         <div class="json-exchange-grid">
-                            <article class="kpi-card"><h3>Export My Data</h3><p>JSON is for member-to-Leader record exchange. Attachment files are not included.</p><button type="button" class="btn btn-primary" onclick="exportData()">Export My Data</button><div id="export-result" class="wizard-inline-result" style="display:none;"></div></article>
-                            <article class="kpi-card"><h3>Import JSON Package</h3><p>Use JSON only for terminal data exchange. It is not the Excel history-import workflow.</p><input type="file" id="json-import-file" class="form-input" accept=".json,application/json"><div class="json-import-actions"><button type="button" class="btn btn-secondary" onclick="preflightJsonImport()">Preflight JSON</button><button type="button" class="btn btn-primary" onclick="importJsonData()">Import JSON</button></div><div id="json-preflight-result"></div><div id="json-import-result"></div></article>
+                            <article class="kpi-card"><h3>Export My Data</h3><p>JSON is for member-to-Leader record exchange. Attachment files are not included.</p><div id="json-export-recipient-field" class="form-group" hidden><label for="json-export-recipient">Recipient salesperson</label><select id="json-export-recipient" class="form-input"><option value="">Select recipient salesperson</option></select><small>Leader packages include only leads owned by the selected member.</small></div><button type="button" class="btn btn-primary" onclick="exportData()">Export My Data</button><div id="export-result" class="wizard-inline-result" style="display:none;"></div></article>
+                            <article class="kpi-card"><h3>Import JSON Package</h3><p>Use JSON only for terminal data exchange. It is not the Excel history-import workflow.</p><input type="file" id="json-import-file" class="form-input" accept=".json,application/json"><div class="json-import-actions"><button type="button" class="btn btn-secondary" id="json-preflight-btn" onclick="preflightJsonImport()">Preflight JSON</button><button type="button" class="btn btn-primary" id="json-import-btn" onclick="importJsonData()" disabled title="Run a clean preflight for this file before import">Import JSON</button></div><div id="json-preflight-result" aria-live="polite"></div><div id="json-import-result" aria-live="polite"></div></article>
                         </div>
                     </section>
 
@@ -939,10 +960,10 @@
         </main>
 
         <!-- Detail Panel -->
-        <aside class="detail-panel" id="detail-panel">
+        <aside class="detail-panel" id="detail-panel" role="dialog" aria-modal="false" aria-labelledby="panel-title">
             <div class="panel-header">
                 <span class="panel-title" id="panel-title">Inquiry Details</span>
-                <button type="button" class="panel-close" onclick="closePanel()">&times;</button>
+                <button type="button" class="panel-close" onclick="closePanel()" aria-label="Close lead details">&times;</button>
             </div>
             <div class="panel-tabs" id="panel-tabs"></div>
             <div class="panel-content" id="panel-content"></div>
@@ -976,9 +997,12 @@
 
     <!-- Shared workflow contracts -->
     <script src="/static/js/modules/role-capabilities.js?v=1.1"></script>
+    <script src="/static/js/modules/worklist-ui.js?v=1.0"></script>
+    <script src="/static/js/modules/panel-dirty-state.js?v=1.0"></script>
     <script src="/static/js/modules/stage-filter-view.js?v=1.0"></script>
     <script src="/static/js/modules/stage-filter-data.js?v=1.0"></script>
     <script src="/static/js/modules/lead-navigation.js?v=1.0"></script>
+    <script src="/static/js/modules/global-search.js?v=1.0"></script>
     <script src="/static/js/modules/refresh-counts.js?v=1.0"></script>
     <script src="/static/js/modules/user-menu.js?v=1.2"></script>
 
@@ -989,6 +1013,7 @@
     <script src="/static/js/modules/cards.js?v=1.2"></script>
     <script src="/static/js/modules/followup-filter-model.js?v=1.0"></script>
     <script src="/static/js/modules/followup-filter-controls.js?v=1.0"></script>
+    <script src="/static/js/modules/worklist-sort.js?v=1.0"></script>
     <script src="/static/js/modules/sales-worklists.js?v=1.1"></script>
     <script src="/static/js/modules/service-worklists.js?v=1.0"></script>
     <script src="/static/js/modules/pre-sales-task-model.js?v=1.0"></script>
@@ -1009,6 +1034,7 @@
     <script src="/static/js/modules/lead-closure.js?v=1.0"></script>
     <script src="/static/js/modules/followups-view.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-task-mappers.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-panel-data.js?v=1.0"></script>
     <script src="/static/js/modules/followups-form.js?v=1.0"></script>
     <script src="/static/js/modules/followups-actions.js?v=1.0"></script>
     <script src="/static/js/modules/aftersales-view.js?v=1.0"></script>
@@ -1030,7 +1056,9 @@
     <script src="/static/js/modules/customer-merge-preview.js?v=1.1"></script>
     <script src="/static/js/modules/customer-merge-view.js?v=1.1"></script>
     <script src="/static/js/modules/customer-merge-action.js?v=1.1"></script>
-    <script src="/static/js/modules/data-transfer.js?v=1.2"></script>
+    <script src="/static/js/modules/json-export.js?v=1.0"></script>
+    <script src="/static/js/modules/data-transfer-view.js?v=1.0"></script>
+    <script src="/static/js/modules/data-transfer.js?v=1.3"></script>
     <script src="/static/js/modules/spreadsheet-import-state.js?v=1.2"></script>
     <script src="/static/js/modules/spreadsheet-import-progress.js?v=1.3"></script>
     <script src="/static/js/modules/spreadsheet-import-view.js?v=1.2"></script>
@@ -1053,10 +1081,16 @@
 
     <!-- Coordinate maintenance -->
     <script src="/static/js/modules/coordinate-state.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-fields.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-geocode-view.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-busy-view.js?v=1.0"></script>
     <script src="/static/js/modules/coordinate-panel.js?v=1.0"></script>
     <script src="/static/js/modules/coordinate-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-save.js?v=1.0"></script>
+    <script src="/static/js/modules/batch-geocode-data.js?v=1.0"></script>
     <script src="/static/js/modules/batch-geocode.js?v=1.0"></script>
     <script src="/static/js/modules/coordinate-review-data.js?v=1.0"></script>
+    <script src="/static/js/modules/coordinate-review-table.js?v=1.0"></script>
     <script src="/static/js/modules/coordinate-review-view.js?v=1.0"></script>
     <script src="/static/js/modules/coordinate-review-actions.js?v=1.0"></script>
     <script src="/static/js/modules/legacy-actions.js?v=1.0"></script>

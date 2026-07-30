@@ -1059,7 +1059,11 @@ class ReviewService:
             "customer_name": group["customer_name"],
             "country": group.get("country"),
             "city": group.get("city"),
+            "postal_code": group.get("postal_code"),
             "address": group.get("address"),
+            "customer_row_version": group.get("customer_row_version"),
+            "can_edit": bool(group.get("can_edit")),
+            "invalid_coordinates": bool(group.get("invalid_coordinates")),
             "lead_count": len(group["leads"]),
             "latest_lead_id": group["leads"][0]["id"] if group["leads"] else None,
         }

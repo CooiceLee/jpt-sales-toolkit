@@ -64,7 +64,9 @@
     };
 
     window.editSampleTask = index => window.showSampleTaskForm(index);
-    window.hideSampleTaskForm = () =>
+    window.hideSampleTaskForm = () => {
         document.getElementById('sample-task-form')?.classList.add('hidden');
+        window.PanelDirtyState?.reset?.();
+    };
     window.SamplingFormController = { currentTask };
 })();

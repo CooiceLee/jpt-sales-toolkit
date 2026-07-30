@@ -17,6 +17,7 @@ window.showAfterSalesForm = function() {
 
 window.hideAfterSalesForm = function() {
     document.getElementById('aftersales-form').classList.add('hidden');
+    window.PanelDirtyState?.reset?.();
 };
 
 window.editAfterSales = function(index) {

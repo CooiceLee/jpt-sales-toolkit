@@ -13,6 +13,8 @@ const State = {
     },
     inquiries: [],
     currentInquiry: null,
+    selectedLeadId: '',
+    selectedCardContext: '',
     map: null,
     countryMarkers: {},
     mapLayer: null,
@@ -144,7 +146,7 @@ async function handleLogin() {
     const errorEl = document.getElementById('login-error');
 
     if (!username || !password) {
-        errorEl.textContent = 'Please enter username and password';
+        errorEl.textContent = I18n.t('Please enter username and password');
         errorEl.style.display = 'block';
         return;
     }
@@ -156,7 +158,7 @@ async function handleLogin() {
         hideModal('login-modal');
         startApp();
     } catch (err) {
-        errorEl.textContent = err.message || 'Login failed';
+        errorEl.textContent = I18n.t(err.message || 'Login failed');
         errorEl.style.display = 'block';
     }
 }
@@ -187,6 +189,7 @@ function startApp() {
     }
     initFilters();
     initStageFilterControls();
+    initGlobalSearch();
     initUserMenu();
 
     // Load initial data
@@ -223,11 +226,15 @@ async function api(endpoint, options = {}) {
 function initNavigation() {
     // Rail buttons
     document.querySelectorAll('.rail-btn[data-module]').forEach(btn => {
+        if (btn.dataset.navigationBound) return;
+        btn.dataset.navigationBound = '1';
         btn.addEventListener('click', () => switchModule(btn.dataset.module));
     });
 
     // Sidebar nav items
     document.querySelectorAll('.nav-item[data-module]').forEach(item => {
+        if (item.dataset.navigationBound) return;
+        item.dataset.navigationBound = '1';
         item.addEventListener('click', () => switchModule(item.dataset.module));
     });
 }
@@ -239,8 +246,8 @@ function switchModule(module) {
     }
     const previousModule = document.querySelector('.module.active')?.id?.replace('module-', '');
 
-    // Close panel
-    closePanel();
+    // Do not discard an edited detail form without an explicit confirmation.
+    if (closePanel() === false) return false;
 
     // Update rail
     document.querySelectorAll('.rail-btn').forEach(b => b.classList.remove('active'));
@@ -286,6 +293,7 @@ function switchModule(module) {
 
     // Load module data
     loadModuleData(module);
+    return true;
 }
 
 async function loadModuleData(module) {
@@ -306,7 +314,46 @@ async function loadModuleData(module) {
 }
 
 // ===== Dashboard =====
+function setDashboardStatus(message = '', error = false) {
+    const status = document.getElementById('dashboard-status');
+    if (!status) return;
+    status.replaceChildren();
+    status.classList.toggle('hidden', !message);
+    status.classList.toggle('error-state', Boolean(message && error));
+    if (!message) return;
+
+    const label = document.createElement('span');
+    label.textContent = I18n.t(message);
+    status.appendChild(label);
+    if (!error) return;
+
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.id = 'dashboard-retry';
+    retry.className = 'btn btn-secondary btn-sm';
+    retry.textContent = I18n.t('Retry');
+    retry.addEventListener('click', loadDashboard);
+    status.appendChild(retry);
+}
+
+function clearDashboardData() {
+    [
+        'kpi-total', 'kpi-recent', 'kpi-following', 'kpi-won', 'kpi-pipeline',
+        'nav-total', 'nav-parser-total', 'nav-handler-total', 'nav-followup-total',
+        'nav-sampling-total', 'nav-deal-total', 'nav-fulfillment-total',
+        'nav-aftersales-total'
+    ].forEach(id => setText(id, '—'));
+    const funnel = document.getElementById('pipeline-funnel');
+    if (funnel) {
+        funnel.innerHTML = `<div class="empty-state compact error-state">${
+            escapeHtml(I18n.t('Dashboard data unavailable. Please retry.'))
+        }</div>`;
+    }
+}
+
 async function loadDashboard() {
+    setDashboardStatus('Loading dashboard data...');
+    clearDashboardData();
     try {
         const stats = await ApiClient.getDashboard();
 
@@ -326,12 +373,15 @@ async function loadDashboard() {
 
         // Update funnel
         renderFunnel(byStage);
-
-        // Update review map with current filters.
-        await loadReviewMap();
+        setDashboardStatus();
     } catch (err) {
         console.error('Dashboard error:', err);
+        clearDashboardData();
+        setDashboardStatus('Dashboard data unavailable. Please retry.', true);
     }
+
+    // Map errors have their own visible state and must not invalidate valid KPIs.
+    if (typeof loadReviewMap === 'function') await loadReviewMap();
 }
 
 function renderFunnel(byStage) {

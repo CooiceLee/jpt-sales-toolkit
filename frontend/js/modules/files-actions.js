@@ -1,3 +1,8 @@
+function fileActionText(text, params = {}) {
+    return window.I18n?.t ? I18n.t(text, params) : Object.entries(params)
+        .reduce((value, [key, item]) => value.replace(`{${key}}`, item), text);
+}
+
 window.saveAttachment = async function() {
     const leadId = State.currentInquiry?.id;
     const fileInput = document.getElementById('attachment-file');
@@ -12,18 +17,21 @@ window.saveAttachment = async function() {
         : null;
 
     if (!leadId) {
-        alert('No lead selected');
+        alert(fileActionText('No lead selected.'));
         return;
     }
     if (!Number.isInteger(versionNo) || versionNo < 1) {
-        alert('Version must be a positive number');
+        alert(fileActionText('Version must be a positive number.'));
         return;
     }
     if (!attachment && !file) {
-        alert('Please choose a file');
+        alert(fileActionText('Please choose a file.'));
         return;
     }
 
+    const saveButton = document.getElementById('attachment-save-btn');
+    if (saveButton?.disabled) return;
+    if (saveButton) saveButton.disabled = true;
     try {
         if (attachment?.id) {
             await ApiClient.updateAttachment(leadId, attachment.id, {
@@ -36,11 +44,18 @@ window.saveAttachment = async function() {
         }
         await refreshCurrentInquiryData(leadId);
         renderPanelContent('files');
-        notify(attachment?.id ? 'File metadata updated' : 'File uploaded');
+        notify(attachment?.id
+            ? fileActionText('File metadata updated.')
+            : fileActionText('File uploaded.'));
         hideAttachmentForm();
     } catch (err) {
         console.error('Attachment upload error:', err);
-        alert('Error uploading file: ' + (err.message || 'Unknown error'));
+        alert(fileActionText('Error uploading file: {error}', {
+            error: fileActionText(err?.message || 'Unknown error')
+        }));
+    } finally {
+        const currentButton = document.getElementById('attachment-save-btn');
+        if (currentButton) currentButton.disabled = false;
     }
 };
 
@@ -61,7 +76,9 @@ window.downloadAttachment = async function(index) {
         URL.revokeObjectURL(url);
     } catch (err) {
         console.error('Attachment download error:', err);
-        alert('Error downloading file: ' + (err.message || 'Unknown error'));
+        alert(fileActionText('Error downloading file: {error}', {
+            error: fileActionText(err?.message || 'Unknown error')
+        }));
     }
 };
 
@@ -70,7 +87,7 @@ window.archiveAttachment = async function(index) {
     const leadId = State.currentInquiry?.id;
     if (!attachment || !leadId) return;
 
-    if (!confirm('Archive this file?')) return;
+    if (!confirm(fileActionText('Archive this file?'))) return;
 
     try {
         await ApiClient.archiveAttachment(leadId, attachment.id);
@@ -78,7 +95,8 @@ window.archiveAttachment = async function(index) {
         renderPanelContent('files');
     } catch (err) {
         console.error('Attachment archive error:', err);
-        alert('Error archiving file: ' + (err.message || 'Unknown error'));
+        alert(fileActionText('Error archiving file: {error}', {
+            error: fileActionText(err?.message || 'Unknown error')
+        }));
     }
 };
-

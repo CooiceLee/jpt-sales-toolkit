@@ -27,6 +27,8 @@ class ActivityRepository(BaseRepository):
         before_value: Optional[str] = None,
         after_value: Optional[str] = None,
         created_at: Optional[str] = None,
+        *,
+        commit: bool = True,
     ) -> str:
         """Create new activity. Returns activity ID."""
         activity_id = generate_uuid()
@@ -54,7 +56,8 @@ class ActivityRepository(BaseRepository):
                 created_at or now_iso(),
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return activity_id
 
     def list_for_lead(

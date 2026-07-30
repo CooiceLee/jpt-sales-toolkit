@@ -1,13 +1,13 @@
 function handleContactValidationError(message) {
     // Parse error message and show in relevant field
     if (message.toLowerCase().includes('email') && message.toLowerCase().includes('exists')) {
-        showContactTabFieldError('email', '该邮箱已存在于此客户的联系人中');
+        showContactTabFieldError('email', I18n.t('This email already exists among this customer\'s contacts.'));
     } else if (message.toLowerCase().includes('email') && message.toLowerCase().includes('format')) {
-        showContactTabFieldError('email', '邮箱格式错误');
+        showContactTabFieldError('email', I18n.t('Invalid email format.'));
     } else if (message.includes('name') && message.includes('email')) {
-        showContactTabFieldError('contact_name', '联系人姓名和邮箱至少填写一项');
+        showContactTabFieldError('contact_name', I18n.t('Enter at least a contact name or email address.'));
     } else {
-        alert('联系人保存错误: ' + message);
+        alert(I18n.t('Error saving contact: {error}', { error: I18n.t(message) }));
     }
 }
 
@@ -21,4 +21,3 @@ function showContactTabFieldError(fieldName, message) {
 
     showFieldError(fieldName, message);
 }
-

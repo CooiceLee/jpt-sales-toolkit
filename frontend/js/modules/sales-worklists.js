@@ -9,15 +9,17 @@
             const params = getSharedLeadFilters();
             if (stage) params.sales_stage = stage;
             const leads = await ApiClient.listLeads(params);
-            const inquiries = leads.map(lead => ({
+            const inquiries = WorklistSort.handler(leads.map(lead => ({
                 ...leadToCardItem(lead),
                 product: lead.product_category,
-            }));
+            })));
             State.inquiries = inquiries;
             setText('inquiry-count', `${inquiries.length} leads`);
             renderCards('handler-cards', inquiries);
         } catch (err) {
             console.error('Handler error:', err);
+            setText('inquiry-count', tr('Unable to load'));
+            setPanelError('handler-cards', tr('Unable to load inquiries. Please retry.'));
         }
     }
 
@@ -70,9 +72,7 @@
             const activity = FollowupFilterControls.read();
             const planned = FollowupFilterModel.filterPlanned(base, plannedMode);
             let inquiries = FollowupFilterModel.filterActivity(planned, activity);
-            if (activity.mode !== 'all') {
-                inquiries = FollowupFilterModel.sortOldestActivity(inquiries);
-            }
+            inquiries = WorklistSort.followup(inquiries, { activityMode: activity.mode });
             setText('followup-count', tr('{shown} of {total} active', {
                 shown: inquiries.length,
                 total: base.length,
@@ -107,9 +107,12 @@
             setText('deal-value', Math.round(wonValue / 1000).toLocaleString());
             const filter = State.currentFilters.deal || 'all';
             if (filter !== 'all') inquiries = inquiries.filter(item => item.stage === filter);
+            inquiries = WorklistSort.deal(inquiries);
             renderCards('deal-cards', inquiries, 'deal');
         } catch (err) {
             console.error('Deal error:', err);
+            ['deal-quoting', 'deal-won', 'deal-value'].forEach(id => setText(id, '—'));
+            setPanelError('deal-cards', tr('Unable to load deals. Please retry.'));
         }
     }
 

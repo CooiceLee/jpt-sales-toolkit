@@ -1,13 +1,18 @@
+function followupActionText(text, params = {}) {
+    return window.I18n?.t ? I18n.t(text, params) : Object.entries(params)
+        .reduce((value, [key, item]) => value.replace(`{${key}}`, item), text);
+}
+
 window.saveFollowUp = async function() {
     const content = document.getElementById('fu-content').value.trim();
     if (!content) {
-        alert('Please enter content');
+        alert(followupActionText('Please enter follow-up content.'));
         return;
     }
 
     const leadId = State.currentInquiry?.id;
     if (!leadId) {
-        alert('No lead selected');
+        alert(followupActionText('No lead selected.'));
         return;
     }
 
@@ -23,6 +28,9 @@ window.saveFollowUp = async function() {
         visibility: 'all'
     };
 
+    const saveButton = document.getElementById('fu-save-btn');
+    if (saveButton?.disabled) return;
+    if (saveButton) saveButton.disabled = true;
     try {
         const index = parseInt(document.getElementById('fu-index').value, 10);
         const followUp = Number.isInteger(index) && index >= 0
@@ -38,11 +46,18 @@ window.saveFollowUp = async function() {
 
         renderPanelContent('followup');
         await refreshAllCounts();
-        notify(followUp?.id ? 'Follow-up updated' : 'Follow-up added');
+        notify(followUp?.id
+            ? followupActionText('Follow-up updated.')
+            : followupActionText('Follow-up added.'));
         hideFollowUpForm();
     } catch (err) {
         console.error('Follow-up save error:', err);
-        alert('Error saving follow-up: ' + (err.message || 'Unknown error'));
+        alert(followupActionText('Error saving follow-up: {error}', {
+            error: followupActionText(err?.message || 'Unknown error')
+        }));
+    } finally {
+        const currentButton = document.getElementById('fu-save-btn');
+        if (currentButton) currentButton.disabled = false;
     }
 };
 
@@ -51,7 +66,7 @@ window.archiveFollowUp = async function(index) {
     const leadId = State.currentInquiry?.id;
     if (!followUp || !followUp.id || !leadId) return;
 
-    if (!confirm('Archive this follow-up?')) return;
+    if (!confirm(followupActionText('Archive this follow-up?'))) return;
 
     try {
         await ApiClient.archiveActivity(leadId, followUp.id);
@@ -60,7 +75,8 @@ window.archiveFollowUp = async function(index) {
         await refreshAllCounts();
     } catch (err) {
         console.error('Follow-up archive error:', err);
-        alert('Error archiving follow-up: ' + (err.message || 'Unknown error'));
+        alert(followupActionText('Error archiving follow-up: {error}', {
+            error: followupActionText(err?.message || 'Unknown error')
+        }));
     }
 };
-

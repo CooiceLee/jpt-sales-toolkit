@@ -4,12 +4,12 @@ JPT Sales Toolkit - Startup Script
 跨平台启动脚本，支持 Windows 和 macOS
 """
 import argparse
+import importlib.util
 import os
 import sys
 import webbrowser
 from pathlib import Path
 import time
-import subprocess
 
 # 确保能找到backend模块
 APP_ROOT = Path(__file__).parent
@@ -17,22 +17,27 @@ sys.path.insert(0, str(APP_ROOT))
 
 
 def check_dependencies():
-    """检查并安装依赖"""
-    required = ['fastapi', 'uvicorn', 'python-multipart']
-    missing = []
-
-    for package in required:
-        try:
-            __import__(package.replace('-', '_'))
-        except ImportError:
-            missing.append(package)
-
+    """Fail clearly without mutating the user's Python environment."""
+    required = {
+        "fastapi": "fastapi",
+        "uvicorn": "uvicorn",
+        "python-multipart": "multipart",
+        "cryptography": "cryptography",
+        "httpx": "httpx",
+        "requests": "requests",
+        "certifi": "certifi",
+    }
+    missing = [
+        package for package, module in required.items()
+        if importlib.util.find_spec(module) is None
+    ]
     if missing:
-        print(f"Installing missing dependencies: {', '.join(missing)}")
-        subprocess.check_call([
-            sys.executable, '-m', 'pip', 'install', *missing, '-q'
-        ])
-        print("Dependencies installed successfully!")
+        raise SystemExit(
+            "Missing runtime dependencies: "
+            + ", ".join(missing)
+            + f"\nInstall the locked project requirements first:\n"
+            + f'  "{sys.executable}" -m pip install -r "{APP_ROOT / "requirements.txt"}"'
+        )
 
 
 def main():
@@ -50,11 +55,6 @@ def main():
     if args.data_dir:
         os.environ['JPT_DATA_DIR'] = args.data_dir
         print(f"Using custom data directory: {args.data_dir}")
-
-    # v0.6 uses the SQLite/FastAPI v2 entry point. The app startup event
-    # initializes settings and creates the database schema.
-    if args.data_dir:
-        os.environ['JPT_DATA_DIR'] = str(Path(args.data_dir).expanduser())
 
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗

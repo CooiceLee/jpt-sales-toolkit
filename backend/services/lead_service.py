@@ -5,6 +5,7 @@ Lead service - lead management business logic with permission checks.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from typing import Optional
 
 from ..repositories import (
@@ -15,7 +16,7 @@ from ..repositories import (
     LeadRepository,
 )
 from ..repositories.data_quality_issue_repository import DataQualityIssueRepository
-from ..repositories.base import ConflictError
+from ..repositories.base import generate_uuid
 from .lead_extra_fields import expose_extra_fields, merge_extra_fields
 from .lead_follow_up_presenter import apply_latest_follow_up
 from .permission_policy import mask_lead_for_tech
@@ -37,18 +38,6 @@ COLLABORATOR_ALLOWED_FIELDS = {
     "quotation_id",
     "quotation_date",
     "extra_json",
-}
-
-# Collaborator restricted fields
-COLLABORATOR_RESTRICTED_FIELDS = {
-    "owner_id",
-    "archived_at",
-    "row_version",
-    "fulfillment_status",
-    "service_status",
-    "deal_amount",
-    "po_number",
-    "currency",
 }
 
 STAGE_ORDER = {
@@ -87,11 +76,39 @@ class LeadService:
         quality_issue_repo: Optional[DataQualityIssueRepository] = None,
     ):
         self.lead_repo = lead_repo or LeadRepository()
-        self.activity_repo = activity_repo or ActivityRepository()
-        self.audit_repo = audit_repo or AuditRepository()
-        self.customer_repo = customer_repo or CustomerRepository()
-        self.quality_issue_repo = quality_issue_repo or DataQualityIssueRepository()
+        shared_conn = self.lead_repo.conn
+        self.activity_repo = activity_repo or ActivityRepository(shared_conn)
+        self.audit_repo = audit_repo or AuditRepository(shared_conn)
+        self.customer_repo = customer_repo or CustomerRepository(shared_conn)
+        self.quality_issue_repo = (
+            quality_issue_repo or DataQualityIssueRepository(shared_conn)
+        )
         self.follow_up_read_repo = FollowUpReadRepository(self.activity_repo.conn)
+
+    @contextmanager
+    def _atomic_write(self, commit: bool):
+        """Keep a lead mutation, audit row and activities on one connection."""
+        conn = self.lead_repo.conn
+        if self.audit_repo.conn is not conn or self.activity_repo.conn is not conn:
+            raise RuntimeError("Lead write repositories must share one database connection")
+
+        started_transaction = False
+        if not conn.in_transaction and not commit:
+            conn.execute("BEGIN")
+            started_transaction = True
+        savepoint = f"lead_service_{generate_uuid().replace('-', '')}"
+        conn.execute(f"SAVEPOINT {savepoint}")
+        try:
+            yield
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            if commit:
+                conn.commit()
+        except Exception:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            if started_transaction:
+                conn.rollback()
+            raise
 
     def _enrich_with_customer(
         self,
@@ -216,31 +233,37 @@ class LeadService:
 
         return leads
 
-    def create(self, data: dict, actor_id: str) -> dict:
+    def create(
+        self,
+        data: dict,
+        actor_id: str,
+        *,
+        commit: bool = True,
+    ) -> dict:
         """Create new lead."""
         self._validate_commercial_assignee(data.get("owner_id"), "owner")
         self._validate_primary_contact(data["customer_id"], data.get("primary_contact_id"))
         data = merge_extra_fields(data)
-        lead_id = self.lead_repo.create(data, actor_id)
+        with self._atomic_write(commit):
+            lead_id = self.lead_repo.create(data, actor_id, commit=False)
 
-        # Log audit
-        self.audit_repo.log(
-            entity_type="lead",
-            entity_id=lead_id,
-            event_type="create",
-            actor_id=actor_id,
-            after_json=json.dumps(data),
-        )
-
-        # Create system activity
-        self.activity_repo.create(
-            lead_id=lead_id,
-            actor_id=actor_id,
-            action_type="system",
-            summary="Lead created",
-        )
-
-        return self.get(lead_id)
+            self.audit_repo.log(
+                entity_type="lead",
+                entity_id=lead_id,
+                event_type="create",
+                actor_id=actor_id,
+                after_json=json.dumps(data),
+                commit=False,
+            )
+            self.activity_repo.create(
+                lead_id=lead_id,
+                actor_id=actor_id,
+                action_type="system",
+                summary="Lead created",
+                commit=False,
+            )
+            created = self.get(lead_id)
+        return created
 
     def get(
         self,
@@ -276,6 +299,8 @@ class LeadService:
         actor_id: str,
         actor_role: str,
         row_version: int,
+        *,
+        commit: bool = True,
     ) -> dict:
         """
         Update lead with permission and conflict checks.
@@ -288,7 +313,7 @@ class LeadService:
             row_version: Expected version for optimistic locking
         """
         before = self.lead_repo.get_by_id(lead_id)
-        if not before:
+        if not before or before.get("archived_at"):
             raise ValueError(f"Lead {lead_id} not found")
 
         if "owner_id" in data:
@@ -300,23 +325,27 @@ class LeadService:
         if "owner_id" in data and actor_role != "leader":
             raise PermissionError("Only leaders can change owner")
 
-        self._apply_auto_stage_progression(data, before)
-
         # Permission check for watcher (read-only)
         if actor_role == "watcher":
             raise PermissionError("Watchers cannot edit leads")
 
-        # Permission check for collaborator
+        # Check only the caller-supplied fields. Allowed evidence may then
+        # advance the stage automatically as a system-owned side effect.
         if actor_role == "collaborator":
             self._check_collaborator_permissions(data, before)
 
-        try:
-            # Track field changes for activity
-            changes = self._detect_changes(before, data)
+        self._apply_auto_stage_progression(data, before)
 
-            updated = self.lead_repo.update(lead_id, data, actor_id, row_version)
+        changes = self._detect_changes(before, data)
+        with self._atomic_write(commit):
+            updated = self.lead_repo.update(
+                lead_id,
+                data,
+                actor_id,
+                row_version,
+                commit=False,
+            )
 
-            # Log audit
             self.audit_repo.log(
                 entity_type="lead",
                 entity_id=lead_id,
@@ -324,9 +353,9 @@ class LeadService:
                 actor_id=actor_id,
                 before_json=json.dumps(dict(before)),
                 after_json=json.dumps(data),
+                commit=False,
             )
 
-            # Create field_change activities
             for field, (old_val, new_val) in changes.items():
                 self.activity_repo.create(
                     lead_id=lead_id,
@@ -336,12 +365,9 @@ class LeadService:
                     changed_field=field,
                     before_value=str(old_val) if old_val is not None else None,
                     after_value=str(new_val) if new_val is not None else None,
+                    commit=False,
                 )
-
-            return updated
-
-        except ConflictError:
-            raise
+        return updated
 
     def archive(self, lead_id: str, actor_id: str) -> bool:
         """Archive lead (leader only)."""
@@ -555,18 +581,12 @@ class LeadService:
         return success
 
     def _check_collaborator_permissions(self, data: dict, current: dict) -> None:
-        """Check if collaborator is allowed to modify these fields."""
-        for field in data.keys():
-            if field in COLLABORATOR_RESTRICTED_FIELDS:
-                raise PermissionError(f"Collaborators cannot modify {field}")
-
-            # Special check for sales_stage transitions
-            if field == "sales_stage":
-                new_stage = data[field]
-                if new_stage in ("Won", "Lost"):
-                    raise PermissionError(
-                        f"Collaborators cannot change stage to {new_stage}"
-                    )
+        """Deny collaborator writes unless every field is explicitly allowed."""
+        denied = sorted(set(data) - COLLABORATOR_ALLOWED_FIELDS)
+        if denied:
+            raise PermissionError(
+                f"Collaborators cannot modify {', '.join(denied)}"
+            )
 
     def _apply_auto_stage_progression(self, data: dict, current: dict) -> None:
         """Advance sales_stage from deal evidence, without moving stages backward."""

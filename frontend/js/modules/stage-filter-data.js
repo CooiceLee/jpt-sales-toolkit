@@ -37,13 +37,9 @@ function renderStageFilterOptions() {
 }
 
 function syncStageFilterInputs() {
-    const handlerSearch = document.getElementById('search-inquiry');
-    if (handlerSearch && handlerSearch.value !== State.stageFilters.search) {
-        handlerSearch.value = State.stageFilters.search;
-    }
-
     STAGE_MODULES.forEach(moduleKey => {
-        const searchInput = document.getElementById(`stage-search-${moduleKey}`);
+        const searchId = moduleKey === 'handler' ? 'search-inquiry' : `stage-search-${moduleKey}`;
+        const searchInput = document.getElementById(searchId);
         if (searchInput && searchInput.value !== State.stageFilters.search) {
             searchInput.value = State.stageFilters.search;
         }

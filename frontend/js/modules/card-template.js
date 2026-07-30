@@ -80,14 +80,22 @@
 
         return `
             <div class="${cardClasses.join(' ')}" data-inquiry-card
-                 data-inquiry-id="${escapeHtml(item.id)}" data-card-context="${escapeHtml(type)}">
+                 data-inquiry-id="${escapeHtml(item.id)}" data-card-context="${escapeHtml(type)}"
+                 role="button" tabindex="0" aria-pressed="false"
+                 aria-label="${escapeHtml(tr('Open lead {id} for {company}', {
+                     id: item.inquiry_id || item.id,
+                     company: item.company_name || tr('Unknown Company')
+                 }))}">
                 <div class="card-header">
                     <div class="card-meta">
                         <span>${value(item.inquiry_id)}</span>
                         <span>${escapeHtml(formatDate(item.inquiry_date || item.created_at))}</span>
                     </div>
                     <span class="quality-badge ${item.quality_issue_count ? '' : 'hidden'}"
-                          title="${escapeHtml(tr('Imported fields requiring review'))}">${escapeHtml(tr('{count} to review', {
+                          title="${escapeHtml(tr('Imported fields requiring review'))}"
+                          aria-label="${escapeHtml(tr('{count} imported fields require review', {
+                              count: Number(item.quality_issue_count) || 0
+                          }))}">${escapeHtml(tr('{count} to review', {
                               count: Number(item.quality_issue_count) || 0
                           }))}</span>
                     <div class="grade-badge grade-${gradeClass}">${escapeHtml(grade)}</div>

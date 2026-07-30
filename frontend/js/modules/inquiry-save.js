@@ -1,8 +1,24 @@
 // ===== Save Inquiry =====
+let inquirySaveEpoch = 0;
+
 window.saveInquiry = async function() {
-    const leadId = State.currentInquiry?.id;
-    const rowVersion = State.currentInquiry?.row_version;
+    const inquirySnapshot = State.currentInquiry;
+    const leadId = inquirySnapshot?.id;
+    const rowVersion = inquirySnapshot?.row_version;
     if (!leadId) return;
+    const saveButton = document.getElementById('panel-save-btn');
+    if (saveButton?.disabled) return;
+    const panelSession = window.InquiryPanelSession?.capture?.()
+        || Object.freeze({ leadId, generation: 0 });
+    if (panelSession.leadId !== leadId) return;
+    const saveRequest = Object.freeze({
+        leadId,
+        panelSession,
+        saveEpoch: ++inquirySaveEpoch
+    });
+    const requestIsCurrent = () => inquirySaveEpoch === saveRequest.saveEpoch
+        && (window.InquiryPanelSession?.isCurrent?.(panelSession)
+            ?? State.currentInquiry?.id === saveRequest.leadId);
     const content = document.getElementById('panel-content');
     const inputs = content.querySelectorAll('input, select, textarea');
     const leadFields = {};
@@ -50,14 +66,18 @@ window.saveInquiry = async function() {
             leadFields[fieldMap[name] || name] = value;
         }
     });
+    if (saveButton) {
+        saveButton.disabled = true;
+        saveButton.dataset.inquirySaveEpoch = String(saveRequest.saveEpoch);
+    }
     try {
-        const customerId = State.currentInquiry?._customer?.id;
-        const customerRowVersion = State.currentInquiry?._customer?.row_version;
-        const contacts = State.currentInquiry?._customer?.contacts || [];
+        const customerId = inquirySnapshot?._customer?.id;
+        const customerRowVersion = inquirySnapshot?._customer?.row_version;
+        const contacts = inquirySnapshot?._customer?.contacts || [];
         const selectedContactId = content.querySelector('[name="primary_contact_id"]')?.value;
         const existingContact = selectedContactId
             ? contacts.find(contact => contact.id === selectedContactId)
-            : getLeadPrimaryContact(State.currentInquiry?._lead, State.currentInquiry?._customer);
+            : getLeadPrimaryContact(inquirySnapshot?._lead, inquirySnapshot?._customer);
         const hasContactValue = Object.values(contactFields).some(value => value !== '' && value !== null && value !== undefined);
         const activeContactNameInput = content.querySelector('input[name="contact_name"]');
         const activeContactEmailInput = content.querySelector('input[name="email"]');
@@ -69,26 +89,26 @@ window.saveInquiry = async function() {
                 return;
             }
         }
-        // Update customer if there are customer field changes
-        if (customerId && Object.keys(customerFields).length > 0) {
-            await ApiClient.updateCustomer(customerId, customerFields, customerRowVersion);
-        }
-        if (customerId && hasContactValue) {
-            if (existingContact?.id) {
-                await ApiClient.updateCustomerContact(customerId, existingContact.id, contactFields);
-            } else {
-                await ApiClient.createCustomerContact(customerId, {
-                    ...contactFields,
-                    is_primary: true
-                });
+        const customer = customerId && Object.keys(customerFields).length > 0
+            ? { ...customerFields, row_version: customerRowVersion }
+            : null;
+        const contact = customerId && hasContactValue
+            ? {
+                ...contactFields,
+                contact_id: existingContact?.id || null,
+                updated_at: existingContact?.updated_at || null,
+                ...(!existingContact?.id ? { is_primary: true } : {})
             }
-        }
-        // Update lead if there are lead field changes
-        if (Object.keys(leadFields).length > 0) {
-            await ApiClient.updateLead(leadId, leadFields, rowVersion);
-        }
-        // Refresh lead data (includes customer)
-        const lead = await ApiClient.getLead(leadId);
+            : null;
+        const leadPatch = Object.keys(leadFields).length > 0
+            ? { ...leadFields, row_version: rowVersion }
+            : null;
+        const lead = await ApiClient.saveInquiryAggregate(leadId, {
+            customer,
+            contact,
+            lead: leadPatch
+        });
+        if (!requestIsCurrent()) return;
         State.currentInquiry = {
             ...State.currentInquiry,
             stage: lead.sales_stage,
@@ -102,11 +122,18 @@ window.saveInquiry = async function() {
         if (activeTab) renderPanelContent(activeTab.dataset.tab);
         // Refresh nav counts and the active module so stage badges move immediately.
         await refreshAllCounts();
+        if (!requestIsCurrent()) return;
 
-        notify('Changes saved');
+        notify(I18n.t('Changes saved'));
     } catch (err) {
+        if (!requestIsCurrent()) {
+            console.error('Stale inquiry save error:', err);
+            return;
+        }
         if (err.name === 'ConflictError') {
-            alert(`Conflict: ${err.message}. Please refresh and try again.`);
+            alert(I18n.t('Conflict: {error}. Please refresh and try again.', {
+                error: I18n.t(err.message || 'Unknown error')
+            }));
         } else {
             console.error('Save error:', err);
             const errMsg = err.message || 'Unknown error';
@@ -115,8 +142,15 @@ window.saveInquiry = async function() {
             if (errMsg.includes('email') || errMsg.includes('contact') || errMsg.includes('name')) {
                 handleContactValidationError(errMsg);
             } else {
-                alert('Error saving changes: ' + errMsg);
+                alert(I18n.t('Error saving changes: {error}', { error: I18n.t(errMsg) }));
             }
+        }
+    } finally {
+        if (saveButton
+            && requestIsCurrent()
+            && saveButton.dataset.inquirySaveEpoch === String(saveRequest.saveEpoch)) {
+            saveButton.disabled = false;
+            delete saveButton.dataset.inquirySaveEpoch;
         }
     }
 };

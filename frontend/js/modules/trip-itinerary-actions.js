@@ -42,7 +42,7 @@ window.saveTripStopResult = async function(stopId) {
             result_status: document.getElementById(`stop-result-${stopId}`)?.value || 'Planned',
             result_notes: document.getElementById(`stop-notes-${stopId}`)?.value?.trim() || null
         });
-        notify('Stop saved');
+        notify(I18n.t('Stop saved'));
         renderCurrentTripPlan();
         window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
     } catch (err) {
@@ -77,7 +77,7 @@ async function runTripItinerary(action) {
         window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
         renderTripPlans();
         renderTripMap();
-        notify(action === 'preview' ? 'Route preview ready' : 'Route saved');
+        notify(I18n.t(action === 'preview' ? 'Route preview ready' : 'Route saved'));
     } catch (err) {
         console.error(`${action} itinerary error:`, err);
         await handleTripError(err, action === 'preview' ? 'Preview route' : 'Save route');
@@ -97,7 +97,7 @@ window.generateCurrentTripItinerary = async function() {
 window.removeTripStop = async function(stopId) {
     if (State.tripBusy) return;
     if (!State.currentTripPlan?.id) return;
-    if (!confirm('Remove this stop from the plan?')) return;
+    if (!confirm(I18n.t('Remove this stop from the plan?'))) return;
     try {
         setTripBusy(true);
         const stop = (State.currentTripPlan.stops || []).find(item => item.id === stopId);
@@ -106,7 +106,7 @@ window.removeTripStop = async function(stopId) {
             stopId,
             stop?.row_version || null
         );
-        notify('Stop removed');
+        notify(I18n.t('Stop removed'));
         State.tripCandidatePagination.offset = 0;
         await loadTripPlanner();
     } catch (err) {
@@ -119,7 +119,7 @@ window.removeTripStop = async function(stopId) {
 
 window.exportCurrentTripPlan = async function(format) {
     if (!State.currentTripPlan?.id) {
-        alert('Select a trip plan first');
+        alert(I18n.t('Select a trip plan first'));
         return;
     }
     try {
@@ -127,7 +127,8 @@ window.exportCurrentTripPlan = async function(format) {
         downloadBlob(blob, filename);
     } catch (err) {
         console.error('Export trip plan error:', err);
-        alert('Error exporting trip plan: ' + (err.message || 'Unknown error'));
+        alert(I18n.t('Error exporting trip plan: {error}', {
+            error: I18n.t(err.message || 'Unknown error')
+        }));
     }
 };
-

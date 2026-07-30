@@ -1,5 +1,6 @@
 (function () {
     'use strict';
+    const tr = text => window.I18n?.t(text) || text;
 
     async function loadFulfillment() {
         try {
@@ -13,10 +14,13 @@
             if (filter !== 'all') {
                 inquiries = inquiries.filter(item => item.fulfillment_status === filter);
             }
+            inquiries = WorklistSort.fulfillment(inquiries);
             setText('fulfillment-count', `${inquiries.length} orders`);
             renderCards('fulfillment-cards', inquiries, 'fulfillment');
         } catch (err) {
             console.error('Fulfillment error:', err);
+            setText('fulfillment-count', tr('Unable to load'));
+            setPanelError('fulfillment-cards', tr('Unable to load orders. Please retry.'));
         }
     }
 
@@ -30,7 +34,7 @@
         try {
             const [leads, tasks] = await Promise.all([
                 ApiClient.listLeads(getSharedLeadFilters()),
-                ApiClient.listAfterSalesTasks().catch(() => []),
+                ApiClient.listAfterSalesTasks(),
             ]);
             const allowedLeadIds = new Set(leads.map(lead => lead.id));
             const tasksByLead = new Map();
@@ -45,14 +49,18 @@
                     service_status: deriveServiceStatus(lead, leadTasks),
                     after_sales_count: leadTasks.length,
                     po_number: lead.po_number || '',
+                    _afterSalesTasks: leadTasks,
                 });
             }).filter(item => item.service_status !== 'None');
             const filter = State.currentFilters.aftersales || 'all';
             if (filter !== 'all') inquiries = inquiries.filter(item => item.service_status === filter);
+            inquiries = WorklistSort.aftersales(inquiries);
             setText('aftersales-count', `${inquiries.length} issues`);
             renderCards('aftersales-cards', inquiries, 'aftersales');
         } catch (err) {
             console.error('Aftersales error:', err);
+            setText('aftersales-count', tr('Unable to load'));
+            setPanelError('aftersales-cards', tr('Unable to load after-sales issues. Please retry.'));
         }
     }
 

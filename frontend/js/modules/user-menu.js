@@ -1,7 +1,18 @@
 // ===== User Menu =====
 function initUserMenu() {
     const footer = document.getElementById('user-footer');
-    if (!footer) return;
+    if (!footer || footer.dataset.userMenuBound) return;
+    footer.dataset.userMenuBound = '1';
+    const menu = document.getElementById('user-menu');
+
+    function setMenuOpen(open) {
+        menu?.classList.toggle('show', open);
+        footer.setAttribute('aria-expanded', String(open));
+    }
+
+    function toggleMenu() {
+        setMenuOpen(!menu?.classList.contains('show'));
+    }
 
     ApiClient.getRuntimeStatus()
         .then(status => {
@@ -19,17 +30,29 @@ function initUserMenu() {
 
     footer.addEventListener('click', (e) => {
         if (e.target.closest('.user-menu')) return;
-        document.getElementById('user-menu').classList.toggle('show');
+        toggleMenu();
+    });
+
+    footer.addEventListener('keydown', (event) => {
+        if (event.target.closest('.user-menu') && event.key !== 'Escape') return;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleMenu();
+        } else if (event.key === 'Escape') {
+            setMenuOpen(false);
+            footer.focus();
+        }
     });
 
     document.addEventListener('click', (e) => {
         if (!e.target.closest('#user-footer')) {
-            document.getElementById('user-menu')?.classList.remove('show');
+            setMenuOpen(false);
         }
     });
 }
 
 window.switchAccount = function() {
+    if (window.PanelDirtyState?.confirmDiscard && !window.PanelDirtyState.confirmDiscard()) return;
     ApiClient.clearAuth();
     State.user = null;
     document.getElementById('app').style.display = 'none';
@@ -37,17 +60,23 @@ window.switchAccount = function() {
 };
 
 window.exitApplication = async function() {
-    if (!confirm('Exit JPT Sales Toolkit on this computer?')) return;
+    if (window.PanelDirtyState?.confirmDiscard && !window.PanelDirtyState.confirmDiscard()) return;
+    if (!confirm(I18n.t('Exit JPT Sales Toolkit on this computer?'))) return;
     try {
         await ApiClient.shutdownDesktop();
-        document.body.innerHTML = '<main class="desktop-exit-message"><h1>JPT has stopped</h1><p>You can close this window safely.</p></main>';
+        document.body.innerHTML = `<main class="desktop-exit-message"><h1>${
+            I18n.t('JPT has stopped')
+        }</h1><p>${I18n.t('You can close this window safely.')}</p></main>`;
     } catch (error) {
-        alert(error.message || 'Unable to exit JPT.');
+        alert(I18n.t('Unable to exit JPT: {error}', {
+            error: I18n.t(error.message || 'Unknown error')
+        }));
     }
 };
 
 window.logout = async function() {
-    if (!confirm('Are you sure you want to logout?')) return;
+    if (window.PanelDirtyState?.confirmDiscard && !window.PanelDirtyState.confirmDiscard()) return;
+    if (!confirm(I18n.t('Are you sure you want to logout?'))) return;
     try {
         await ApiClient.logout();
         State.user = null;

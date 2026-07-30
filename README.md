@@ -2,7 +2,7 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前团队稳定候选基线：`v0.11.4-internal`。它是 `UNSIGNED-INTERNAL` 内部版本，不等同于已签名的公开正式版。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、地图坐标、数据复盘、出差规划、拜访执行和数据治理入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
+当前团队内部稳定基线：`v0.11.7-internal`。它是 `UNSIGNED-INTERNAL` 内部版本，不等同于已签名的公开正式版。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、卡片排序、地图坐标、数据复盘、出差规划、拜访执行和定向数据分发入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
 
 ## 功能概览
 
@@ -41,7 +41,10 @@ Windows 与 macOS 的内部测试安装包由 `.github/workflows/build-installer
 # 进入项目目录
 cd jpt-sales-toolkit
 
-# 运行（首次运行会自动安装依赖）
+# 首次运行前安装完整依赖
+python3 -m pip install -r requirements.txt
+
+# 运行
 python3 run.py
 ```
 
@@ -53,14 +56,16 @@ python3 run.py
 # 指定端口
 python3 run.py --port 8080
 
-# 指定数据目录（用于多终端共享）
-python3 run.py --data-dir "/path/to/shared/data"
+# 指定隔离数据目录（仅用于测试、迁移或单机恢复）
+python3 run.py --data-dir "/path/to/isolated/data"
 
 # 不自动打开浏览器
 python3 run.py --no-browser
 ```
 
 `run.py` 当前启动的是 v2 单机版入口：`backend.app_v2:app`。
+
+`--data-dir` 不得指向网络盘供多台电脑并发使用；当前 SQLite 单机架构不支持多个终端同时写同一目录。团队成员各自使用本机数据目录，通过 JSON 数据包同步；未来集中部署时应由单一服务器进程管理数据库，成员通过浏览器访问。
 
 ### 局域网试运行
 
@@ -70,8 +75,7 @@ macOS 可直接运行项目根目录的：
 Start JPT LAN Test Server.command
 ```
 
-脚本会创建/刷新测试账号、启动前备份，并输出本机和局域网访问地址。
-如果 `data-test-server/` 里已经有你导入的真实团队用户，脚本也会把这些现有账号刷新成可登录的 LAN 测试密码，并生成 `data-test-server/lan_test_accounts.md` 账号清单。
+脚本只创建/刷新六个保留名称的演示账号、执行启动前备份，并输出本机和局域网访问地址。演示密码每次随机生成，只写入权限为 `0600` 的 `data-test-server/lan_test_accounts.md`；其他既有团队账号和密码不会被修改，也不会写入该清单。
 
 ### 验证回归
 
@@ -81,6 +85,13 @@ bash scripts/validate_v08.sh
 ```
 
 该脚本会运行前端语法检查、后端编译检查和关键业务回归测试。
+
+需要运行浏览器 smoke 时，必须显式使用隔离测试账号，脚本不再内置默认口令：
+
+```bash
+SMOKE_USER="leader01" SMOKE_PASSWORD="<账号清单中的一次性密码>" \
+  bash scripts/browser_smoke_v09.sh "http://127.0.0.1:8000"
+```
 
 ## 多终端数据共享
 
@@ -111,6 +122,9 @@ bash scripts/validate_v08.sh
 ### 地图与客户合并
 
 - 地图将坐标区分为精确、近似和缺失。近似点只表示区域参考，不能替代实际地址；离线或底图不可用时仍可通过列表和坐标质量状态处理数据。
+- 地址搜索和批量地理编码不是纯本地功能：地址、城市、邮编和国家会通过 HTTPS 发送给一个或多个外部服务。默认使用公共 Nominatim；只有在本机安全设置 `JPT_GEOCODING_PROVIDER=amap` 和服务端 Web Service Key `JPT_AMAP_WEB_SERVICE_KEY` 后才优先使用高德。高德发生空结果、网络、超时、配额或无效响应时会回退 Nominatim，因此同一地址可能依次发送给两者；Key/权限错误不会被回退掩盖。界面会显示实际返回候选的服务商。
+- 高德只承担可选地理编码，不替换当前 CARTO/OpenStreetMap 底图；高德结果会在服务端从 GCJ-02 转为统一的 WGS84。打开地图还会向瓦片服务发送网络地址及当前视窗/瓦片坐标。公共 Nominatim 只适合小规模、单终端、一次性且缓存的查询，不用于经常性或大规模批处理。Key 不得写入前端、仓库、安装包或共享文档；不允许外发的客户地址请改用人工经纬度或地图选点。
+- 自动候选始终保留为待人工复核；Leader、owner 和 collaborator 可修正坐标，watcher 与 Tech 只读。版本冲突会要求刷新重试，不会静默覆盖另一终端的新修改。
 - Leader 可按客户名称或别名查看模糊候选与匹配分数。选择来源和保留目标后，必须先核对只读迁移预览，再执行一次合并；来源客户会归档而不是物理删除。
 
 ## 配置文件说明
@@ -176,7 +190,7 @@ A: 每台电脑独立运行；Leader 创建成员，成员提交 `.jptreq`，Lea
 
 **Q: 数据丢失怎么办？**
 
-A: 使用 `data/backups/` 中的全量备份恢复。JSON 导出主要用于数据交换，不等同于完整备份，因为它不包含附件文件本体。
+A: 先完全退出 JPT 并保留现场。`pre_upgrade_...zip` 仅用于管理员执行 schema 数据库回滚；普通全量备份包含数据库、附件和授权配置，必须走经认证的完整恢复流程。两者都属于高敏感文件，不得上传 GitHub 或普通共享目录。JSON 导出只用于数据交换，不等同于完整备份，因为它不包含附件文件本体。
 
 **Q: 如何添加新的产品系列？**
 
@@ -184,4 +198,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.11.4-internal*
+*JPT Sales Toolkit v0.11.7-internal*

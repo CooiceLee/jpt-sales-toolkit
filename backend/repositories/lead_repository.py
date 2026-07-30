@@ -39,7 +39,13 @@ class LeadRepository(BaseRepository):
 
         return f"JPT-{period_ym}-{next_val:04d}"
 
-    def create(self, data: dict, actor_id: str) -> str:
+    def create(
+        self,
+        data: dict,
+        actor_id: str,
+        *,
+        commit: bool = True,
+    ) -> str:
         """Create new lead. Returns lead ID."""
         self._validate_commercial_assignment(data.get("owner_id"), "owner")
         lead_id = generate_uuid()
@@ -65,7 +71,8 @@ class LeadRepository(BaseRepository):
         if owner_id:
             self.add_assignment(lead_id, owner_id, "owner", actor_id)
 
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return lead_id
 
     def update(
@@ -74,10 +81,12 @@ class LeadRepository(BaseRepository):
         data: dict,
         actor_id: str,
         row_version: int,
+        *,
+        commit: bool = True,
     ) -> dict:
         """Update lead with optimistic locking. Returns updated record."""
         current = self.get_by_id(lead_id)
-        if not current:
+        if not current or current.get("archived_at"):
             raise ValueError(f"Lead {lead_id} not found")
 
         if "owner_id" in data:
@@ -90,10 +99,6 @@ class LeadRepository(BaseRepository):
                 current_data={"id": lead_id, "updated_at": current["updated_at"]},
             )
 
-        # If owner_id changed, update assignment too
-        if "owner_id" in data and data["owner_id"] != current["owner_id"]:
-            self._update_owner_assignment(lead_id, data["owner_id"], actor_id)
-
         update_data = {
             **data,
             "updated_at": now_iso(),
@@ -102,17 +107,39 @@ class LeadRepository(BaseRepository):
         }
 
         sql, params = self._build_update(lead_id, update_data, row_version)
-        cursor = self.conn.execute(sql, params)
+        sql += " AND archived_at IS NULL"
+        savepoint = f"lead_update_{generate_uuid().replace('-', '')}"
+        started_transaction = False
+        if not self.conn.in_transaction and not commit:
+            self.conn.execute("BEGIN")
+            started_transaction = True
+        self.conn.execute(f"SAVEPOINT {savepoint}")
+        try:
+            cursor = self.conn.execute(sql, params)
+            if cursor.rowcount == 0:
+                raise ConflictError(
+                    current_version=current["row_version"],
+                    your_version=row_version,
+                    current_data={"id": lead_id, "updated_at": current["updated_at"]},
+                )
 
-        if cursor.rowcount == 0:
-            raise ConflictError(
-                current_version=current["row_version"],
-                your_version=row_version,
-                current_data={"id": lead_id, "updated_at": current["updated_at"]},
-            )
+            # The lead CAS must win before its permission-bearing owner
+            # assignment is changed. Both writes are protected by this
+            # savepoint so an assignment failure cannot leave split state.
+            if "owner_id" in data and data["owner_id"] != current["owner_id"]:
+                self._update_owner_assignment(lead_id, data["owner_id"], actor_id)
 
-        self.conn.commit()
-        return self.get_by_id(lead_id)
+            updated = self.get_by_id(lead_id)
+            self.conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            if commit:
+                self.conn.commit()
+            return updated
+        except Exception:
+            self.conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            self.conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            if started_transaction:
+                self.conn.rollback()
+            raise
 
     def archive(self, lead_id: str, actor_id: str) -> bool:
         """Archive lead (soft delete)."""
@@ -213,7 +240,7 @@ class LeadRepository(BaseRepository):
             pattern = f"%{search}%"
             params.extend([pattern] * 14)
 
-        sql += " ORDER BY l.updated_at DESC LIMIT ? OFFSET ?"
+        sql += " ORDER BY l.updated_at DESC, l.display_id ASC, l.id ASC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         cursor = self.conn.execute(sql, params)
@@ -441,7 +468,7 @@ class LeadRepository(BaseRepository):
             search_pattern = f"%{search}%"
             params.extend([search_pattern] * 13)
 
-        sql += " ORDER BY l.updated_at DESC LIMIT ? OFFSET ?"
+        sql += " ORDER BY l.updated_at DESC, l.display_id ASC, l.id ASC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         cursor = self.conn.execute(sql, params)

@@ -9,7 +9,7 @@
         if (passphrase !== confirmation) {
             return showAuthorizationCenterMessage('Issuer passphrases do not match.', true);
         }
-        if (!confirm('Initialize this device as an authorization issuer? Keep the issuer passphrase secure.')) return;
+        if (!confirm(I18n.t('Initialize this device as an authorization issuer? Keep the issuer passphrase secure.'))) return;
 
         try {
             button.disabled = true;
@@ -18,7 +18,7 @@
             document.getElementById('authorization-issuer-passphrase').value = '';
             document.getElementById('authorization-issuer-confirm').value = '';
             await refreshAuthorizationCenter();
-            notify('Authorization issuer initialized');
+            notify(I18n.t('Authorization issuer initialized'));
         } catch (err) {
             showAuthorizationCenterMessage(err.message || 'Unable to initialize issuer.', true);
         } finally {
@@ -38,7 +38,7 @@
             await ApiClient.renewLocalLeaderAuthorization(passphrase);
             document.getElementById('authorization-renew-passphrase').value = '';
             await refreshAuthorizationCenter();
-            notify('Leader authorization renewed for 90 days');
+            notify(I18n.t('Leader authorization renewed for 90 days'));
         } catch (err) {
             showAuthorizationCenterMessage(err.message || 'Unable to renew Leader authorization.', true);
         } finally {
@@ -67,7 +67,7 @@
             document.getElementById('authorization-request-file').value = '';
             document.getElementById('authorization-issue-passphrase').value = '';
             await refreshAuthorizationCenter();
-            notify(`Authorization downloaded: ${result.filename}`);
+            notify(I18n.t('Authorization downloaded: {filename}', { filename: result.filename }));
         } catch (err) {
             showAuthorizationCenterMessage(err.message || 'Unable to issue authorization.', true);
         } finally {

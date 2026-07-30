@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
+      - "v*-internal"
 
 permissions:
   contents: read
@@ -20,6 +20,17 @@ jobs:
           cache: pip
       - name: Install runtime dependencies
         run: python -m pip install -r requirements.txt
+      - name: Enforce internal-only release contract
+        shell: bash
+        run: |
+          version="$(< VERSION)"
+          [[ "$version" == *-internal ]] || { echo "VERSION must end in -internal" >&2; exit 1; }
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            [[ "$GITHUB_REF_NAME" == "v$version" ]] || {
+              echo "Tag $GITHUB_REF_NAME does not match VERSION $version" >&2
+              exit 1
+            }
+          fi
       - name: Run source validation
         run: bash scripts/validate_v08.sh
 
@@ -80,9 +91,13 @@ jobs:
             if (Get-ChildItem $installDir -Recurse -Filter $pattern) { throw "Prohibited packaged asset: $pattern" }
           }
           python scripts/smoke_frozen.py "$installDir\JPT Sales Toolkit.exe"
+          $env:LOCALAPPDATA = "$pwd\isolated-localappdata"
+          $upgradeData = "$env:LOCALAPPDATA\JPT Sales Toolkit\data"
+          python scripts/smoke_upgrade_frozen.py "$installDir\JPT Sales Toolkit.exe" --data-dir $upgradeData --fixture-version 0.11.3-internal --launch-with-default-data-dir
           $uninstallProcess = Start-Process -Wait -PassThru -FilePath "$installDir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
           if ($uninstallProcess.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstallProcess.ExitCode)" }
           if (Test-Path "$installDir\JPT Sales Toolkit.exe") { throw "Installed executable remains after uninstall" }
+          if (!(Test-Path "$upgradeData\database.sqlite")) { throw "Uninstall removed the default user data directory" }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64-installer
@@ -160,6 +175,13 @@ jobs:
           done
           codesign --verify --deep --strict --verbose=2 "$mount_dir/JPT Sales Toolkit.app"
           python scripts/smoke_frozen.py --expect-disk-image "$mount_dir/JPT Sales Toolkit.app/Contents/MacOS/JPT Sales Toolkit"
+          upgrade_data="$RUNNER_TEMP/jpt-upgrade-${{ matrix.arch }}-0.11.4"
+          python scripts/smoke_upgrade_frozen.py \
+            --expect-disk-image \
+            --data-dir "$upgrade_data" \
+            --fixture-version 0.11.4-internal \
+            "$mount_dir/JPT Sales Toolkit.app/Contents/MacOS/JPT Sales Toolkit"
+          test -f "$upgrade_data/database.sqlite"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}-installer
@@ -200,9 +222,14 @@ jobs:
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+            gh release edit "$GITHUB_REF_NAME" \
+              --draft \
+              --prerelease \
+              --title "JPT Sales Toolkit $GITHUB_REF_NAME (Internal)"
           else
             gh release create "$GITHUB_REF_NAME" release-assets/* \
               --draft \
-              --title "JPT Sales Toolkit $GITHUB_REF_NAME" \
+              --prerelease \
+              --title "JPT Sales Toolkit $GITHUB_REF_NAME (Internal)" \
               --notes "Unsigned internal pilot installers. Member authorization files are distributed separately by the Leader."
           fi

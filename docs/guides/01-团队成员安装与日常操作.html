@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT 0.11.4 团队成员安装与日常操作</title>
+  <title>JPT 0.11.7 团队成员安装与日常操作</title>
   <style>
     :root{--wine:#8b1a1a;--wine2:#651212;--ink:#1d1d1f;--muted:#66615e;--bg:#f4f3f1;--paper:#fff;--line:#ded8d4;--soft:#f7efec;--ok:#176d3b;--warn:#945900;--blue:#245b87}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}.wrap{width:min(1080px,calc(100% - 40px));margin:auto}
@@ -19,7 +19,7 @@
 </head>
 <body>
   <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="页面导航"><a href="#install">安装</a><a href="#activate">激活</a><a href="#followup">跟进筛选</a><a href="#map">地图</a><a href="02-Leader账号导入与治理.html">Leader 指南</a></nav></div></header>
-  <section class="hero"><div class="wrap"><div class="kicker">MEMBER GUIDE · GATE A</div><h1>团队成员安装与日常操作</h1><p class="lead">先证明程序可以独立安装、授权、保存和恢复，再参加 Excel、权限或同步测试。安装新版会保留原本地账号和数据，不会强制重新建号。</p><div class="pills"><span class="pill">v0.11.4-internal</span><span class="pill">Leader / Sales / Tech</span><span class="pill">一名成员默认一台电脑</span><span class="pill">Windows / macOS</span></div></div></section>
+  <section class="hero"><div class="wrap"><div class="kicker">MEMBER GUIDE · GATE A</div><h1>团队成员安装与日常操作</h1><p class="lead">先证明程序可以独立安装、授权、保存和恢复，再参加 Excel、权限或同步测试。安装新版会保留原本地账号和数据，不会强制重新建号。</p><div class="pills"><span class="pill">v0.11.7-internal</span><span class="pill">Leader / Sales / Tech</span><span class="pill">一名成员默认一台电脑</span><span class="pill">Windows / macOS</span></div></div></section>
   <main class="wrap">
     <section class="metrics"><div class="metric"><b>1</b>名成员默认绑定 1 台设备</div><div class="metric"><b>90</b>天固定离线授权周期</div><div class="metric"><b>A</b>先独立完成安装验收</div></section>
 
@@ -32,10 +32,19 @@
     <aside class="callout warn"><strong>内部未签名版本：</strong>只有在文件名、版本和 Leader 提供的校验记录一致时，才处理系统“未知发布者”提示。不提供 Linux 版本，也不要使用来源不明的命令关闭系统安全保护。</aside>
 
     <section class="grid2">
-      <article class="panel"><h3>Windows 安装</h3><ol><li>完全退出旧 JPT，并关闭旧的本机浏览器页签。</li><li>运行 Windows x64 安装程序并按向导完成。</li><li>从“开始”菜单打开 JPT，不要继续用旧目录副本。</li><li>页面打开后确认标题栏为 <code>v0.11.4-internal</code>。</li></ol></article>
+      <article class="panel"><h3>Windows 安装</h3><ol><li>完全退出旧 JPT，并关闭旧的本机浏览器页签。</li><li>运行 Windows x64 安装程序并按向导完成。</li><li>从“开始”菜单打开 JPT，不要继续用旧目录副本。</li><li>页面打开后确认标题栏为 <code>v0.11.7-internal</code>。</li></ol></article>
       <article class="panel"><h3>macOS 安装</h3><ol><li>通过 JPT 的退出入口完全退出旧程序；只关浏览器不等于退出。</li><li>打开与芯片匹配的 DMG，把 App 拖入“应用程序”。</li><li>在 Finder 推出 DMG。</li><li>从“应用程序”打开 JPT，确认标题栏版本。</li></ol></article>
     </section>
     <aside class="callout"><strong>升级后没有重新创建账号是正常的。</strong>账号、授权、附件和业务数据保存在独立数据目录。新版只替换程序；不要通过删除数据目录来“刷新界面”。若仍看到旧界面，应确认旧后台已退出、DMG 已推出，并从正确的应用副本重新打开。</aside>
+    <aside class="callout ok"><strong>新版会先备份再迁移。</strong>第一次打开旧数据时，程序会在本地 <code>data/backups</code> 生成并校验 <code>pre_upgrade_...zip</code>，校验通过后才更新数据库；失败会恢复原数据库并停止启动。离线恢复只接受这类自动 <code>pre_upgrade</code> ZIP，替换前还会保存当前数据库为 <code>pre_recovery_current_*.sqlite</code>；保存失败就不会开始恢复。不要删除这些文件，也不要在失败后继续录入数据。</aside>
+
+    <h2>升级后必须完成的数据核对</h2>
+    <section class="steps">
+      <article class="step"><div><h3>确认原账号</h3><p>使用原用户名和本地密码登录；不应重新创建 Leader，也不应重新导入现有设备授权。</p></div></article>
+      <article class="step"><div><h3>核对原记录</h3><p>记录升级前后的客户和询盘总数，并打开一条原有卡片核对负责人、阶段和跟进内容。</p></div></article>
+      <article class="step"><div><h3>核对附件</h3><p>打开至少一个升级前附件，确认文件内容正常，而不是只查看附件数量。</p></div></article>
+      <article class="step"><div><h3>第二次启动</h3><p>完全退出后再次打开，确认账号、数量和附件仍一致。任一差异都应停止录入并保留截图和 <code>data/logs/launcher.log</code>。</p></div></article>
+    </section>
 
     <h2 id="activate">2. 成员设备申请与激活</h2>
     <section class="steps">
@@ -58,28 +67,37 @@
       <tr><td>看到“从未正式跟进”</td><td>是否确实没有正式跟进活动</td><td>仍可查看询盘/创建日期；补记真实跟进，不要伪造日期</td></tr>
     </tbody></table>
 
-    <h2 id="map">4. 地图坐标质量</h2>
+    <h2>4. 卡片排序与 Sales 数据包</h2>
+    <section class="grid2">
+      <article class="panel"><h3>为什么不是按客户名称排列</h3><p>每个工作页按最需要处理的业务日期排序：处理页优先较早询盘；跟进页优先最近计划日期；售前/样品优先进行中且临近到期；成交、履约和售后按各自阶段与关键日期排列。缺失或无效日期落在有效日期之后；刷新后同一组卡片顺序应保持稳定。</p></article>
+      <article class="panel"><h3>接收 Leader 定向 JSON</h3><ol><li>向 Leader 确认导出时选择的是本人账号。</li><li>在“JSON 数据交换”选择文件并运行预检，核对源总数、允许数、权限跳过数和错误数。</li><li>只有同一文件错误数为 0、权限跳过数为 0 时才可导入；若提示接收账号不匹配，停止并索取正确文件。</li><li>导入后核对结果是完整成功还是部分完成，再核对 Lead 数、客户、主联系人和原有本地活动。</li><li>再次导入同一文件，数量不应重复增长。</li></ol></article>
+    </section>
+    <aside class="callout warn"><strong>不要用 Excel 代替成员同步。</strong>Excel 由 Leader 做外部数据摄取；Leader → Sales 的日常分发使用定向 JSON。JSON 只携带附件元数据，附件本体与完整备份仍需独立传递。</aside>
+
+    <h2 id="map">5. 地图坐标质量</h2>
     <section class="grid3">
       <article class="panel"><h3>精确</h3><p>已有经过确认的经纬度，可用于地图定位；拜访前仍应核对地址和联系人。</p></article>
       <article class="panel"><h3>近似</h3><p>仅按国家、城市或区域给出参考位置，不能用于判断楼宇、路线终点或实际距离。</p></article>
-      <article class="panel"><h3>缺失</h3><p>没有可用坐标。应进入坐标复核补充地址、地图选点或人工经纬度。</p></article>
+      <article class="panel"><h3>缺失</h3><p>没有可用坐标。应进入坐标复核补充地址、城市、邮编和国家，从候选结果中确认；也可地图选点或人工输入经纬度。</p></article>
     </section>
-    <aside class="callout info"><strong>没有底图不等于数据丢失。</strong>地图底图和地址解析需要网络。离线或瓦片加载失败时，页面会提示底图状态；客户列表、筛选、坐标质量和人工修正仍应可用。</aside>
+    <aside class="callout info"><strong>没有底图不等于数据丢失。</strong>地图底图和地址解析需要网络。地址搜索与批量地理编码会把位置字段发送给一个或多个外部服务；启用高德后，可回退故障会继续查询 Nominatim，界面显示实际候选服务商。高德只负责可选地理编码，不替换 CARTO/OpenStreetMap 底图；打开地图也会产生外部瓦片请求。普通成员不要自行配置或索取高德 Key，不允许外发的客户地址请使用人工经纬度或地图选点。离线或瓦片加载失败时，客户列表、筛选、坐标质量和人工修正仍应可用。</aside>
 
-    <h2>5. Gate A 完成清单</h2>
+    <h2>6. Gate A 完成清单</h2>
     <ul class="check">
-      <li>安装包与设备架构一致</li><li>标题栏为 v0.11.4-internal</li><li>中英文切换不改变页面布局</li><li>姓名、角色和设备正确</li><li>可生成并导入设备授权</li><li>新增、查看、修改正常</li><li>归档/删除操作可纠正</li><li>完全退出后后台停止</li><li>重启后本地数据仍在</li><li>业务地区显示正确</li><li>时间筛选口径清楚</li><li>地图质量状态可理解</li>
+      <li>安装包与设备架构一致</li><li>标题栏为 v0.11.7-internal</li><li>中英文切换不改变页面布局</li><li>窄屏仍可滚动使用左侧导航</li><li>仪表盘接口失败显示错误和重试，不显示假 0</li><li>姓名、角色和设备正确</li><li>可生成并导入设备授权</li><li>新增、查看、修改正常</li><li>归档/删除操作可纠正</li><li>完全退出后后台停止</li><li>升级前后数量与原附件一致</li><li>第二次启动数据仍在</li><li>业务地区显示正确</li><li>时间筛选口径清楚</li><li>卡片排序刷新后稳定</li><li>地图质量状态可理解</li>
     </ul>
 
-    <h2>6. 常见异常</h2>
+    <h2>7. 常见异常</h2>
     <table><thead><tr><th>现象</th><th>原因判断</th><th>处理</th></tr></thead><tbody>
       <tr><td>提示旧版仍在运行</td><td>只关闭了浏览器，后台进程仍占用数据目录</td><td>回到旧版使用退出入口，确认完全停止后再打开新版</td></tr>
       <tr><td>macOS 显示安装位置警告</td><td>正在从 DMG 运行</td><td>退出，拖入“应用程序”，推出 DMG，再从“应用程序”打开</td></tr>
       <tr><td>升级后仍是旧界面</td><td>打开了旧副本或旧页面</td><td>关闭旧页签，核对应用位置和标题栏版本后重开</td></tr>
+      <tr><td>升级失败并停止启动</td><td>备份校验、schema 迁移或迁移后数据库检查未通过</td><td>不要删除数据目录；保留提示和 launcher.log，使用自动生成的 pre_upgrade 备份联系 Leader/管理员恢复</td></tr>
       <tr><td>授权设备不匹配</td><td>使用了其他电脑或其他成员的授权</td><td>本机重新生成申请，由 Leader 对应成员重新签发</td></tr>
       <tr><td>地图没有底图</td><td>离线或底图服务不可用</td><td>继续使用列表；需要定位时联网后重试，不要把近似点当精确点</td></tr>
+      <tr><td>地址搜索失败</td><td>页面会区分无结果、断网、超时、限流或服务配置错误</td><td>按具体提示重试或人工选点；不要把服务故障当作客户地址错误</td></tr>
     </tbody></table>
   </main>
-  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="02-Leader账号导入与治理.html">Leader 指南 →</a>　·　JPT v0.11.4-internal</div></footer>
+  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="02-Leader账号导入与治理.html">Leader 指南 →</a>　·　JPT v0.11.7-internal</div></footer>
 </body>
 </html>

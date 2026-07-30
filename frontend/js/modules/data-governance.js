@@ -88,7 +88,7 @@ window.runBatchRepair = async function() {
         application: document.getElementById('gov-application')?.value?.trim() || null
     };
     if (!payload.customer_ids.length && !payload.lead_ids.length) {
-        alert('Enter at least one Customer ID or Lead ID');
+        alert(I18n.t('Enter at least one Customer ID or Lead ID'));
         return;
     }
     const resultDiv = document.getElementById('governance-result');
@@ -119,4 +119,3 @@ function parseGovernanceIds(value) {
         .map(item => item.trim())
         .filter(Boolean);
 }
-

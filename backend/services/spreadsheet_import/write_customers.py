@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ...coordinate_validation import validated_coordinate_payload
 from ...repositories.base import generate_uuid, now_iso
 from ..customer_service import normalize_name
 from .bindings import bind, binding_id
@@ -49,7 +50,11 @@ def write_customer_entities(conn, canonical: dict, context: dict, actor_id: str,
 def _upsert_customer(conn, customer_id: str, item: dict, actor_id: str) -> None:
     now = now_iso()
     current = conn.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
-    values = selected_fields(item, CUSTOMER_FIELDS)
+    coordinate_values = validated_coordinate_payload({
+        key: value for key, value in item.items()
+        if key in {"lat", "lng"} and value not in (None, "", CLEAR_TOKEN)
+    })
+    values = selected_fields({**item, **coordinate_values}, CUSTOMER_FIELDS)
     if "geocode_locked" in values:
         values["geocode_locked"] = boolean_value(values["geocode_locked"])
     if item.get("display_name") and item.get("display_name") != CLEAR_TOKEN:

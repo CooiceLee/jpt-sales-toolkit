@@ -165,7 +165,11 @@
             step('coordinate-geocode-failure-visible');
             win().switchModule('coordinate-review');
             await sleep(500);
-            win().eval("ApiClient.geocode = async () => { throw new Error('smoke geocode failure'); }");
+            win().eval(`ApiClient.searchGeocode = async () => {
+                const error = new Error('smoke geocode failure');
+                error.details = { code: 'network_error' };
+                throw error;
+            }`);
             win().openCoordinateCorrection(customer.id, customer.display_name, customer.lat, customer.lng, {
                 address: customer.address,
                 city: customer.city,
@@ -175,7 +179,12 @@
             doc().getElementById('coord-address').value = 'not found smoke address';
             await win().geocodeCoordinateAddress();
             const geocodeText = doc().getElementById('coord-geocode-result')?.textContent || '';
-            if (!geocodeText.includes('Address not found')) throw new Error('Geocode failure message was not visible');
+            const expectedGeocodeError = win().I18n?.t(
+                'The map service could not be reached. Check the network and retry.'
+            ) || 'The map service could not be reached. Check the network and retry.';
+            if (!geocodeText.includes(expectedGeocodeError)) {
+                throw new Error('Geocode failure type was not visible');
+            }
 
             const filteredErrors = errors.filter(item => !item.includes('smoke geocode failure'));
             const output = { steps, errors: filteredErrors };

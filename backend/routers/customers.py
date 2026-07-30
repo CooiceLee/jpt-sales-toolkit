@@ -4,16 +4,16 @@ Customer router - customer management endpoints.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..services import CustomerService
 from ..repositories.base import ConflictError
 from .customer_aliases import router as customer_aliases_router
 from .customer_merge import router as customer_merge_router
-from .deps import can_access_customer, get_current_user, require_role
+from .deps import can_access_customer, can_write_customer, get_current_user, require_role
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -27,11 +27,11 @@ class CustomerCreate(BaseModel):
     city: Optional[str] = None
     address: Optional[str] = None
     region: Optional[str] = None
-    lat: Optional[float] = None
-    lng: Optional[float] = None
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lng: Optional[float] = Field(None, ge=-180, le=180)
     normalized_address: Optional[str] = None
     geocode_source: Optional[str] = None
-    geocode_confidence: Optional[str] = None
+    geocode_confidence: Optional[Literal["high", "medium", "low"]] = None
     geocode_locked: Optional[bool] = None
 
 
@@ -48,11 +48,11 @@ class CustomerUpdate(BaseModel):
     language: Optional[str] = None
     company_size: Optional[str] = None
     company_description: Optional[str] = None
-    lat: Optional[float] = None
-    lng: Optional[float] = None
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lng: Optional[float] = Field(None, ge=-180, le=180)
     normalized_address: Optional[str] = None
     geocode_source: Optional[str] = None
-    geocode_confidence: Optional[str] = None
+    geocode_confidence: Optional[Literal["high", "medium", "low"]] = None
     geocode_locked: Optional[bool] = None
     row_version: int
 
@@ -85,14 +85,16 @@ def get_customer_service() -> CustomerService:
 
 
 def ensure_customer_access(customer_id: str, user: dict, *, write: bool = False) -> None:
-    """Enforce lead-scoped customer access and read-only technical visibility."""
-    if not can_access_customer(customer_id, user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    if write and user["role"] == "tech":
+    """Enforce separate read visibility and owner/collaborator write rights."""
+    if write:
+        if can_write_customer(customer_id, user):
+            return
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Technical users have read-only customer access",
+            detail="Customer write access requires Leader, owner, or collaborator",
         )
+    if not can_access_customer(customer_id, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 @router.post("")

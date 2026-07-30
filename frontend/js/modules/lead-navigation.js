@@ -2,6 +2,7 @@ function moduleForLeadStage(lead) {
     const stage = lead?.sales_stage || lead?.stage;
     const serviceStatus = lead?.service_status || lead?.serviceStatus;
     if (serviceStatus && serviceStatus !== 'None') return 'aftersales';
+    if (window.RoleCapabilities?.isTech?.()) return 'sampling';
     if (stage === 'Won') return 'fulfillment';
     if (stage === 'Quoted' || stage === 'Lost') return 'deal';
     if (stage === 'Following') return 'followup';
@@ -24,8 +25,7 @@ window.jumpToCustomerStageCards = async function(leadId, stage, customerId = '')
     State.stageFilters.businessRegion = '';
     syncStageFilterInputs();
     const module = moduleForLeadStage(lead || { sales_stage: stage });
-    switchModule(module);
-    await loadModuleData(module);
+    if (switchModule(module) === false) return;
     if (leadId) {
         await openInquiryPanel(leadId, module);
     }
@@ -40,6 +40,14 @@ window.focusReviewMapCustomer = async function(customerId) {
     await loadReviewMap();
     const marker = State.mapCustomerMarkers[customerId];
     if (!marker || !State.map) {
+        const mapRecord = [
+            ...(State.mapData?.points || []),
+            ...(State.mapData?.missing_locations || [])
+        ].find(item => item.customer_id === customerId);
+        if (!mapRecord?.can_edit) {
+            notify(I18n.t('You can view this customer, but only the owner or a collaborator can edit its coordinates.'));
+            return;
+        }
         try {
             switchModule('coordinate-review');
             await loadCoordinateReview();
@@ -52,14 +60,16 @@ window.focusReviewMapCustomer = async function(customerId) {
                 {
                     address: customer.address,
                     city: customer.city,
+                    postal_code: customer.postal_code,
                     country: customer.country,
-                    normalized_address: customer.normalized_address
+                    normalized_address: customer.normalized_address,
+                    row_version: customer.row_version
                 }
             );
-            notify('Customer is not plotted on the review map. Opened coordinate correction.');
+            notify(I18n.t('Customer is not plotted on the review map. Opened coordinate correction.'));
         } catch (err) {
             console.error('Coordinate correction fallback error:', err);
-            alert('Customer location is not available on the review map.');
+            alert(I18n.t('Customer location is not available on the review map.'));
         }
         return;
     }
@@ -85,7 +95,10 @@ function leadToCardItem(lead, extra = {}) {
         product_category: lead.product_category || '',
         title: lead.title,
         created_at: lead.created_at,
+        updated_at: lead.updated_at,
         inquiry_date: lead.inquiry_date,
+        quotation_date: lead.quotation_date,
+        po_date: lead.po_date,
         owner_name: (lead.assignments || []).find(item => item.assignment_type === 'owner')?.user_name || lead.owner_name || '',
         deal_amount: lead.deal_amount || 0,
         currency: lead.currency || '',

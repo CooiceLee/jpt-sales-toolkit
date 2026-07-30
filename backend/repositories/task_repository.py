@@ -14,7 +14,14 @@ class PreSalesTaskRepository(BaseRepository):
 
     table_name = "pre_sales_tasks"
 
-    def create(self, lead_id: str, data: dict, actor_id: str) -> str:
+    def create(
+        self,
+        lead_id: str,
+        data: dict,
+        actor_id: str,
+        *,
+        commit: bool = True,
+    ) -> str:
         """Create new pre-sales task. Returns task ID."""
         task_id = generate_uuid()
         now = now_iso()
@@ -33,7 +40,8 @@ class PreSalesTaskRepository(BaseRepository):
 
         sql, params = self._build_insert(insert_data)
         self.conn.execute(sql, params)
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return task_id
 
     def get_by_client_request_id(
@@ -180,6 +188,8 @@ class AfterSalesTaskRepository(BaseRepository):
         actor_id: str,
         created_at: Optional[str] = None,
         updated_at: Optional[str] = None,
+        *,
+        commit: bool = True,
     ) -> str:
         """Create new after-sales task. Returns task ID."""
         task_id = generate_uuid()
@@ -201,7 +211,8 @@ class AfterSalesTaskRepository(BaseRepository):
 
         sql, params = self._build_insert(insert_data)
         self.conn.execute(sql, params)
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return task_id
 
     def update(

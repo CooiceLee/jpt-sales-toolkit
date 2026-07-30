@@ -5,20 +5,20 @@ window.showNewInquiryModal = function() {
 
 window.logFollowUp = function() {
     switchModule('followup');
-    notify('Select a follow-up card to add a record.');
+    notify(I18n.t('Select a follow-up card to add a record.'));
 };
 
 window.createQuote = function() {
     switchModule('deal');
-    notify('Select a quoted lead card to edit quotation info.');
+    notify(I18n.t('Select a quoted lead card to edit quotation info.'));
 };
 
 window.logStatus = function() {
     switchModule('fulfillment');
-    notify('Select an order card to update fulfillment status.');
+    notify(I18n.t('Select an order card to update fulfillment status.'));
 };
 
 window.logIssue = function() {
     switchModule('aftersales');
-    notify('Select an after-sales card to log an issue.');
+    notify(I18n.t('Select an after-sales card to log an issue.'));
 };

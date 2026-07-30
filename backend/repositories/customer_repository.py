@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..coordinate_validation import validated_coordinate_payload
 from .base import BaseRepository, ConflictError, generate_uuid, now_iso
 
 
@@ -14,8 +15,15 @@ class CustomerRepository(BaseRepository):
 
     table_name = "customers"
 
-    def create(self, data: dict, actor_id: str) -> str:
+    def create(
+        self,
+        data: dict,
+        actor_id: str,
+        *,
+        commit: bool = True,
+    ) -> str:
         """Create new customer. Returns customer ID."""
+        data = validated_coordinate_payload(data)
         customer_id = generate_uuid()
         now = now_iso()
 
@@ -31,7 +39,8 @@ class CustomerRepository(BaseRepository):
 
         sql, params = self._build_insert(insert_data)
         self.conn.execute(sql, params)
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return customer_id
 
     def update(
@@ -40,10 +49,13 @@ class CustomerRepository(BaseRepository):
         data: dict,
         actor_id: str,
         row_version: int,
+        *,
+        commit: bool = True,
     ) -> dict:
         """Update customer with optimistic locking. Returns updated record."""
+        data = validated_coordinate_payload(data)
         current = self.get_by_id(customer_id)
-        if not current:
+        if not current or current.get("archived_at"):
             raise ValueError(f"Customer {customer_id} not found")
 
         if current["row_version"] != row_version:
@@ -61,6 +73,7 @@ class CustomerRepository(BaseRepository):
         }
 
         sql, params = self._build_update(customer_id, update_data, row_version)
+        sql += " AND archived_at IS NULL"
         cursor = self.conn.execute(sql, params)
 
         if cursor.rowcount == 0:
@@ -70,7 +83,8 @@ class CustomerRepository(BaseRepository):
                 current_data={"id": customer_id, "updated_at": current["updated_at"]},
             )
 
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return self.get_by_id(customer_id)
 
     def archive(self, customer_id: str, actor_id: str) -> bool:
@@ -201,7 +215,13 @@ class CustomerRepository(BaseRepository):
         return row["customer_id"] if row else None
 
     # Contact operations
-    def add_contact(self, customer_id: str, contact_data: dict) -> str:
+    def add_contact(
+        self,
+        customer_id: str,
+        contact_data: dict,
+        *,
+        commit: bool = True,
+    ) -> str:
         """Add contact to customer."""
         contact_id = generate_uuid()
         now = now_iso()
@@ -225,7 +245,8 @@ class CustomerRepository(BaseRepository):
         # Adjust table name for this insert
         sql = sql.replace(self.table_name, "customer_contacts")
         self.conn.execute(sql, params)
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return contact_id
 
     def get_contacts(self, customer_id: str) -> list[dict]:
@@ -249,11 +270,24 @@ class CustomerRepository(BaseRepository):
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def update_contact(self, contact_id: str, data: dict) -> dict:
+    def update_contact(
+        self,
+        contact_id: str,
+        data: dict,
+        *,
+        expected_updated_at: Optional[str] = None,
+        commit: bool = True,
+    ) -> dict:
         """Update customer contact."""
         current = self.get_contact_by_id(contact_id)
         if not current:
             raise ValueError(f"Customer contact {contact_id} not found")
+        if expected_updated_at is not None and current["updated_at"] != expected_updated_at:
+            raise ConflictError(
+                current_version=current["updated_at"],
+                your_version=expected_updated_at,
+                current_data={"id": contact_id, "updated_at": current["updated_at"]},
+            )
 
         if data.get("email"):
             data["email"] = data["email"].lower()
@@ -274,11 +308,23 @@ class CustomerRepository(BaseRepository):
         }
         sql = ", ".join(f"{k} = ?" for k in update_data.keys())
         params = list(update_data.values()) + [contact_id]
-        self.conn.execute(
-            f"UPDATE customer_contacts SET {sql} WHERE id = ? AND archived_at IS NULL",
+        where = "id = ? AND archived_at IS NULL"
+        if expected_updated_at is not None:
+            where += " AND updated_at = ?"
+            params.append(expected_updated_at)
+        cursor = self.conn.execute(
+            f"UPDATE customer_contacts SET {sql} WHERE {where}",
             params,
         )
-        self.conn.commit()
+        if cursor.rowcount == 0:
+            latest = self.get_contact_by_id(contact_id) or current
+            raise ConflictError(
+                current_version=latest["updated_at"],
+                your_version=expected_updated_at,
+                current_data={"id": contact_id, "updated_at": latest["updated_at"]},
+            )
+        if commit:
+            self.conn.commit()
         return self.get_contact_by_id(contact_id)
 
     def archive_contact(self, contact_id: str) -> bool:

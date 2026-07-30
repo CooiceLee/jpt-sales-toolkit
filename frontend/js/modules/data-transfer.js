@@ -1,6 +1,59 @@
 /** Independent workspaces for governed XLSX import, JSON exchange and governance. */
 (function() {
     const tr = text => window.I18n?.t(text) || text;
+    let jsonPreflightApproval = null;
+    let jsonPreflightRequest = 0;
+    let jsonImportBusy = false;
+
+    function jsonFileSignature(file) {
+        return file ? `${file.name}:${file.size}:${file.lastModified}` : '';
+    }
+    function jsonImportButton() {
+        return document.getElementById('json-import-btn')
+            || document.getElementById('json-import-commit-btn')
+            || document.querySelector?.('#transfer-json button[onclick="importJsonData()"]')
+            || null;
+    }
+    function jsonPreflightAllows(file) {
+        return Boolean(
+            file
+            && jsonPreflightApproval?.approved
+            && jsonPreflightApproval.file === file
+            && jsonPreflightApproval.signature === jsonFileSignature(file)
+        );
+    }
+    function syncJsonImportGate() {
+        const file = document.getElementById('json-import-file')?.files?.[0];
+        const button = jsonImportButton();
+        if (!button) return;
+        button.disabled = jsonImportBusy || !jsonPreflightAllows(file);
+        button.setAttribute('aria-disabled', String(button.disabled));
+        button.title = jsonPreflightAllows(file)
+            ? tr('Ready to import')
+            : tr('Run preflight and resolve every blocking issue before import.');
+    }
+    function resetJsonPreflight(clearResults = false) {
+        jsonPreflightApproval = null;
+        jsonPreflightRequest += 1;
+        if (clearResults) {
+            const preflight = document.getElementById('json-preflight-result');
+            const imported = document.getElementById('json-import-result');
+            if (preflight) preflight.innerHTML = '';
+            if (imported) imported.innerHTML = '';
+        }
+        syncJsonImportGate();
+    }
+    function bindJsonImportGate() {
+        const input = document.getElementById('json-import-file');
+        if (!input || input.dataset.jsonPreflightGateBound === 'true') {
+            syncJsonImportGate();
+            return;
+        }
+        input.dataset.jsonPreflightGateBound = 'true';
+        input.addEventListener('change', () => resetJsonPreflight(true));
+        syncJsonImportGate();
+    }
+
     function defaultWorkspace() {
         return State.user?.role === 'leader' ? 'spreadsheet' : 'json';
     }
@@ -21,44 +74,8 @@
             const allowed = active === 'json' || State.user?.role === 'leader';
             window.showTransferWorkspace(active && allowed ? active : defaultWorkspace());
             window.SpreadsheetImportProgress?.sync?.();
-        }
-    };
-    window.exportData = async function() {
-        try {
-            const { blob, filename } = await ApiClient.exportData();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(url);
-            const result = document.getElementById('export-result');
-            result.style.display = 'block';
-            result.className = 'wizard-inline-result success';
-            result.textContent = `✓ ${tr('Export successful!')} ${filename}`;
-        } catch (error) {
-            alert(`${tr('Export failed')}: ${error.message || tr('Unknown error')}`);
-        }
-    };
-    window.createFullBackup = async function() {
-        const result = document.getElementById('backup-result');
-        const button = document.getElementById('create-backup-btn');
-        try {
-            button.disabled = true;
-            result.style.display = 'block';
-            result.className = 'wizard-inline-result';
-            result.textContent = tr('Creating full backup...');
-            const report = await ApiClient.createFullBackup();
-            result.className = 'wizard-inline-result success';
-            result.innerHTML = `<strong>${escapeHtml(tr('Full backup created'))}</strong><br><code>${escapeHtml(report.backup_path || '')}</code>`;
-            window.SpreadsheetImportProgress?.markBackupComplete?.();
-        } catch (error) {
-            result.className = 'wizard-inline-result error';
-            result.textContent = `${tr('Backup failed')}: ${error.message || tr('Unknown error')}`;
-        } finally {
-            button.disabled = false;
+            window.JsonExport?.ensureRecipients?.();
+            bindJsonImportGate();
         }
     };
     function selectedJsonFile() {
@@ -70,56 +87,67 @@
         const file = selectedJsonFile();
         if (!file) return;
         const target = document.getElementById('json-preflight-result');
+        const signature = jsonFileSignature(file);
+        const request = ++jsonPreflightRequest;
+        jsonPreflightApproval = null;
+        syncJsonImportGate();
         try {
             target.innerHTML = `<div class="loading-state">${tr('Running JSON preflight...')}</div>`;
-            window.LegacyImportView.renderPreflight(await ApiClient.preflightImportData(file));
+            const report = await ApiClient.preflightImportData(file);
+            const currentFile = document.getElementById('json-import-file')?.files?.[0];
+            if (
+                request !== jsonPreflightRequest
+                || currentFile !== file
+                || jsonFileSignature(currentFile) !== signature
+            ) return;
+            const errorCount = Number(report.summary?.errors || 0);
+            const skippedCount = Number(report.permission?.skipped_leads || 0);
+            jsonPreflightApproval = {
+                file,
+                signature,
+                approved: errorCount === 0 && skippedCount === 0,
+            };
+            window.LegacyImportView.renderPreflight(report);
         } catch (error) {
+            if (request !== jsonPreflightRequest) return;
             target.innerHTML = `<div class="empty-state compact error-state">${escapeHtml(error.message || tr('Preflight failed'))}</div>`;
+        } finally {
+            syncJsonImportGate();
         }
     };
     window.importJsonData = async function() {
         const file = selectedJsonFile();
         if (!file) return;
         const target = document.getElementById('json-import-result');
+        if (!jsonPreflightAllows(file)) {
+            target.innerHTML = `<div class="empty-state compact error-state">${escapeHtml(tr('Run preflight and resolve every blocking issue before import.'))}</div>`;
+            syncJsonImportGate();
+            return;
+        }
+        jsonImportBusy = true;
+        jsonPreflightApproval = null;
+        syncJsonImportGate();
         try {
             const report = await ApiClient.importData(file);
             window.LegacyImportView.renderImport(report);
-            await refreshAllCounts();
+            try {
+                await refreshAllCounts();
+            } catch (refreshError) {
+                console.error('JSON import count refresh failed:', refreshError);
+            }
             document.getElementById('json-import-file').value = '';
             return report;
         } catch (error) {
             target.innerHTML = `<div class="empty-state compact error-state">${escapeHtml(error.message || tr('Import failed'))}</div>`;
+        } finally {
+            jsonImportBusy = false;
+            syncJsonImportGate();
         }
     };
 
-    window.LegacyImportView = {
-        renderImport(report) {
-            const errors = report.errors || [];
-            document.getElementById('json-import-result').innerHTML = `
-                <div class="import-success"><h4>${tr('Import Complete')}</h4>
-                    <div class="governance-kpis">
-                        <span>${tr('Total')} <strong>${report.total_records || 0}</strong></span>
-                        <span>${tr('Customers created')} <strong>${report.new_customers || 0}</strong></span>
-                        <span>${tr('Customers updated')} <strong>${report.updated_customers || 0}</strong></span>
-                        <span>${tr('Leads created')} <strong>${report.new_leads || 0}</strong></span>
-                        <span>${tr('Leads updated')} <strong>${report.updated_leads || 0}</strong></span>
-                        <span>${tr('Skipped')} <strong>${report.skipped_records || 0}</strong></span>
-                    </div>${errors.length ? renderPreflightIssueList(tr('Errors'), errors) : ''}</div>`;
-        },
-        renderPreflight(report) {
-            const issues = report.issues || [];
-            const duplicates = report.duplicates || [];
-            document.getElementById('json-preflight-result').innerHTML = `
-                <div class="governance-report"><h4>${tr('JSON Preflight Result')}</h4>
-                    <div class="governance-kpis">
-                        <span>${tr('Allowed leads')} <strong>${report.permission?.allowed_leads || 0}</strong></span>
-                        <span>${tr('Errors')} <strong>${report.summary?.errors || 0}</strong></span>
-                        <span>${tr('Warnings')} <strong>${report.summary?.warnings || 0}</strong></span>
-                        <span>${tr('Duplicates')} <strong>${report.summary?.duplicates || 0}</strong></span>
-                    </div>
-                    ${issues.length ? renderPreflightIssueList(tr('Issues'), issues.map(item => `${item.severity.toUpperCase()} · ${item.entity}: ${item.message}`)) : `<div class="empty-state compact">${tr('No field or enum issues found')}</div>`}
-                    ${duplicates.length ? renderPreflightIssueList(tr('Duplicate Signals'), duplicates.map(item => `${item.type} · ${item.name || item.email || item.customer_id}`)) : ''}
-                </div>`;
-        }
-    };
+    if (document.readyState === 'loading' && document.addEventListener) {
+        document.addEventListener('DOMContentLoaded', bindJsonImportGate, { once: true });
+    } else {
+        bindJsonImportGate();
+    }
 })();

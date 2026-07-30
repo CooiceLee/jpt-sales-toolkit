@@ -2,6 +2,7 @@ function renderPanelContent(tabId) {
     const container = document.getElementById('panel-content');
     const inq = State.currentInquiry;
     if (!inq) return;
+    PanelDirtyState.reset();
 
     if (tabId === 'followup') {
         container.innerHTML = renderFollowupsTab(inq);
@@ -31,7 +32,7 @@ function renderPanelContent(tabId) {
     // Get fields for this tab
     const fieldGroup = State.config.fields?.field_groups?.[tabId];
     if (!fieldGroup) {
-        container.innerHTML = '<div class="empty-state">No fields configured for this tab.</div>';
+        container.innerHTML = `<div class="empty-state">${escapeHtml(I18n.t('No fields configured for this tab.'))}</div>`;
         return;
     }
 
@@ -44,9 +45,9 @@ function renderPanelContent(tabId) {
         let helpText = '';
         if (tabId === 'customer' && (name === 'contact_name' || name === 'email')) {
             if (name === 'contact_name') {
-                helpText = '<div class="form-help">姓名或邮箱至少填写一项</div>';
+                helpText = `<div class="form-help">${escapeHtml(I18n.t('Enter at least a contact name or email address.'))}</div>`;
             } else if (name === 'email') {
-                helpText = '<div class="form-help">邮箱格式: example@company.com</div>';
+                helpText = `<div class="form-help">${escapeHtml(I18n.t('Email format: example@company.com'))}</div>`;
             }
         }
 

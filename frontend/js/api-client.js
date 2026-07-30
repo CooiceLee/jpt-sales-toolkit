@@ -35,6 +35,35 @@ const ApiClient = (function() {
         return !!getToken();
     }
 
+    const ANONYMOUS_ENDPOINTS = new Set([
+        '/auth/login',
+        '/authorization/status',
+        '/authorization/bootstrap',
+        '/authorization/leader/recover',
+        '/authorization/device-request',
+        '/authorization/activate',
+    ]);
+
+    function isAnonymousEndpoint(endpoint) {
+        return ANONYMOUS_ENDPOINTS.has(String(endpoint || '').split('?')[0]);
+    }
+
+    async function readErrorResponse(response) {
+        const errorText = await response.text();
+        let message = `API Error: ${response.status}`;
+        let details = null;
+        try {
+            const errorData = JSON.parse(errorText);
+            details = errorData.detail || null;
+            message = typeof details === 'object'
+                ? (details.message || message)
+                : (details || message);
+        } catch {
+            message = errorText || message;
+        }
+        return { message, details };
+    }
+
     // ===== API Request =====
     async function request(endpoint, options = {}) {
         const token = getToken();
@@ -52,8 +81,9 @@ const ApiClient = (function() {
             headers
         });
 
-        // Handle 401 Unauthorized
-        if (response.status === 401) {
+        // Only an authenticated request can expire a session. Login and the
+        // offline-activation endpoints must preserve their own error meaning.
+        if (response.status === 401 && token && !isAnonymousEndpoint(endpoint)) {
             clearAuth();
             window.dispatchEvent(new CustomEvent('auth:logout'));
             throw new ApiError('Session expired. Please login again.', 401);
@@ -67,15 +97,8 @@ const ApiClient = (function() {
 
         // Handle other errors
         if (!response.ok) {
-            const errorText = await response.text();
-            let errorMessage = `API Error: ${response.status}`;
-            try {
-                const errorData = JSON.parse(errorText);
-                errorMessage = errorData.detail || errorMessage;
-            } catch {
-                errorMessage = errorText || errorMessage;
-            }
-            throw new ApiError(errorMessage, response.status);
+            const error = await readErrorResponse(response);
+            throw new ApiError(error.message, response.status, error.details);
         }
 
         return response.json();
@@ -83,10 +106,11 @@ const ApiClient = (function() {
 
     // ===== Error Classes =====
     class ApiError extends Error {
-        constructor(message, status) {
+        constructor(message, status, details = null) {
             super(message);
             this.name = 'ApiError';
             this.status = status;
+            this.details = details;
         }
     }
 
@@ -155,16 +179,14 @@ const ApiClient = (function() {
                 ...(token ? { 'Authorization': `Bearer ${token}` } : {})
             }
         });
-        if (response.status === 401) {
+        if (response.status === 401 && token && !isAnonymousEndpoint(endpoint)) {
             clearAuth();
             window.dispatchEvent(new CustomEvent('auth:logout'));
             throw new ApiError('Session expired. Please login again.', 401);
         }
         if (!response.ok) {
-            const errorText = await response.text();
-            let message = errorText || `API Error: ${response.status}`;
-            try { message = JSON.parse(errorText).detail || message; } catch { /* plain text */ }
-            throw new ApiError(message, response.status);
+            const error = await readErrorResponse(response);
+            throw new ApiError(error.message, response.status, error.details);
         }
         const disposition = response.headers.get('Content-Disposition') || '';
         const match = disposition.match(/filename\*?=(?:UTF-8''|["']?)([^"';]+)/i);
@@ -352,6 +374,13 @@ const ApiClient = (function() {
         });
     }
 
+    async function saveInquiryAggregate(id, data) {
+        return request(`/leads/${id}/aggregate`, {
+            method: 'PATCH',
+            body: JSON.stringify(data)
+        });
+    }
+
     async function addAssignment(leadId, userId, assignmentType) {
         return request(`/leads/${leadId}/assignments`, {
             method: 'POST',
@@ -380,10 +409,24 @@ const ApiClient = (function() {
         });
     }
 
-    async function geocode(address, city, country) {
+    async function geocode(address, city, country, postalCode = '') {
         return request('/intake/geocode', {
             method: 'POST',
-            body: JSON.stringify({ address, city, country })
+            body: JSON.stringify({ address, city, country, postal_code: postalCode })
+        });
+    }
+
+    async function searchGeocode(fields, limit = 5, provider = null) {
+        return request('/intake/geocode/search', {
+            method: 'POST',
+            body: JSON.stringify({
+                address: fields?.address || null,
+                city: fields?.city || null,
+                postal_code: fields?.postal_code || null,
+                country: fields?.country || null,
+                limit,
+                provider
+            })
         });
     }
 
@@ -720,7 +763,7 @@ const ApiClient = (function() {
     }
 
     // ===== Data Exchange API =====
-    async function exportData(leadIds = null) {
+    async function exportData(leadIds = null, recipientUserId = null) {
         const token = getToken();
         const response = await fetch(`${API_BASE}/data/export`, {
             method: 'POST',
@@ -728,7 +771,10 @@ const ApiClient = (function() {
                 'Content-Type': 'application/json',
                 ...(token ? { 'Authorization': `Bearer ${token}` } : {})
             },
-            body: JSON.stringify({ lead_ids: leadIds })
+            body: JSON.stringify({
+                lead_ids: leadIds,
+                recipient_user_id: recipientUserId
+            })
         });
 
         if (!response.ok) {
@@ -964,6 +1010,7 @@ const ApiClient = (function() {
         getLead,
         createLead,
         updateLead,
+        saveInquiryAggregate,
         addAssignment,
         archiveAssignment,
 
@@ -971,6 +1018,7 @@ const ApiClient = (function() {
         parseEmail,
         submitIntake,
         geocode,
+        searchGeocode,
 
         // Activity
         listActivities,

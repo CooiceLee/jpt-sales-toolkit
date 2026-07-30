@@ -22,6 +22,8 @@ class AuditRepository(BaseRepository):
         actor_id: Optional[str] = None,
         before_json: Optional[str] = None,
         after_json: Optional[str] = None,
+        *,
+        commit: bool = True,
     ) -> str:
         """Create audit log entry. Returns log ID."""
         log_id = generate_uuid()
@@ -44,7 +46,8 @@ class AuditRepository(BaseRepository):
                 now_iso(),
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return log_id
 
     def list_for_entity(

@@ -9,8 +9,17 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from ..services import IntakeService, GeocodeService
-from .deps import get_current_user, require_role
+from ..coordinate_validation import CoordinateValidationError
+from ..services import IntakeService
+from .deps import can_write_customer, get_current_user, require_role
+from .intake_geocoding import (
+    GeocodeRequest,
+    _geocoding_http_error,
+    geocode_address,
+    get_geocode_service,
+    router as geocoding_router,
+    search_addresses,
+)
 
 router = APIRouter(
     prefix="/intake",
@@ -34,18 +43,8 @@ class IntakeSubmitRequest(BaseModel):
     watcher_ids: Optional[list[str]] = None
 
 
-class GeocodeRequest(BaseModel):
-    address: Optional[str] = None
-    city: Optional[str] = None
-    country: Optional[str] = None
-
-
 def get_intake_service() -> IntakeService:
     return IntakeService()
-
-
-def get_geocode_service() -> GeocodeService:
-    return GeocodeService()
 
 
 @router.post("/parse-email")
@@ -75,6 +74,17 @@ async def submit_intake(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Non-leaders can only create leads assigned to themselves",
             )
+        if (
+            not request.is_new_customer
+            and request.customer_id
+            and request.contact
+            and (request.contact.get("name") or request.contact.get("email"))
+            and not can_write_customer(request.customer_id, user)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Existing customer write access requires Leader, owner, or collaborator",
+            )
         return service.submit(
             is_new_customer=request.is_new_customer,
             customer_id=request.customer_id,
@@ -86,6 +96,11 @@ async def submit_intake(
             collaborator_ids=request.collaborator_ids,
             watcher_ids=request.watcher_ids,
         )
+    except CoordinateValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(e),
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -93,23 +108,6 @@ async def submit_intake(
         )
 
 
-@router.post("/geocode")
-async def geocode_address(
-    request: GeocodeRequest,
-    user: dict = Depends(get_current_user),
-    service: GeocodeService = Depends(get_geocode_service),
-):
-    """Convert address to coordinates."""
-    result = service.geocode(
-        address=request.address,
-        city=request.city,
-        country=request.country,
-    )
-
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Address not found",
-        )
-
-    return result
+# Preserve the historical intake router and import surface while keeping
+# geocoding independently testable.
+router.include_router(geocoding_router)

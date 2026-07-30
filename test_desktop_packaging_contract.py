@@ -6,7 +6,7 @@ import tempfile
 import threading
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from zipfile import ZipFile
 
 from desktop_runtime.instance import InstanceLock, find_available_port
@@ -80,6 +80,67 @@ def test_old_instance_guard() -> None:
     open_browser.assert_not_called()
 
 
+def test_packaged_offline_recovery_entry() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpt_packaged_recovery_") as temp_dir:
+        data_dir = Path(temp_dir) / "data"
+        backup = Path(temp_dir) / "pre_upgrade.zip"
+        backup.write_bytes(b"fixture")
+        args = SimpleNamespace(
+            data_dir=str(data_dir),
+            port=8765,
+            no_browser=True,
+            recover_backup=backup,
+        )
+        logger = SimpleNamespace(info=lambda *_args: None, exception=lambda *_args: None)
+        lock = SimpleNamespace(acquire=lambda: True, release=lambda: None)
+        restore = Mock(return_value={
+            "source_backup": str(backup),
+            "safety_database": str(data_dir / "backups" / "pre_recovery.sqlite"),
+        })
+        service = SimpleNamespace(restore_database_from_backup=restore)
+        with patch("desktop_launcher.arguments", return_value=args), \
+             patch("desktop_launcher.prepare_data_dir"), \
+             patch("desktop_launcher.configure_logging", return_value=logger), \
+             patch("desktop_launcher.InstanceLock", return_value=lock), \
+             patch("backend.services.admin_service.AdminService", return_value=service), \
+             patch("desktop_launcher.show_recovery_result") as recovery_result, \
+             patch("desktop_launcher.find_available_port") as find_port:
+            assert desktop_main() == 0
+        restore.assert_called_once_with(backup.resolve(), preserve_current=True)
+        recovery_result.assert_called_once()
+        assert recovery_result.call_args.args[0] is True
+        find_port.assert_not_called()
+
+
+def test_packaged_offline_recovery_failure_is_visible() -> None:
+    with tempfile.TemporaryDirectory(prefix="jpt_packaged_recovery_error_") as temp_dir:
+        data_dir = Path(temp_dir) / "data"
+        backup = Path(temp_dir) / "ordinary-backup.zip"
+        backup.write_bytes(b"fixture")
+        args = SimpleNamespace(
+            data_dir=str(data_dir), port=8765, no_browser=True,
+            recover_backup=backup,
+        )
+        logger = SimpleNamespace(
+            info=lambda *_args: None,
+            error=lambda *_args: None,
+            exception=lambda *_args: None,
+        )
+        lock = SimpleNamespace(acquire=lambda: True, release=lambda: None)
+        service = SimpleNamespace(
+            restore_database_from_backup=Mock(side_effect=ValueError("not pre-upgrade"))
+        )
+        with patch("desktop_launcher.arguments", return_value=args), \
+             patch("desktop_launcher.prepare_data_dir"), \
+             patch("desktop_launcher.configure_logging", return_value=logger), \
+             patch("desktop_launcher.InstanceLock", return_value=lock), \
+             patch("backend.services.admin_service.AdminService", return_value=service), \
+             patch("desktop_launcher.show_recovery_result") as recovery_result:
+            assert desktop_main() == 1
+        recovery_result.assert_called_once()
+        assert recovery_result.call_args.args[0] is False
+
+
 def test_packaging_sources() -> None:
     spec = (ROOT / "packaging" / "jpt_sales_toolkit.spec").read_text(encoding="utf-8")
     frozen_smoke = (ROOT / "scripts" / "smoke_frozen.py").read_text(encoding="utf-8")
@@ -104,6 +165,16 @@ def test_packaging_sources() -> None:
     for runner in ("windows-2022", "macos-15", "macos-15-intel"):
         assert runner in workflow
     assert "UNSIGNED-INTERNAL" in workflow
+    assert 'tags:\n      - "v*-internal"' in workflow
+    assert "VERSION must end in -internal" in workflow
+    assert "smoke_upgrade_frozen.py" in workflow
+    assert "--launch-with-default-data-dir" in workflow
+    assert '$env:LOCALAPPDATA = "$pwd\\isolated-localappdata"' in workflow
+    assert "Uninstall removed the default user data directory" in workflow
+    assert "--prerelease" in workflow
+    launcher = (ROOT / "desktop_launcher.py").read_text(encoding="utf-8")
+    assert '"--recover-backup"' in launcher
+    assert "restore_database_from_backup" in launcher
     assert '"*.jptauth"' in workflow
     assert "path: '*.jptauth'" not in workflow
     assert 'path: "*.jptauth"' not in workflow
@@ -124,6 +195,16 @@ def test_packaging_sources() -> None:
     assert "PrivilegesRequired=lowest" in installer
     assert "UninstallDelete" not in installer
     assert "JPT Sales Toolkit.exe" in installer
+
+    portable_installer = (
+        ROOT / "packaging" / "windows" / "portable" / "Install JPT Sales Toolkit.cmd"
+    ).read_text(encoding="utf-8")
+    assert 'for %%I in ("%~dp0.") do set "JPT_SOURCE=%%~fI"' in portable_installer
+    assert 'set "JPT_SOURCE=%~dp0"' not in portable_installer
+    assert 'robocopy "%JPT_SOURCE%" "%JPT_TARGET%"' in portable_installer
+    assert 'xcopy "%JPT_SOURCE%\\*" "%JPT_TARGET%"' in portable_installer
+    for destructive_flag in ("/MIR", "/PURGE", "/MOVE"):
+        assert destructive_flag not in portable_installer
 
 
 def test_frontend_is_locally_bootstrapped() -> None:
@@ -157,6 +238,9 @@ def test_frontend_language_and_backup_controls() -> None:
     transfer = (ROOT / "frontend" / "js" / "modules" / "data-transfer.js").read_text(
         encoding="utf-8"
     )
+    transfer_view = (
+        ROOT / "frontend" / "js" / "modules" / "data-transfer-view.js"
+    ).read_text(encoding="utf-8")
     actions = (ROOT / "frontend" / "js" / "modules" / "spreadsheet-import-actions.js").read_text(
         encoding="utf-8"
     )
@@ -171,7 +255,7 @@ def test_frontend_language_and_backup_controls() -> None:
     assert "Spreadsheet Preflight" in i18n and "Excel 预检" in i18n
     assert 'id="create-backup-btn"' in index
     assert "createFullBackup" in api
-    assert "ApiClient.createFullBackup()" in transfer
+    assert "ApiClient.createFullBackup()" in transfer_view
     assert 'data-transfer-target="spreadsheet"' in index
     assert 'data-transfer-target="json"' in index
     assert 'id="json-import-file"' in index
@@ -184,6 +268,33 @@ def test_frontend_language_and_backup_controls() -> None:
     assert index.index("spreadsheet-import-state.js") < index.index(
         "spreadsheet-import-progress.js"
     ) < index.index("spreadsheet-import-view.js")
+
+
+def test_lan_test_credentials_are_isolated() -> None:
+    account_script = (ROOT / "scripts" / "create_test_accounts.py").read_text(
+        encoding="utf-8"
+    )
+    lan_script = (ROOT / "scripts" / "one_click_lan_test_server.sh").read_text(
+        encoding="utf-8"
+    )
+    smoke_script = (ROOT / "scripts" / "browser_smoke_v09.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "secrets.token_urlsafe" in account_script
+    assert "report_path.chmod(0o600)" in account_script
+    assert "include-existing-users" not in account_script
+    assert "--include-existing-users" not in lan_script
+    assert "Existing team users and passwords are not changed" in lan_script
+    assert "SMOKE_USER:?" in smoke_script and "SMOKE_PASSWORD:?" in smoke_script
+    assert "LeaderJPT2026" not in smoke_script
+
+
+def test_source_launcher_never_installs_dependencies_at_runtime() -> None:
+    launcher = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert "importlib.util.find_spec" in launcher
+    assert "pip', 'install" not in launcher
+    assert '" -m pip install -r "' in launcher
+    assert launcher.count("os.environ['JPT_DATA_DIR']") == 1
 
 
 def test_desktop_cache_and_install_location_contract() -> None:
@@ -223,9 +334,13 @@ def main() -> None:
         test_single_instance_lock,
         test_disk_image_detection,
         test_old_instance_guard,
+        test_packaged_offline_recovery_entry,
+        test_packaged_offline_recovery_failure_is_visible,
         test_packaging_sources,
         test_frontend_is_locally_bootstrapped,
         test_frontend_language_and_backup_controls,
+        test_lan_test_credentials_are_isolated,
+        test_source_launcher_never_installs_dependencies_at_runtime,
         test_desktop_cache_and_install_location_contract,
         test_authenticated_desktop_shutdown,
     ):

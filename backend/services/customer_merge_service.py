@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..coordinate_validation import validated_coordinate_payload
 from ..repositories.base import ConflictError, now_iso
 from ..repositories.customer_repository import CustomerRepository
 from .customer_merge_contacts import merge_contacts
@@ -76,7 +77,7 @@ class CustomerMergeService:
         self, preview: dict, actor_id: str, now: str,
         source_version: int, target_version: int,
     ) -> None:
-        updates = preview["field_updates"]
+        updates = validated_coordinate_payload(preview["field_updates"])
         assignments = ["updated_at = ?", "updated_by = ?", "row_version = row_version + 1"]
         params = [now, actor_id]
         for field, value in updates.items():
