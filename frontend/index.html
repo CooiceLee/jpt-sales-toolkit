@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-store, max-age=0">
     <title>JPT Sales Toolkit</title>
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css?v=1.9.4" />
-    <link rel="stylesheet" href="/static/css/style.css?v=4.9">
+    <link rel="stylesheet" href="/static/css/style.css?v=5.0">
 </head>
 <body>
     <!-- Login Modal -->
@@ -875,7 +875,8 @@
                     </div>
                     <div class="transfer-tabs" role="tablist" aria-label="Data transfer workspace">
                         <button type="button" class="transfer-tab active" data-transfer-target="spreadsheet" data-leader-spreadsheet onclick="showTransferWorkspace('spreadsheet')">Excel Import</button>
-                        <button type="button" class="transfer-tab" data-transfer-target="json" onclick="showTransferWorkspace('json')">JSON Exchange</button>
+                        <button type="button" class="transfer-tab" data-transfer-target="json" data-sales-exchange onclick="showTransferWorkspace('json')">JSON Exchange</button>
+                        <button type="button" class="transfer-tab" data-transfer-target="tech" data-tech-task-exchange onclick="showTransferWorkspace('tech')">Tech Task Packages</button>
                         <button type="button" class="transfer-tab" data-transfer-target="governance" data-leader-spreadsheet onclick="showTransferWorkspace('governance')">Data Governance</button>
                         <button type="button" class="transfer-tab" data-transfer-target="merge" data-leader-spreadsheet onclick="showTransferWorkspace('merge')">Customer Merge</button>
                     </div>
@@ -925,10 +926,46 @@
                         </div>
                     </section>
 
-                    <section id="transfer-json" class="transfer-workspace">
+                    <section id="transfer-json" class="transfer-workspace" data-sales-exchange>
                         <div class="json-exchange-grid">
                             <article class="kpi-card"><h3>Export My Data</h3><p>JSON is for member-to-Leader record exchange. Attachment files are not included.</p><div id="json-export-recipient-field" class="form-group" hidden><label for="json-export-recipient">Recipient salesperson</label><select id="json-export-recipient" class="form-input"><option value="">Select recipient salesperson</option></select><small>Leader packages include only leads owned by the selected member.</small></div><button type="button" class="btn btn-primary" onclick="exportData()">Export My Data</button><div id="export-result" class="wizard-inline-result" style="display:none;"></div></article>
                             <article class="kpi-card"><h3>Import JSON Package</h3><p>Use JSON only for terminal data exchange. It is not the Excel history-import workflow.</p><input type="file" id="json-import-file" class="form-input" accept=".json,application/json"><div class="json-import-actions"><button type="button" class="btn btn-secondary" id="json-preflight-btn" onclick="preflightJsonImport()">Preflight JSON</button><button type="button" class="btn btn-primary" id="json-import-btn" onclick="importJsonData()" disabled title="Run a clean preflight for this file before import">Import JSON</button></div><div id="json-preflight-result" aria-live="polite"></div><div id="json-import-result" aria-live="polite"></div></article>
+                        </div>
+                    </section>
+
+                    <section id="transfer-tech" class="transfer-workspace" data-tech-task-exchange>
+                        <div class="tech-package-note"><strong>Independent task exchange</strong><span>Only assigned technical task context and permitted result fields are exchanged. Sales JSON and Excel import remain separate.</span></div>
+                        <div class="json-exchange-grid" data-tech-task-role="leader" hidden>
+                            <article class="kpi-card">
+                                <h3>1 · Export assignments to Tech</h3>
+                                <p>Select an active technical member. The package contains only tasks currently assigned to that member.</p>
+                                <label class="form-label" for="tech-task-recipient">Technical member</label>
+                                <select id="tech-task-recipient" class="form-input"><option value="">Select technical member</option></select>
+                                <button type="button" class="btn btn-primary" onclick="exportTechTaskAssignments()">Download .jpttask</button>
+                                <div id="tech-assignment-export-result" aria-live="polite"></div>
+                            </article>
+                            <article class="kpi-card">
+                                <h3>2 · Import results from Tech</h3>
+                                <p>Preflight checks recipient, assignment ownership and record versions before any result is written.</p>
+                                <input type="file" id="tech-result-file" class="form-input" accept=".jptresult,application/json" onchange="onTechTaskPackageFileChanged('result')">
+                                <div class="json-import-actions"><button type="button" class="btn btn-secondary" onclick="preflightTechTaskPackage('result')">Preflight results</button><button type="button" class="btn btn-primary" id="tech-result-import" onclick="importTechTaskPackage('result')" disabled>Import results</button></div>
+                                <div id="tech-result-result" class="tech-package-report" aria-live="polite"></div>
+                            </article>
+                        </div>
+                        <div class="json-exchange-grid" data-tech-task-role="tech" hidden>
+                            <article class="kpi-card">
+                                <h3>1 · Import assignments from Leader</h3>
+                                <p>Preflight the .jpttask package first. A clean import refreshes your pre-sales and after-sales task lists.</p>
+                                <input type="file" id="tech-assignment-file" class="form-input" accept=".jpttask,application/json" onchange="onTechTaskPackageFileChanged('assignment')">
+                                <div class="json-import-actions"><button type="button" class="btn btn-secondary" onclick="preflightTechTaskPackage('assignment')">Preflight assignments</button><button type="button" class="btn btn-primary" id="tech-assignment-import" onclick="importTechTaskPackage('assignment')" disabled>Import assignments</button></div>
+                                <div id="tech-assignment-result" class="tech-package-report" aria-live="polite"></div>
+                            </article>
+                            <article class="kpi-card">
+                                <h3>2 · Return updated results</h3>
+                                <p>Complete task results in Pre-sales / Sampling or After-sales, then export pending updates for your Leader.</p>
+                                <button type="button" class="btn btn-primary" onclick="exportTechTaskResults()">Download .jptresult</button>
+                                <div id="tech-result-export-result" aria-live="polite"></div>
+                            </article>
                         </div>
                     </section>
 
@@ -1058,7 +1095,9 @@
     <script src="/static/js/modules/customer-merge-action.js?v=1.1"></script>
     <script src="/static/js/modules/json-export.js?v=1.0"></script>
     <script src="/static/js/modules/data-transfer-view.js?v=1.0"></script>
-    <script src="/static/js/modules/data-transfer.js?v=1.3"></script>
+    <script src="/static/js/modules/tech-task-package-view.js?v=1.0"></script>
+    <script src="/static/js/modules/tech-task-packages.js?v=1.0"></script>
+    <script src="/static/js/modules/data-transfer.js?v=1.4"></script>
     <script src="/static/js/modules/spreadsheet-import-state.js?v=1.2"></script>
     <script src="/static/js/modules/spreadsheet-import-progress.js?v=1.3"></script>
     <script src="/static/js/modules/spreadsheet-import-view.js?v=1.2"></script>

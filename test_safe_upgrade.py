@@ -46,12 +46,53 @@ def _counts(db_path: Path) -> dict[str, int]:
         conn.close()
 
 
+def _authorization_state(db_path: Path) -> dict[str, list[tuple]]:
+    """Capture security-sensitive rows that an application upgrade must preserve."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {
+            "organizations": conn.execute(
+                "SELECT id, name, slug, authorization_provider, "
+                "authorization_duration_days, is_active FROM organizations ORDER BY id"
+            ).fetchall(),
+            "users": conn.execute(
+                "SELECT id, username, password_hash, display_name, role, region, is_active "
+                "FROM users ORDER BY id"
+            ).fetchall(),
+            "credentials": conn.execute(
+                "SELECT id, organization_id, user_id, password_hash, password_scheme, "
+                "must_change_password, is_active FROM user_credentials ORDER BY id"
+            ).fetchall(),
+            "device_authorizations": conn.execute(
+                "SELECT id, organization_id, user_id, device_fingerprint_hash, role, "
+                "activation_state, authorization_version, payload_json, signature, "
+                "signature_algorithm, signing_key_id, issued_at, valid_from, expires_at, "
+                "is_active, created_by FROM device_authorizations ORDER BY id"
+            ).fetchall(),
+        }
+    finally:
+        conn.close()
+
+
 def _seed_fixture(data_dir: Path, source_version: str) -> dict:
     data_dir.mkdir(parents=True, exist_ok=True)
     db_path = data_dir / "database.sqlite"
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript((ROOT / "backend" / "schema.sql").read_text(encoding="utf-8"))
+        # The source fixtures represent pre-v2 desktop databases even though
+        # the current canonical schema file already contains the additive
+        # Tech task exchange tables.
+        conn.execute("DROP TABLE IF EXISTS tech_task_exchange_bindings")
+        conn.execute("DROP TABLE IF EXISTS tech_task_exchange_batches")
+        source_schema_version = 1 if source_version == "0.11.7-internal" else 0
+        if source_schema_version == 1:
+            conn.execute(
+                "INSERT INTO app_schema_migrations "
+                "(version, name, app_version, applied_at) VALUES (1, ?, ?, ?)",
+                ("runtime_schema_v1", source_version, NOW),
+            )
+            conn.execute("PRAGMA user_version = 1")
         if source_version == "0.11.3-internal":
             conn.execute("DROP INDEX IF EXISTS idx_pre_sales_client_request")
             conn.execute("ALTER TABLE pre_sales_tasks DROP COLUMN client_request_id")
@@ -150,6 +191,8 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
     (config / "desktop_instance.json").write_text('{"port":8765}', encoding="utf-8")
     return {
         "counts": _counts(db_path),
+        "authorization_state": _authorization_state(db_path),
+        "source_schema_version": source_schema_version,
         "attachment_sha": _sha256(attachment_path),
         "config_sha": _sha256(config_path),
     }
@@ -179,15 +222,51 @@ def test_upgrade_fixture(source_version: str) -> None:
 
         result = initialize_database_safely(settings)
         assert result.migrated is True
-        assert result.source_schema_version == 0
+        assert result.source_schema_version == expected["source_schema_version"]
         assert result.target_schema_version == APP_SCHEMA_VERSION
         assert result.backup_path and result.backup_path.is_file()
-        assert result.backup_path.name.startswith("pre_upgrade_schema0_to_schema1_")
+        assert result.backup_path.name.startswith(
+            f"pre_upgrade_schema{expected['source_schema_version']}_to_schema"
+            f"{APP_SCHEMA_VERSION}_"
+        )
         assert read_app_schema_version(settings.db_path) == APP_SCHEMA_VERSION
         assert _counts(settings.db_path) == expected["counts"]
         assert _sha256(data_dir / "attachments" / "fixture.txt") == expected["attachment_sha"]
         assert _sha256(data_dir / "config" / "authorization_issuer.pem") == expected["config_sha"]
+        assert _authorization_state(settings.db_path) == expected["authorization_state"]
         _assert_integrity(settings.db_path)
+        conn = sqlite3.connect(str(settings.db_path))
+        try:
+            exchange_tables = {
+                row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' "
+                    "AND name LIKE 'tech_task_exchange_%'"
+                ).fetchall()
+            }
+            assert exchange_tables == {
+                "tech_task_exchange_batches", "tech_task_exchange_bindings"
+            }
+            assert conn.execute(
+                "SELECT COUNT(*) FROM tech_task_exchange_batches"
+            ).fetchone()[0] == 0
+            assert conn.execute(
+                "SELECT COUNT(*) FROM tech_task_exchange_bindings"
+            ).fetchone()[0] == 0
+            binding_columns = {
+                row[1] for row in conn.execute(
+                    "PRAGMA table_info(tech_task_exchange_bindings)"
+                ).fetchall()
+            }
+            assert "last_exported_result_snapshot_json" in binding_columns
+            ledger = conn.execute(
+                "SELECT version, name, app_version FROM app_schema_migrations "
+                "ORDER BY version"
+            ).fetchall()
+            assert [row[0] for row in ledger] == list(range(1, APP_SCHEMA_VERSION + 1))
+            if source_version == "0.11.7-internal":
+                assert ledger[0] == (1, "runtime_schema_v1", "0.11.7-internal")
+        finally:
+            conn.close()
 
         with zipfile.ZipFile(result.backup_path) as archive:
             names = archive.namelist()
@@ -221,7 +300,9 @@ def test_upgrade_fixture(source_version: str) -> None:
         assert repaired.migrated is True
         assert repaired.source_schema_version == APP_SCHEMA_VERSION
         assert repaired.backup_path
-        assert repaired.backup_path.name.startswith("pre_upgrade_schema1_to_schema1_")
+        assert repaired.backup_path.name.startswith(
+            f"pre_upgrade_schema{APP_SCHEMA_VERSION}_to_schema{APP_SCHEMA_VERSION}_"
+        )
         conn = sqlite3.connect(str(settings.db_path))
         try:
             names = {
@@ -494,7 +575,9 @@ def test_full_restore_aborts_when_pre_restore_backup_fails() -> None:
 
 
 def main() -> None:
-    for source_version in ("0.11.3-internal", "0.11.4-internal"):
+    for source_version in (
+        "0.11.3-internal", "0.11.4-internal", "0.11.7-internal",
+    ):
         test_upgrade_fixture(source_version)
         print(f"PASS: {source_version} upgrade fixture")
     test_failed_migration_restores_original()

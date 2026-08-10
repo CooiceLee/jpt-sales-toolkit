@@ -58,7 +58,7 @@ async def update_pre_sales_task(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     ensure_task_access(task, user, "update")
     data = request.model_dump(exclude_unset=True, exclude={"row_version"})
-    ensure_tech_update_fields(user, data, TECH_PRE_SALES_UPDATE_FIELDS)
+    ensure_tech_update_fields(user, data, TECH_PRE_SALES_UPDATE_FIELDS, task)
     try:
         return service.update(task_id, data, user["id"], request.row_version)
     except (ConflictError, ValueError) as error:

@@ -15,6 +15,7 @@ from backend.repositories import UserCredentialRepository, UserRepository, close
 
 PASSWORD = "RoleBoundary2026!"
 TECH_SENSITIVE_FIELDS = {
+    "original_email",
     "estimated_value",
     "deal_amount",
     "currency",
@@ -306,10 +307,34 @@ def assert_task_boundary(client: TestClient, ids: dict, headers: dict, data: dic
         "status": "In Progress", "row_version": data["other_after"]["row_version"],
     }), 403, "Tech A edits unrelated after-sales task")
 
-    expect(client.patch(f"/api/pre-sales-tasks/{data['pre']['id']}", headers=headers["tech.a"], json={
+    tech_updated = expect(client.patch(f"/api/pre-sales-tasks/{data['pre']['id']}", headers=headers["tech.a"], json={
         "status": "In Progress", "result_json": '{"finding":"stable"}',
         "row_version": data["pre"]["row_version"],
-    }), 200, "Tech A updates own pre-sales result")
+    }), 200, "Tech A updates own pre-sales result").json()
+    leader_updated = expect(client.patch(
+        f"/api/pre-sales-tasks/{data['pre']['id']}",
+        headers=headers["leader.boundary"],
+        json={
+            "result_json": '{"finding":"stable","legacy_leader_note":"keep"}',
+            "row_version": tech_updated["row_version"],
+        },
+    ), 200, "Leader preserves a legacy pre-sales result field").json()
+    expect(client.patch(
+        f"/api/pre-sales-tasks/{data['pre']['id']}",
+        headers=headers["tech.a"],
+        json={
+            "result_json": '{"finding":"updated"}',
+            "row_version": leader_updated["row_version"],
+        },
+    ), 403, "Tech A cannot remove an unsupported legacy result field")
+    expect(client.patch(
+        f"/api/pre-sales-tasks/{data['pre']['id']}",
+        headers=headers["tech.a"],
+        json={
+            "result_json": '{"finding":"updated","legacy_leader_note":"keep"}',
+            "row_version": leader_updated["row_version"],
+        },
+    ), 200, "Tech A preserves an unchanged legacy result field")
     expect(client.patch(f"/api/after-sales-tasks/{data['after']['id']}", headers=headers["tech.a"], json={
         "status": "In Progress", "solution": "Inspect cooling and timing signals",
         "row_version": data["after"]["row_version"],

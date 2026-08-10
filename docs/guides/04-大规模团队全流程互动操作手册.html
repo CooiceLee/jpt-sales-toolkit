@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>JPT 0.11.8 大规模团队全流程互动操作手册</title>
+  <style>
+    :root{--wine:#8b1a1a;--wine2:#641111;--ink:#1d1d1f;--muted:#68625f;--bg:#f3f1ee;--paper:#fff;--line:#ddd6d1;--soft:#f8efec;--ok:#176b3a;--warn:#946000;--danger:#a32323;--blue:#245b87;--shadow:0 15px 42px rgba(54,35,28,.08)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:76px}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}code{background:#f2ece9;color:#741616;border-radius:5px;padding:2px 5px;overflow-wrap:anywhere}.hide{display:none!important}
+    .top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.95);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}.top-inner{width:min(1480px,calc(100% - 30px));min-height:62px;margin:auto;display:flex;align-items:center;gap:14px}.brand{font-weight:850;white-space:nowrap}.brand span{color:var(--wine)}.search{flex:1;max-width:560px;margin-left:auto}.search input{width:100%;border:1px solid var(--line);border-radius:11px;padding:9px 12px;background:#faf9f8}.top button,.btn{border:0;border-radius:10px;padding:9px 13px;background:var(--wine);color:#fff;font-weight:750}.btn.secondary,.top button.secondary{background:var(--soft);color:var(--wine);border:1px solid #ead5cf}.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn.danger{background:#fff;color:var(--danger);border:1px solid #e3b9b9}.menu{display:none}
+    .layout{width:min(1480px,calc(100% - 30px));margin:24px auto 70px;display:grid;grid-template-columns:270px minmax(0,1fr);gap:22px}.side{position:sticky;top:86px;align-self:start;max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid var(--line);border-radius:17px;padding:14px;box-shadow:var(--shadow)}.side a{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;color:#514c48;font-size:13px}.side a:hover,.side a.active{background:var(--soft);color:var(--wine);text-decoration:none}.side b{display:block;margin:13px 9px 5px;color:var(--muted);font-size:11px;letter-spacing:.12em}.progress-mini{margin:8px 8px 14px}.bar{height:9px;border-radius:99px;background:#e8e2de;overflow:hidden}.bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--wine),#c25757);transition:width .25s}.progress-text{display:flex;justify-content:space-between;margin-top:5px;color:var(--muted);font-size:12px}
+    main{min-width:0}.hero,.section{background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow)}.hero{padding:38px;overflow:hidden;background:radial-gradient(circle at 92% 8%,rgba(139,26,26,.13),transparent 30%),#fff}.eyebrow{color:var(--wine);font-size:12px;font-weight:850;letter-spacing:.18em;overflow-wrap:anywhere}.hero h1{font-size:clamp(34px,5vw,60px);line-height:1.08;letter-spacing:-.045em;margin:10px 0 15px}.hero p{max-width:900px;color:#504b48;font-size:17px}.pills,.actions,.module-tabs{display:flex;gap:8px;flex-wrap:wrap}.pill{border:1px solid #dacfc9;border-radius:999px;background:#fff;padding:6px 10px;font-size:12px}.section{margin-top:18px;padding:28px}.section h2{font-size:28px;letter-spacing:-.025em;margin:0 0 8px}.section h3{margin:20px 0 8px}.section-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}.section-head p{margin:0;color:var(--muted)}.tag{display:inline-block;border-radius:999px;background:var(--soft);color:var(--wine);padding:3px 8px;font-size:12px;font-weight:750;white-space:nowrap}
+    .grid2,.grid3,.grid4{display:grid;gap:14px}.grid2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid4{grid-template-columns:repeat(4,minmax(0,1fr))}.card,.callout,.task,.mock,.result-box{border:1px solid var(--line);border-radius:14px;background:#fff;padding:17px}.card p,.card li,.fine{color:var(--muted)}.card h3{margin:0 0 7px}.callout{border-left:4px solid var(--wine);border-radius:0 12px 12px 0;background:#fff7f4;margin:13px 0}.callout.ok{border-color:var(--ok);background:#f3faf5}.callout.warn{border-color:#d18b00;background:#fff8e8}.callout.info{border-color:var(--blue);background:#f1f7fb}.callout.danger{border-color:var(--danger);background:#fff3f3}.steps{counter-reset:step;display:grid;gap:10px}.step{counter-increment:step;display:grid;grid-template-columns:42px 1fr;gap:12px;padding:15px;border:1px solid var(--line);border-radius:13px;background:#fff}.step::before{content:counter(step);display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--wine);color:#fff;font-weight:850}.step h3{margin:0 0 3px}.step p,.step ul{margin:0;color:var(--muted)}
+    label{display:grid;gap:5px;color:var(--muted);font-size:13px;font-weight:700}input,select,textarea{width:100%;border:1px solid #d4ccc7;border-radius:10px;background:#fff;color:var(--ink);padding:9px 10px}textarea{min-height:86px;resize:vertical}.profile{padding:18px;border-radius:15px;background:#fbf8f6;border:1px solid var(--line)}.profile-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px}.route{margin-top:13px;padding:14px;border-radius:12px;background:var(--wine);color:#fff}.route b{display:block;margin-bottom:4px}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin:18px 0}.flow-item{position:relative;text-align:center;border:1px solid var(--line);border-radius:14px;background:#fff;padding:17px 12px}.flow-item strong{display:block;color:var(--wine);font-size:18px}.flow-item:not(:last-child)::after{content:"→";position:absolute;right:-18px;top:42%;color:var(--wine);font-size:21px;font-weight:900}.diagram{width:100%;border:1px solid var(--line);border-radius:16px;background:linear-gradient(135deg,#fff,#f8f2ef);padding:16px;overflow:hidden}.diagram svg{display:block;width:100%;height:auto}.diagram text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid var(--line);background:#fff}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f7efec;color:var(--wine);font-size:12px}tr:last-child td{border-bottom:0}.table-wrap{overflow:auto;border-radius:13px}.yes{color:var(--ok);font-weight:800}.limited{color:var(--warn);font-weight:800}.no{color:var(--danger);font-weight:800}
+    .task-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.task{display:flex;gap:10px;align-items:flex-start;padding:12px}.task input{width:18px;height:18px;margin-top:2px;accent-color:var(--wine)}.task span{display:block}.task small{display:block;color:var(--muted)}.task.done{background:#f2faf5;border-color:#b9d8c4}.gate-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}.gate-box{background:#faf7f5;border:1px solid var(--line);border-radius:12px;padding:13px}.gate-box b{color:var(--wine);font-size:20px}.gate-box.pass{background:#f2faf5;border-color:#b9d8c4}
+    .mock{padding:0;overflow:hidden;background:#f7f4f1}.mock-top{display:flex;justify-content:space-between;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);font-size:12px}.mock-body{display:grid;grid-template-columns:150px 1fr 240px;min-height:330px}.mock-nav{padding:12px;background:#651226;color:#fff}.mock-nav div{padding:7px 8px;border-radius:7px;font-size:12px}.mock-nav .active{background:#9e2448}.mock-main{padding:18px}.mock-toolbar{display:flex;gap:7px;margin:10px 0}.mock-field{height:30px;border:1px solid var(--line);border-radius:8px;background:#fff;flex:1;padding:5px 8px;color:var(--muted);font-size:11px}.lead-card{border:2px solid var(--wine);border-radius:12px;background:#fff;padding:13px;margin-top:13px}.lead-card .id{font-size:11px;color:var(--muted)}.lead-card h4{margin:6px 0}.lead-card dl{display:grid;grid-template-columns:1fr 1fr;margin:0;font-size:12px}.lead-card dd{text-align:right}.mock-detail{padding:15px;background:#fff;border-left:1px solid var(--line)}.mock-detail h4{margin:0 0 10px}.mock-detail .tabline{display:flex;gap:5px;flex-wrap:wrap}.mock-detail .tabline span{font-size:10px;padding:3px 5px;border-bottom:2px solid transparent}.mock-detail .tabline .active{color:var(--wine);border-color:var(--wine)}.mock-note{margin-top:12px;padding:9px;border-radius:8px;background:var(--soft);font-size:11px}.module-tabs button{border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);padding:8px 10px}.module-tabs button.active{background:var(--wine);border-color:var(--wine);color:#fff}.module-copy{margin-top:14px}.module-copy h3{margin:0}.module-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:10px}.module-cols div{padding:12px;border-radius:11px;background:#faf7f5}.module-cols b{display:block;color:var(--wine);margin-bottom:4px}.module-cols p{margin:0;color:var(--muted)}
+    .demo{position:relative;background:#241f1d;color:#fff;border-radius:13px;padding:15px 62px 15px 15px;white-space:pre-wrap;overflow-wrap:anywhere}.demo button{position:absolute;right:10px;top:10px;border:1px solid #665f5b;background:#3a3330;color:#fff;border-radius:8px;padding:6px 9px}.wizard{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:13px;overflow:hidden}.wizard div{padding:13px;border-right:1px solid var(--line);background:#faf8f6}.wizard div:last-child{border:0}.wizard b{display:inline-grid;place-items:center;width:27px;height:27px;border-radius:8px;background:var(--wine);color:#fff;margin-right:6px}
+    details{border:1px solid var(--line);border-radius:12px;background:#fff;margin:9px 0}summary{cursor:pointer;padding:13px 15px;font-weight:800;color:var(--wine)}details>div{padding:0 15px 15px}.issue-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.issue-grid .wide{grid-column:span 2}.issue-grid .full{grid-column:1/-1}.issue-table button{padding:5px 8px;border-radius:7px;border:1px solid var(--line);background:#fff;color:var(--wine)}.empty{text-align:center;color:var(--muted);padding:22px}.status{color:var(--ok);font-size:13px;margin-left:auto;align-self:center}.footer{text-align:center;color:var(--muted);font-size:12px;margin-top:18px}.search-empty{padding:40px;text-align:center;color:var(--muted)}
+    @media(max-width:1050px){.profile-grid{grid-template-columns:repeat(2,1fr)}.grid4{grid-template-columns:repeat(2,1fr)}.mock-body{grid-template-columns:125px 1fr}.mock-detail{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)}.module-cols{grid-template-columns:1fr}.issue-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:780px){.menu{display:inline-block}.layout{display:block;width:min(100% - 20px,1480px)}.side{display:none;position:fixed;left:10px;right:10px;top:72px;z-index:25;max-height:72vh}.side.open{display:block}.search{display:none}.hero,.section{padding:20px}.grid2,.grid3,.grid4,.task-list,.flow,.gate-summary{grid-template-columns:1fr}.flow-item:not(:last-child)::after{content:"↓";right:auto;left:48%;top:auto;bottom:-24px}.profile-grid,.issue-grid{grid-template-columns:1fr}.issue-grid .wide{grid-column:auto}.mock-body{grid-template-columns:1fr}.mock-nav{display:flex;overflow:auto}.mock-nav div{white-space:nowrap}.wizard{grid-template-columns:1fr}.wizard div{border-right:0;border-bottom:1px solid var(--line)}.top-inner{width:calc(100% - 20px)}.top .btn-print{display:none}}@media(max-width:420px){.top-inner{gap:7px}.brand{font-size:12px}.top button{padding:8px 9px}.hero h1{font-size:34px}.eyebrow{letter-spacing:.12em}}@media print{body{background:#fff}.top,.side,.actions,.module-tabs,.demo button,.issue-form{display:none!important}.layout{display:block;width:100%;margin:0}.hero,.section{box-shadow:none;break-inside:auto}.card,.task,.callout,.mock,details{break-inside:avoid}.section{border:0;border-top:1px solid #bbb;padding:22px 0}.hide{display:block!important}}
+  </style>
+</head>
+<body>
+  <header class="top"><div class="top-inner">
+    <button type="button" class="secondary menu" id="menuBtn" aria-expanded="false" aria-controls="guideNav">目录</button>
+    <a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM LAB</a>
+    <div class="search"><label><span class="hide">搜索手册</span><input id="guideSearch" type="search" placeholder="搜索模块、操作或异常，例如：样品、预检、坐标"></label></div>
+    <button type="button" class="secondary btn-print" onclick="window.print()">打印 / 存为 PDF</button>
+    <button type="button" id="exportBtn">导出测试结果</button>
+  </div></header>
+
+  <div class="layout">
+    <aside class="side" id="guideNav">
+      <div class="progress-mini"><div class="bar"><span id="miniBar"></span></div><div class="progress-text"><span>本机进度</span><b id="miniProgress">0%</b></div></div>
+      <b>开始</b>
+      <a href="#start">测试档案与路线</a><a href="#gates">四个验收 Gate</a><a href="#prepare">准备与虚拟数据</a>
+      <b>安装与账号</b>
+      <a href="#install">Windows / macOS 安装</a><a href="#account">账号、设备与权限</a>
+      <b>数据起步</b>
+      <a href="#no-history">没有历史 Excel</a><a href="#excel">有历史 Excel</a><a href="#interface">界面与模块实操</a>
+      <b>协作与治理</b>
+      <a href="#permission">角色权限交叉验证</a><a href="#sync">Sales JSON 分发</a><a href="#tech-package">Tech 任务包往返</a><a href="#map-trip">地图与出差规划</a>
+      <b>结果</b>
+      <a href="#acceptance">最终验收清单</a><a href="#issues">问题记录与导出</a>
+    </aside>
+
+    <main id="content">
+      <section class="hero guide-section" id="start">
+        <div class="eyebrow">JPT · TEAM TEST GUIDE</div>
+        <h1>从安装到业务闭环，<br>一页完成团队实测。</h1>
+        <p>适用版本：<strong>v0.11.8-internal</strong> 团队测试 / Pre-release。原生三平台门禁和团队实测全部通过前，既有稳定基线仍为 v0.11.7-internal，不得用本候选替代。本页离线运行，不上传任何信息。请选择平台、角色和数据起点；页面会生成推荐路线，并在当前浏览器保存勾选进度、测试档案和问题清单。</p>
+        <div class="pills"><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon / Intel</span><span class="pill">Leader / Sales / Tech</span><span class="pill">有历史数据 / 从零开始</span><span class="pill">UNSIGNED-INTERNAL</span></div>
+        <div class="profile" style="margin-top:22px">
+          <div class="profile-grid">
+            <label>测试人<input id="tester" placeholder="例如：王小明"></label>
+            <label>团队 / 小组<input id="team" placeholder="例如：欧洲测试组"></label>
+            <label>平台<select id="platform"><option value="">请选择</option><option>Windows 10 x64</option><option>Windows 11 x64</option><option>macOS Apple Silicon</option><option>macOS Intel</option></select></label>
+            <label>测试角色<select id="role"><option>Leader</option><option>Sales</option><option>Tech</option></select></label>
+            <label>数据起点<select id="scenario"><option value="manual">没有历史文档：从零录入</option><option value="synthetic">没有历史文档：用标准模板做虚拟导入</option><option value="history">已有历史 Excel：真实导入</option><option value="upgrade">已有旧版程序和本地数据：覆盖升级</option></select></label>
+          </div>
+          <div class="route" id="routeText" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="gates">
+        <div class="section-head"><div><h2>四个独立验收 Gate</h2><p>不要用“后面的功能能打开”证明前一 Gate 已通过；上一 Gate 出现 P0/P1 时停止。</p></div><span class="tag">顺序 A → B → C → D</span></div>
+        <div class="flow">
+          <div class="flow-item"><strong>A · 安装与基础</strong>无 Excel 也能登录、增改查、退出和重启</div>
+          <div class="flow-item"><strong>B · Excel</strong>可选真实或虚拟文件；备份、预检、提交、复核</div>
+          <div class="flow-item"><strong>C · 权限</strong>Leader / Sales / Tech 交叉验证可见与可写边界</div>
+          <div class="flow-item"><strong>D · 终端包</strong>Sales JSON 与 Tech 任务包分开验证定向、幂等和往返</div>
+        </div>
+        <aside class="callout info"><strong>没有历史 Excel 的团队：</strong>Gate B 可以记录为“不适用”，也可以复制随包标准模板，填入本页虚拟数据完成一次安全导入测试。无论是否测试 Excel，Gate A、C、D 和各业务模块仍应完成。</aside>
+      </section>
+
+      <section class="section guide-section" id="prepare">
+        <div class="section-head"><div><h2>0. 测试前准备</h2><p>每个平台至少一人；权限测试至少准备一名 Leader、两名 Sales 和一名 Tech。</p></div><span class="tag">约 15 分钟</span></div>
+        <div class="grid3">
+          <article class="card"><h3>文件</h3><ul><li>正确平台安装包</li><li><code>SHA256SUMS.txt</code></li><li>本互动手册</li><li>可选标准导入模板</li><li>Gate D 可选 <code>.jpttask / .jptresult</code></li></ul></article>
+          <article class="card"><h3>证据</h3><ul><li>测试人、平台、版本、角色</li><li>每一步预期与实际</li><li>截图时间和线索编号</li><li>问题严重级别</li></ul></article>
+          <article class="card"><h3>禁止放入反馈</h3><ul><li>密码和签发器口令</li><li>地图 Key</li><li><code>.jptauth</code>/<code>.jptreq</code></li><li>完整真实客户数据</li></ul></article>
+        </div>
+        <h3>统一虚拟测试账号与线索</h3>
+        <div class="table-wrap"><table><thead><tr><th>类型</th><th>测试值</th><th>用途</th></tr></thead><tbody>
+          <tr><td>Leader</td><td><code>qa.leader</code> · 李晨（虚拟）</td><td>初始化、签发、备份、导入、合并</td></tr>
+          <tr><td>Sales A</td><td><code>qa.sales.eu</code> · Amy Wang（虚拟）· 欧洲</td><td>目标负责人和定向 JSON 接收者</td></tr>
+          <tr><td>Sales B</td><td><code>qa.sales.global</code> · Ben Lin（虚拟）· GLOBAL</td><td>非目标成员越权检查</td></tr>
+          <tr><td>Tech</td><td><code>qa.tech.01</code> · Eric Zhou（虚拟）</td><td>售前样品与售后任务</td></tr>
+          <tr><td>客户 / 线索</td><td>NordWerk Demo GmbH · <code>QA-TEAM-001</code></td><td>所有模块统一使用，便于检索和清理</td></tr>
+        </tbody></table></div>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="prepare-package" data-gate="A"><span>安装包文件名、平台和版本均为 0.11.8<small>不使用旧 DMG、旧目录或聊天转存的未知副本</small></span></label>
+          <label class="task"><input type="checkbox" data-check="prepare-hash" data-gate="A"><span>安装包 SHA-256 与清单一致<small>不一致时停止，不继续处理系统安全提示</small></span></label>
+          <label class="task"><input type="checkbox" data-check="prepare-accounts" data-gate="C"><span>权限测试所需四个虚拟身份已分配<small>密码由成员本机设置，不写在手册或群聊</small></span></label>
+          <label class="task"><input type="checkbox" data-check="prepare-id" data-gate="A"><span>确定唯一测试标识<small>建议团队缩写 + 日期 + 序号，便于归档测试数据</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="install">
+        <div class="section-head"><div><h2>1. 安装、首次启动与升级</h2><p>只关闭浏览器页面不等于退出 JPT；覆盖安装前必须从左下角用户菜单选择“退出 JPT”。</p></div><span class="tag">Gate A</span></div>
+        <div class="grid2">
+          <article class="card"><h3>Windows 10 / 11 x64</h3><ol><li>确认文件名包含 <code>Windows-x64</code> 和 <code>UNSIGNED-INTERNAL</code>。</li><li>双击 Setup；若 SmartScreen 提示，先核对来源和哈希，再选择“更多信息 → 仍要运行”。</li><li>按向导完成，不自行改变用户数据目录。</li><li>从“开始”菜单打开 JPT；不要运行旧解压目录副本。</li><li>浏览器应打开本机 <code>127.0.0.1</code>，标题栏显示 <code>v0.11.8-internal</code>。</li></ol></article>
+          <article class="card"><h3>macOS Apple Silicon / Intel</h3><ol><li> → 关于本机，确认芯片；选择 arm64 或 Intel DMG。</li><li>打开 DMG，把 App 拖入“应用程序”；升级时选择替换。</li><li>推出 JPT 磁盘映像，不能直接运行 DMG 内 App。</li><li>从“应用程序”打开；未签名提示时右键 App → 打开，并再次确认。</li><li>标题栏确认 <code>v0.11.8-internal</code>。</li></ol></article>
+        </div>
+        <aside class="callout warn"><strong>升级后没有重新建号是正常的。</strong>程序文件与用户数据分离。Windows 数据在 <code>%LOCALAPPDATA%\JPT Sales Toolkit\data</code>；macOS 数据在 <code>~/Library/Application Support/JPT Sales Toolkit/data</code>。不要删除数据目录来刷新界面。</aside>
+        <div class="diagram" aria-label="安装与数据保留示意图">
+          <svg viewBox="0 0 900 210" role="img" aria-labelledby="installTitle"><title id="installTitle">程序升级与数据保留流程</title>
+            <rect x="20" y="35" width="190" height="130" rx="18" fill="#fff" stroke="#8b1a1a"/><text x="115" y="72" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">旧版程序</text><text x="115" y="106" text-anchor="middle" fill="#68625f" font-size="14">退出 JPT</text><text x="115" y="132" text-anchor="middle" fill="#68625f" font-size="14">记录客户 / 线索 / 附件</text>
+            <path d="M220 100 H320" stroke="#8b1a1a" stroke-width="3"/><path d="M310 90 L325 100 L310 110" fill="none" stroke="#8b1a1a" stroke-width="3"/>
+            <rect x="340" y="20" width="220" height="160" rx="18" fill="#f8efec" stroke="#8b1a1a"/><text x="450" y="58" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">首次启动新版</text><text x="450" y="91" text-anchor="middle" fill="#68625f" font-size="14">自动创建并验证 pre_upgrade</text><text x="450" y="117" text-anchor="middle" fill="#68625f" font-size="14">校验通过才迁移</text><text x="450" y="143" text-anchor="middle" fill="#68625f" font-size="14">失败则恢复并停止</text>
+            <path d="M570 100 H670" stroke="#8b1a1a" stroke-width="3"/><path d="M660 90 L675 100 L660 110" fill="none" stroke="#8b1a1a" stroke-width="3"/>
+            <rect x="690" y="35" width="190" height="130" rx="18" fill="#fff" stroke="#176b3a"/><text x="785" y="72" text-anchor="middle" fill="#176b3a" font-size="18" font-weight="700">核对并重启</text><text x="785" y="106" text-anchor="middle" fill="#68625f" font-size="14">原账号、总数、阶段</text><text x="785" y="132" text-anchor="middle" fill="#68625f" font-size="14">跟进、附件均一致</text>
+          </svg>
+        </div>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="install-launch" data-gate="A"><span>正确安装副本成功启动<small>版本正确，浏览器访问 127.0.0.1</small></span></label>
+          <label class="task"><input type="checkbox" data-check="install-persist" data-gate="A"><span>退出 JPT 后第二次启动成功<small>不是只关闭浏览器标签页</small></span></label>
+          <label class="task"><input type="checkbox" data-check="install-upgrade" data-gate="A"><span>如为升级，原账号、数量、阶段和附件一致<small>自动备份存在；第二次启动不重复迁移</small></span></label>
+          <label class="task"><input type="checkbox" data-check="install-offline" data-gate="A"><span>无地图网络时核心业务仍可使用<small>底图失败不应阻塞客户列表和人工坐标</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="account">
+        <div class="section-head"><div><h2>2. 账号、设备申请和角色</h2><p>安装包不按角色区分；Leader / Sales / Tech 由设备绑定授权决定，每名成员默认绑定一台电脑，授权固定 90 天。</p></div><span class="tag">Gate A / C</span></div>
+        <div class="flow">
+          <div class="flow-item"><strong>成员</strong>选择“加入现有团队”并生成 <code>.jptreq</code></div>
+          <div class="flow-item"><strong>Leader</strong>核对成员、角色、设备并签发 <code>.jptauth</code></div>
+          <div class="flow-item"><strong>双通道</strong>授权文件与 16 位验证码分开发送</div>
+          <div class="flow-item"><strong>成员</strong>导入授权，设置至少 8 位本地密码并登录</div>
+        </div>
+        <div class="grid2">
+          <article class="card"><h3>全新团队首位 Leader</h3><ol><li>选择“建立新团队”。</li><li>设置用户名和本地密码。</li><li>设置至少 12 位签发器口令；无法找回，不写入数据库。</li><li>系统建立签发密钥并授权当前设备。</li><li>立即创建完整备份，口令与备份分开保存。</li></ol></article>
+          <article class="card"><h3>换机、丢失或离职</h3><ul><li>新电脑重新生成申请，由 Leader 重新签发。</li><li>旧授权成为历史，不应复制旧授权到新电脑。</li><li>当前离线模式不承诺设备丢失后立即远程停用。</li><li>发现姓名、角色或设备不匹配时整体停止，不继续导入。</li></ul></article>
+        </div>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="auth-leader" data-gate="A"><span>Leader 可登录并创建完整备份<small>签发器口令未写入测试反馈</small></span></label>
+          <label class="task"><input type="checkbox" data-check="auth-member" data-gate="C"><span>成员完成申请、签发、验证码和登录<small>错误设备或错误验证码应整体失败</small></span></label>
+          <label class="task"><input type="checkbox" data-check="auth-region" data-gate="C"><span>Sales 业务地区设置正确<small>GLOBAL 是真实归属，“全部地区”只是清除筛选</small></span></label>
+          <label class="task"><input type="checkbox" data-check="auth-restart" data-gate="A"><span>完全退出重启后授权与账号仍有效<small>无需重新创建 Leader 或重复导入授权</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="no-history">
+        <div class="section-head"><div><h2>3A. 没有历史文档：从零完成一条业务闭环</h2><p>用一条明确标记为虚拟的询盘串联解析、分配、跟进、样品、成交、履约与售后。</p></div><span class="tag">推荐给新团队</span></div>
+        <div class="demo" id="demoInquiry">From: sophia.meyer@nordwerk-demo.example
+Subject: [QA-TEAM-001] Inquiry for UV laser marking
+Company: NordWerk Demo GmbH
+Country: Germany
+Contact: Sophia Meyer (Virtual)
+Request: 3 demo units, sample test required, target delivery in 45 days.
+Next action: Arrange online meeting next week.
+Note: This is synthetic QA data. Do not contact.<button type="button" data-copy="demoInquiry">复制</button></div>
+        <div class="steps" style="margin-top:14px">
+          <article class="step"><div><h3>解析 Parser</h3><p>粘贴虚拟邮件，点击解析。核对公司、国家、联系人、需求和原始文本；自动结果不正确时先人工修改。</p></div></article>
+          <article class="step"><div><h3>处理 Handler</h3><p>创建或匹配客户，建立线索并分配给 <code>qa.sales.eu</code>。不要仅凭名称相似合并客户。</p></div></article>
+          <article class="step"><div><h3>跟进 Follow-up</h3><p>记录“已完成首次在线会议”，填写最近跟进内容和下一次行动日期；刷新后卡片顺序和内容应更新。</p></div></article>
+          <article class="step"><div><h3>售前 / 样品</h3><p>新建样品或售前任务，指派 <code>qa.tech.01</code>，填写参数、到期日、结果和报告链接；Sales 与 Tech 分别核对可写字段。</p></div></article>
+          <article class="step"><div><h3>成交 Deal</h3><p>建立虚拟报价，填写报价日期、金额与币种；测试一次赢单或丢单，并确认当前卡片保持选中。</p></div></article>
+          <article class="step"><div><h3>履约与售后</h3><p>更新订单、发货和履约状态，再创建售后任务；完成后检查任务、活动和右侧详情均保留。</p></div></article>
+        </div>
+        <aside class="callout ok"><strong>成功判定：</strong>用全局搜索输入 <code>QA-TEAM-001</code> 能打开同一条线索；各模块看到的是同一客户与线索，而不是新建副本；完全退出重启后所有已保存内容仍在。</aside>
+        <details><summary>没有历史 Excel，但希望验证 Excel 功能</summary><div><ol><li>复制随包的 <code>JPT标准导入模板.xlsx</code>，不要直接编辑母版。</li><li>只填 1–2 条本页虚拟客户、联系人、商机和任务。</li><li>使用固定 <code>dataset_id=QA-TEAM-IMPORT</code> 和稳定外部键，例如 <code>CUST-QA-001</code>、<code>LEAD-QA-001</code>。</li><li>按下一节完成备份、预检、映射、提交和重复导入。</li><li>确认无重复后归档测试记录。</li></ol></div></details>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="manual-parser" data-gate="A"><span>虚拟询盘解析并人工确认成功<small>原始文本和结构化字段均可查看</small></span></label>
+          <label class="task"><input type="checkbox" data-check="manual-lead" data-gate="A"><span>客户、联系人和线索成功创建<small>线索负责人为目标 Sales</small></span></label>
+          <label class="task"><input type="checkbox" data-check="manual-cycle" data-gate="A"><span>跟进、样品、成交、履约、售后形成闭环<small>各模块数据指向同一线索</small></span></label>
+          <label class="task"><input type="checkbox" data-check="manual-restart" data-gate="A"><span>退出重启后虚拟业务数据完整<small>全局搜索可重新打开</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="excel">
+        <div class="section-head"><div><h2>3B. 有历史 Excel：备份、预检、修正、提交</h2><p>Excel 仅用于 Leader 集中摄取历史或外部数据，不用于成员终端持续同步。</p></div><span class="tag">Gate B · Leader</span></div>
+        <div class="wizard"><div><b>1</b>完整备份</div><div><b>2</b>选择工作簿</div><div><b>3</b>预检与修正</div><div><b>4</b>提交与验证</div></div>
+        <div class="steps" style="margin-top:14px">
+          <article class="step"><div><h3>准备</h3><p>Gate A 通过；成员已创建；文件是小于 25 MB 的 <code>.xlsx</code>；工作表名和前四行结构不变，业务数据从第 5 行开始。</p></div></article>
+          <article class="step"><div><h3>创建完整备份</h3><p>在“导出 / 导入 → Excel 导入”点击“创建完整备份”，记录路径、时间和文件名。JSON 导出不含附件，不能替代完整备份。</p></div></article>
+          <article class="step"><div><h3>运行只读预检</h3><p>选择工作簿后点击“运行预检”。先看源行、实体、错误、警告；预检不写数据库。预检后不要改写或替换文件。</p></div></article>
+          <article class="step"><div><h3>处理账号映射</h3><p>来源姓名、缩写和大小写变体映射到实际账号。Owner 只能是 Leader/Sales；售前和售后 assignee 只能是 Tech；未知、停用、歧义或角色错误均阻断。</p></div></article>
+          <article class="step"><div><h3>处理客户候选</h3><p>核对主名称、别名、国家、域名和联系人。相似度只帮助缩小范围；不是同一法律实体时必须新建，不能为了清零错误随意排除。</p></div></article>
+          <article class="step"><div><h3>应用修正并重新预检</h3><p>修正后点击“应用修正并重新预检”。只有同一文件显示“可以导入”且阻断项为 0，才允许提交。</p></div></article>
+          <article class="step"><div><h3>只提交一次</h3><p>点击“导入并合并”，记录批次编号、新增、更新、归档、跳过和警告。结果无法确认时不要立即重试；重开程序核对批次和目标记录。</p></div></article>
+          <article class="step"><div><h3>重复与增量验证</h3><p>相同文件再次导入不应新增副本；保留原 <code>dataset_id + external_key</code> 只修改一个允许字段，应只更新原记录。空白表示不修改，显式清空使用 <code>__CLEAR__</code>。</p></div></article>
+        </div>
+        <aside class="callout warn"><strong>必须人工补充：</strong>导入警告会在卡片和右侧“数据质量”标签显示数量角标。解决、忽略或重新打开后两处应同步；不能只看导入统计就认为数据完整。</aside>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="excel-backup" data-gate="B"><span>完整备份成功且位置已记录<small>包含数据库、附件和授权配置</small></span></label>
+          <label class="task"><input type="checkbox" data-check="excel-preflight" data-gate="B"><span>预检确认零数据库写入<small>复核窗口内部滚动，页面不持续拉长</small></span></label>
+          <label class="task"><input type="checkbox" data-check="excel-map" data-gate="B"><span>账号和客户映射均人工确认<small>阻断项为 0 才提交</small></span></label>
+          <label class="task"><input type="checkbox" data-check="excel-idempotent" data-gate="B"><span>重复导入不新增，增量只更新目标<small>批次统计与卡片内容一致</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="interface">
+        <div class="section-head"><div><h2>4. 界面结构与各模块实际操作</h2><p>点击模块名称切换下方图示、建议动作、成功判定和常见误区。图中账号和线索均为虚拟示例。</p></div><span class="tag">全角色按权限验证</span></div>
+        <div class="module-tabs" id="moduleTabs" role="tablist" aria-label="模块选择"></div>
+        <figure class="mock" aria-label="JPT 模块界面虚拟示意">
+          <div class="mock-top"><span>销售管线 / <b id="mockCrumb">仪表盘</b></span><span>v0.11.8-internal　中 / EN</span></div>
+          <div class="mock-body">
+            <nav class="mock-nav" id="mockNav"></nav>
+            <div class="mock-main"><h3 id="mockTitle">仪表盘</h3><div class="mock-toolbar"><div class="mock-field">搜索客户、联系人、国家</div><div class="mock-field">全部地区</div></div><article class="lead-card"><span class="id">JPT-QA-0001 · QA-TEAM-001</span><h4>NordWerk Demo GmbH</h4><dl><dt id="fieldLabel1">负责人</dt><dd id="fieldValue1">Amy Wang</dd><dt id="fieldLabel2">下一步</dt><dd id="fieldValue2">线上会议</dd></dl></article></div>
+            <aside class="mock-detail"><h4>JPT-QA-0001 · NordWerk Demo GmbH</h4><div class="tabline"><span>基础信息</span><span>客户</span><span>需求</span><span id="mockTab" class="active">数据质量</span><span>文件</span></div><div class="mock-note" id="mockNote">1 项待复核：询盘日期需要人工确认。</div></aside>
+          </div>
+        </figure>
+        <div class="module-copy"><h3 id="moduleHeading"></h3><div class="module-cols"><div><b>谁来操作</b><p id="moduleRole"></p></div><div><b>实际操作</b><p id="moduleAction"></p></div><div><b>结果确认</b><p id="moduleExpected"></p></div></div><aside class="callout warn" id="modulePitfall"></aside></div>
+        <div class="task-list" style="margin-top:14px">
+          <label class="task"><input type="checkbox" data-check="ui-search" data-gate="A"><span>左上角全局搜索可打开权限范围内线索<small>至少两个字符；方向键、Enter、Esc 可用</small></span></label>
+          <label class="task"><input type="checkbox" data-check="ui-selected" data-gate="A"><span>选中卡片保持突出，右侧编号与客户一致<small>未保存修改切换时出现确认</small></span></label>
+          <label class="task"><input type="checkbox" data-check="ui-i18n" data-gate="A"><span>中文 / English 切换不破坏布局<small>关键按钮、动态状态和错误均匹配当前语言</small></span></label>
+          <label class="task"><input type="checkbox" data-check="ui-empty" data-gate="A"><span>空结果与接口错误可区分<small>错误显示重试，不伪装成 0 条记录</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="permission">
+        <div class="section-head"><div><h2>5. 角色权限交叉验证</h2><p>前端隐藏按钮不是权限证据；必须用不同真实终端账号重新登录核对。</p></div><span class="tag">Gate C</span></div>
+        <div class="table-wrap"><table><thead><tr><th>功能</th><th>Leader</th><th>Sales</th><th>Tech</th></tr></thead><tbody>
+          <tr><td>查看客户与线索</td><td class="yes">全团队</td><td class="limited">本人负责或协作</td><td class="limited">本人任务所需关联</td></tr>
+          <tr><td>销售字段、分配和成交</td><td class="yes">可管理</td><td class="limited">按负责人/协作字段白名单</td><td class="no">不可见或只读</td></tr>
+          <tr><td>售前 / 售后任务</td><td class="yes">可管理</td><td class="limited">可发起和查看有权线索</td><td class="limited">更新分配给自己的任务</td></tr>
+          <tr><td>Excel 导入、客户合并</td><td class="yes">可执行</td><td class="no">不可执行</td><td class="no">不可执行</td></tr>
+          <tr><td>Tech 任务包</td><td class="yes">选 Tech 分发；预检/合并结果</td><td class="no">不可执行</td><td class="limited">预检/导入本人任务；导出结果</td></tr>
+          <tr><td>坐标修正</td><td class="yes">可修改</td><td class="limited">Owner / Collaborator 可修改</td><td class="no">只读</td></tr>
+          <tr><td>团队与授权</td><td class="yes">可创建、签发、重签</td><td class="no">不可访问</td><td class="no">不可访问</td></tr>
+        </tbody></table></div>
+        <h3>最小交叉测试</h3>
+        <ol><li>Leader 创建/导入两条虚拟线索，分别分配给 Sales A 和 Sales B。</li><li>Sales A 登录：应看到自己的线索；不应看到 Sales B 独占线索。</li><li>把 Sales A 作为 Sales B 线索的 collaborator：应出现允许字段，不应获得 Leader 权限。</li><li>Tech 登录：只看到分给自己的售前/售后任务和必要关联，不看到销售敏感字段。</li><li>尝试用非 Leader 进入 Excel、客户合并、团队授权：应被隐藏或后端拒绝。</li></ol>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="perm-sales" data-gate="C"><span>目标 Sales 只看到负责/协作线索<small>非目标独占线索不可见</small></span></label>
+          <label class="task"><input type="checkbox" data-check="perm-tech" data-gate="C"><span>Tech 只处理本人任务<small>销售敏感字段不可见或不可写</small></span></label>
+          <label class="task"><input type="checkbox" data-check="perm-leader" data-gate="C"><span>Leader 专属入口仅 Leader 可执行<small>直接请求也应由后端拒绝</small></span></label>
+          <label class="task"><input type="checkbox" data-check="perm-region" data-gate="C"><span>地区按负责人账号判定<small>客户在德国不自动等于“欧洲”归属</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="sync">
+        <div class="section-head"><div><h2>6. JSON 定向分发与终端同步</h2><p>每台电脑是独立本地数据库；当前版本不允许多人把同一个 SQLite 数据目录放在网络盘并发写入。</p></div><span class="tag">Gate D</span></div>
+        <div class="flow">
+          <div class="flow-item"><strong>Leader</strong>完整备份并选择目标 Sales</div>
+          <div class="flow-item"><strong>导出</strong>只包含该 Sales 负责的 Lead</div>
+          <div class="flow-item"><strong>Sales</strong>同一文件预检：错误 0、权限跳过 0</div>
+          <div class="flow-item"><strong>往返</strong>合并后回传 Leader，更新原 Lead</div>
+        </div>
+        <div class="grid2">
+          <article class="card"><h3>目标 Sales 应验证</h3><ol><li>确认导出目标用户名是本人。</li><li>选择文件并预检：源总数、允许数、权限跳过、错误、冲突。</li><li>只在错误和权限跳过均为 0 时导入。</li><li>核对客户、Lead、主联系人、活动、任务和本地新增内容。</li><li>重复导入，数量不应重复增长。</li></ol></article>
+          <article class="card"><h3>非目标 Sales 应验证</h3><ol><li>在另一终端选择同一包。</li><li>接收账号不匹配时必须拒绝。</li><li>不能通过改文件名绕过。</li><li>旧版无接收成员字段的包只能证明逐条权限过滤，不能证明新版定向分发。</li><li>附件本体不在 JSON 中，另行受控传递。</li></ol></article>
+        </div>
+        <aside class="callout danger"><strong>不要立即重试“结果无法确认”的导入。</strong>先重开 JPT，核对导航计数、目标记录和批次；只有确认没有记录本次导入后才重试。显示“部分完成”也不能当作完整成功。</aside>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="sync-target" data-gate="D"><span>目标包只含目标 Sales 负责的线索<small>导出时明确选择成员</small></span></label>
+          <label class="task"><input type="checkbox" data-check="sync-reject" data-gate="D"><span>非目标账号被拒绝<small>没有权限泄露或半写入记录</small></span></label>
+          <label class="task"><input type="checkbox" data-check="sync-idempotent" data-gate="D"><span>重复导入不生成副本<small>本地新增活动仍保留</small></span></label>
+          <label class="task"><input type="checkbox" data-check="sync-roundtrip" data-gate="D"><span>Sales 回传后更新 Leader 原 Lead<small>主联系人和来源 ID 正确映射</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="tech-package">
+        <div class="section-head"><div><h2>7. Tech 任务包：从分派到结果回收</h2><p>该链路只同步技术任务和必需上下文，不使用 Sales JSON，也不让 Tech 导入 Excel。</p></div><span class="tag">Gate D · Leader + Tech</span></div>
+        <div class="flow">
+          <div class="flow-item"><strong>Leader</strong>完整备份，选定 Tech 导出全部未归档分配快照</div>
+          <div class="flow-item"><strong>Tech</strong>预检无阻断后导入，到业务卡片处理</div>
+          <div class="flow-item"><strong>回传</strong>Tech 保存更新，导出 <code>.jptresult</code></div>
+          <div class="flow-item"><strong>Leader</strong>预检版本和归属，原子合并并回执</div>
+        </div>
+        <aside class="callout warn"><strong>开始前：</strong>Leader 先创建完整备份，记录目标 Tech、售前/样品任务数、售后任务数和导出时间。旧版本升级使用增量数据库迁移，不应删除现有客户、Lead 或任务；升级后仍要抽查原卡片并第二次启动。</aside>
+
+        <h3>Leader 分发 <code>.jpttask</code></h3>
+        <div class="steps">
+          <article class="step"><div><h3>建立真实分配</h3><p>先在售前/样品或售后任务中选择启用中的 Tech 账号。测试可使用 <code>qa.tech.01</code>，但正式包不得发给共用账号或无法确认身份的成员。</p></div></article>
+          <article class="step"><div><h3>进入正确页签</h3><p>打开“导出 / 导入 → 技术任务包 / Tech Task Packages”；不要停留在“JSON 数据交换”或“Excel 导入”。</p></div></article>
+          <article class="step"><div><h3>精确选择接收人</h3><p>在“1 · 向技术人员分发任务”选中目标成员，点击“下载 <code>.jpttask</code>”。新包是当前终端上该 Tech 当时全部未归档分配的完整快照，不是增量包；新快照缺失的旧任务代表撤回分配。任一 Leader 后续签发的新快照都会替代此前其他 Leader 为同一 Tech 签发的旧快照。</p></div></article>
+          <article class="step"><div><h3>受控传递</h3><p>通过团队批准的内部渠道点对点发送，另通道告知文件名、任务数和时间。首版未做设备数字签名；内容校验和接收账号校验不能替代可信渠道。</p></div></article>
+        </div>
+
+        <h3>Tech 预检、处理与导出 <code>.jptresult</code></h3>
+        <div class="grid2">
+          <article class="card"><h3>1 · 预检与导入</h3><ol><li>用被指定的 Tech 账号登录。</li><li>在“技术任务包”选择 <code>.jpttask</code>。</li><li>点击“预检分配包”，核对来源、接收人、任务数、错误、冲突和撤回警告。</li><li>仅当同一文件无阻断时点击“导入任务”；接受撤回警告后，缺失任务会归档。</li><li>到“售前 / 样品”与“售后”核对卡片和请求内容。</li></ol></article>
+          <article class="card"><h3>2 · 更新与回传</h3><ol><li>售前/样品更新本人允许的状态、进展、结果摘要、下一步、样品结果或报告链接。</li><li>售后更新状态、解决方案、满意度、经验教训和备注。</li><li>保存并重开卡片，确认更新仍在。</li><li>回到任务包页签，点击“下载 <code>.jptresult</code>”。</li><li>回传给原 Leader，等待“已合并”回执。</li></ol></article>
+        </div>
+
+        <h3>Leader 预检并合并 <code>.jptresult</code></h3>
+        <div class="steps">
+          <article class="step"><div><h3>选择结果包</h3><p>在“2 · 导入技术处理结果”选择 Tech 回传的 <code>.jptresult</code>，记录文件名与发送人。</p></div></article>
+          <article class="step"><div><h3>预检结果包</h3><p>核对来源 Tech、本 Leader 接收账号、源任务是否仍存在、是否归属原 Tech，以及任务基础快照。系统使用三方比较：Leader 与 Tech 同时修改同一结果字段且值不同时阻断；不同字段的变更可合并保留。更换文件会使预检失效，必须重新执行。</p></div></article>
+          <article class="step"><div><h3>仅在无阻断时合并</h3><p>错误和冲突均为 0 后点击“导入结果”。同一包中任一任务阻断时，整包不应部分静默写入。</p></div></article>
+          <article class="step"><div><h3>验证与回执</h3><p>在原 Leader 卡片核对状态和结果；售后任务同时核对 Lead 售后状态。重复导入同一包应为幂等无写入，最后向 Tech 确认已合并。</p></div></article>
+        </div>
+
+        <div class="table-wrap"><table><thead><tr><th>预检结果</th><th>风险</th><th>处理方式</th></tr></thead><tbody>
+          <tr><td>接收人或组织不符</td><td>包不属于当前账号/团队</td><td>隔离包，不改名冒充；请 Leader 重新指定接收人</td></tr>
+          <tr><td>任务已改派、归档或缺失</td><td>旧包的任务归属已失效</td><td>不强制导入；由 Leader 核对有效结果后重新分发</td></tr>
+          <tr><td>完整快照撤回分配</td><td>新快照不含旧任务；Tech 无未导出更改，或已导出且之后未再修改</td><td>允许导入撤回警告，本地对应任务归档</td></tr>
+          <tr><td>本地未导出更改</td><td>Tech 从未导出更改，或导出 <code>.jptresult</code> 后又修改</td><td>撤回/刷新阻断；Tech 先重新导出，Leader 合并后再发新快照</td></tr>
+          <tr><td>同字段冲突</td><td>Leader 与 Tech 已修改同一结果字段，且值不同</td><td>阻断并人工对照；不同字段变更可安全合并，不静默覆盖</td></tr>
+          <tr><td>旧完整快照</td><td>生成时间不新于已导入快照，或任务基线倒退</td><td>拒绝导入；Leader 按当前任务重新导出</td></tr>
+          <tr><td>重复包</td><td>同一包已成功导入</td><td>应返回重复/无更改结果，不重复新增或改写</td></tr>
+          <tr><td>校验失败或包 ID 异常</td><td>文件可能被篡改或同 ID 对应不同内容</td><td>不继续；用可信渠道与发送人确认并重新导出</td></tr>
+        </tbody></table></div>
+        <aside class="callout info"><strong>数据最小化：</strong><code>.jpttask</code> 只包含完成任务所需的最小客户/需求上下文；<code>.jptresult</code> 只回传 Tech 允许的结果字段。两者均不含报价、金额、PO、输单原因、联系人、附件文件或完整备份。</aside>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="tech-package-target" data-gate="D"><span><code>.jpttask</code> 精确绑定目标 Tech<small>非目标 Tech 预检/导入必须被拒绝</small></span></label>
+          <label class="task"><input type="checkbox" data-check="tech-package-minimal" data-gate="C"><span>Tech 仅看到任务必需上下文<small>无销售敏感字段、联系人和附件</small></span></label>
+          <label class="task"><input type="checkbox" data-check="tech-package-roundtrip" data-gate="D"><span><code>.jptresult</code> 更新 Leader 原任务<small>状态和结果一致，不新建副本</small></span></label>
+          <label class="task"><input type="checkbox" data-check="tech-package-snapshot" data-gate="D"><span><code>.jpttask</code> 按完整快照处理<small>缺失任务代表撤回；已导出后未再修改可归档</small></span></label>
+          <label class="task"><input type="checkbox" data-check="tech-package-conflict" data-gate="D"><span>改派、归档、旧快照和同字段冲突被阻断<small>不同字段可合并；无静默覆盖，无部分写入</small></span></label>
+          <label class="task"><input type="checkbox" data-check="tech-package-idempotent" data-gate="D"><span>重复包保持幂等<small>相同包再导入不重复改写</small></span></label>
+          <label class="task"><input type="checkbox" data-check="tech-package-backup" data-gate="A"><span>升级和往返前后旧数据一致<small>完整备份、数量、卡片与第二次启动均已验证</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="map-trip">
+        <div class="section-head"><div><h2>8. 地图、坐标复核与出差规划</h2><p>地图点位质量与业务地区是两套独立口径；近似坐标不能作为实际拜访终点。</p></div><span class="tag">治理与出访</span></div>
+        <div class="grid3">
+          <article class="card"><h3>精确</h3><p>已确认经纬度，可用于地图定位；拜访前仍需核对地址和联系人。</p></article>
+          <article class="card"><h3>近似</h3><p>国家、城市或区域级参考，只用于发现分布，不能判断楼宇、路线终点或精确距离。</p></article>
+          <article class="card"><h3>缺失</h3><p>填写地址、城市、邮编和国家搜索候选，也可地图选点或人工经纬度；候选必须人工确认。</p></article>
+        </div>
+        <div class="steps">
+          <article class="step"><div><h3>坐标复核</h3><p>搜索 <code>NordWerk Demo GmbH</code>，输入不敏感的虚拟地址；核对候选完整地址、国家、坐标和服务商后保存。并发版本冲突时刷新，不静默覆盖。</p></div></article>
+          <article class="step"><div><h3>地图复盘</h3><p>按阶段、结果、业务地区和坐标质量筛选；离线底图失败时点位列表仍应可用，接口失败显示重试而不是 0。</p></div></article>
+          <article class="step"><div><h3>出差计划</h3><p>建立“QA Europe Visit”计划，按客户地理区域选候选，加入停靠点、预览路线、保存、导出；上传部分失败时只重试失败项，不重复成功项。</p></div></article>
+          <article class="step"><div><h3>归档</h3><p>确认计划可创建、查看、修改、归档。归档前出现确认；归档后活动计划不再显示，但不物理删除业务历史。</p></div></article>
+        </div>
+        <aside class="callout warn"><strong>外部服务边界：</strong>地址搜索可能把地址字段发送给高德和/或 Nominatim，底图访问 CARTO/OpenStreetMap。禁止外发的地址只用人工经纬度或地图选点。地图 Key 不进入前端、截图、日志、安装包或 GitHub。</aside>
+        <div class="task-list">
+          <label class="task"><input type="checkbox" data-check="map-quality" data-gate="A"><span>精确、近似、缺失三种状态可理解<small>近似点没有被当作准确地址</small></span></label>
+          <label class="task"><input type="checkbox" data-check="map-search" data-gate="A"><span>不敏感虚拟地址可搜索、选择和保存<small>界面显示实际候选服务商</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-crud" data-gate="A"><span>出差计划增、查、改、归档完整<small>路线和停靠点刷新后保持</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-partial" data-gate="A"><span>部分失败仅重试失败项<small>已成功上传/保存项不重复</small></span></label>
+        </div>
+      </section>
+
+      <section class="section guide-section" id="acceptance">
+        <div class="section-head"><div><h2>9. 最终验收与放行</h2><p>完成比例只代表已勾选，不自动证明质量；仍需核对问题清单中是否存在 P0/P1。</p></div><span class="tag">结果确认</span></div>
+        <div class="gate-summary" id="gateSummary"></div>
+        <div class="grid2" style="margin-top:14px">
+          <article class="result-box"><h3>可以放行给更多成员</h3><ul><li>Gate A 必须通过。</li><li>有历史文件时 Gate B 必须通过；无历史文件可标记 N/A。</li><li>Gate C、D 至少完成目标与非目标终端交叉测试。</li><li>问题清单没有未恢复的 P0，也没有阻塞下一 Gate 的 P1。</li><li>退出、重启、备份和数据保留均有实际证据。</li></ul></article>
+          <article class="result-box"><h3>必须停止并升级处理</h3><ul><li>数据丢失、错客户合并或数量异常。</li><li>非目标账号看到或修改不该访问的数据。</li><li>导入结果无法确认且无法从批次/记录判断。</li><li>升级后原数据库、附件或授权不一致。</li><li>核心安装、登录、保存、重启、预检或同步链路阻塞。</li></ul></article>
+        </div>
+        <div class="actions" style="margin-top:15px"><button type="button" class="btn" id="exportSummary">导出完整 JSON</button><button type="button" class="btn secondary" id="exportCsv">导出问题 CSV</button><button type="button" class="btn secondary" onclick="window.print()">打印 / 存为 PDF</button><button type="button" class="btn danger" id="resetProgress">重置本机全部记录</button><span class="status" id="status" aria-live="polite"></span></div>
+      </section>
+
+      <section class="section guide-section" id="issues">
+        <div class="section-head"><div><h2>10. 问题记录</h2><p>记录只保存在当前浏览器。每个问题一行；截图和日志通过受控渠道另行发送。</p></div><span class="tag">支持新增 / 编辑 / 删除</span></div>
+        <form id="issueForm" class="issue-form">
+          <input type="hidden" id="editIndex" value="">
+          <div class="issue-grid">
+            <label>Gate<select id="issueGate" required><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
+            <label>模块<input id="issueModule" required placeholder="例如：跟进管理"></label>
+            <label>级别<select id="severity" required><option>P2</option><option>P1</option><option>P0</option></select></label>
+            <label>是否阻塞<select id="blocking"><option>否</option><option>是</option></select></label>
+            <label class="wide">标题<input id="issueTitle" required placeholder="一句话描述问题"></label>
+            <label class="wide">证据位置<input id="evidence" placeholder="截图或日志文件名；不要粘贴密钥"></label>
+            <label class="full">复现步骤<textarea id="repro" required placeholder="从哪个页面开始，依次点击什么"></textarea></label>
+            <label class="wide">预期结果<textarea id="expected" required></textarea></label>
+            <label class="wide">实际结果<textarea id="actual" required></textarea></label>
+          </div>
+          <div class="actions" style="margin-top:12px"><button class="btn" type="submit" id="saveIssue">加入问题清单</button><button class="btn secondary" type="button" id="cancelEdit">取消编辑</button></div>
+        </form>
+        <div class="table-wrap" style="margin-top:16px"><table class="issue-table"><thead><tr><th>Gate / 模块</th><th>级别</th><th>问题与实际</th><th>证据</th><th>操作</th></tr></thead><tbody id="issueRows"></tbody></table></div>
+      </section>
+      <div class="search-empty hide" id="searchEmpty">没有找到匹配内容，请尝试更短的关键词。</div>
+      <p class="footer">JPT Sales Toolkit v0.11.8-internal · 团队测试 / Pre-release · 本手册离线运行，不连接程序数据库，也不上传记录。</p>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+      const VERSION="0.11.8-internal", KEY="jpt-0118-large-team-guide-v1";
+      const $=id=>document.getElementById(id);
+      const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+      const initial={profile:{tester:"",team:"",platform:"",role:"Leader",scenario:"manual"},checks:{},issues:[],module:"dashboard"};
+      let state;
+      try{state={...initial,...JSON.parse(localStorage.getItem(KEY)||"{}")};state.profile={...initial.profile,...state.profile};state.checks=state.checks||{};state.issues=Array.isArray(state.issues)?state.issues:[]}catch{state=structuredClone(initial)}
+      const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+      const setStatus=message=>{ $("status").textContent=message;setTimeout(()=>{if($("status").textContent===message)$("status").textContent=""},2600) };
+      const routes={
+        manual:{title:"推荐路线：从零业务闭环",text:"先完成 Gate A 安装与账号，再用 QA-TEAM-001 手工走完 Parser → Handler → Follow-up → 售前/样品 → Deal → Fulfillment → After-sales；Gate B 可记 N/A；随后完成权限 Gate C 和终端包 Gate D。"},
+        synthetic:{title:"推荐路线：虚拟标准模板",text:"Gate A 通过后复制标准模板，填 1–2 条虚拟记录，完成 Gate B；再以导入记录验证全部业务模块、角色权限 Gate C 和终端包 Gate D。"},
+        history:{title:"推荐路线：真实历史数据",text:"Gate A 和完整备份先通过；Leader 使用原文件完成只读预检、账号/客户映射和原子提交；抽查警告记录、幂等更新、权限 Gate C，再完成终端包 Gate D。"},
+        upgrade:{title:"推荐路线：覆盖升级",text:"先退出旧 JPT 并记录账号、客户/线索数量和附件；安装新版，确认 pre_upgrade 备份、迁移和第二次启动；随后按团队是否有 Excel 选择真实或从零路径。"}
+      };
+      const modules=[
+        {id:"dashboard",name:"仪表盘",roles:"Leader 看全团队；Sales 看权限范围；Tech 仅相关任务视图",action:"核对总询盘、最近 7 天、跟进中、赢单及地图；改变地区、阶段、结果和坐标质量筛选。",expected:"计数与左侧一致；接口失败显示错误和重试，不显示假 0；地图慢或离线不阻塞列表。",pitfall:"仪表盘用于复盘，不直接替代各模块的业务编辑。",tab:"数据质量",note:"1 项待复核：询盘日期需要人工确认。",f1:["负责人","Amy Wang"],f2:["下一步","线上会议"]},
+        {id:"parser",name:"01 解析",roles:"Leader / Sales",action:"粘贴邮件或询盘文本，运行解析；逐项检查客户、联系人、国家、产品、需求和原文。",expected:"自动识别结果可人工改；确认后进入处理，不因解析失败丢失原始文本。",pitfall:"解析结果是候选，不应未经确认直接作为客户事实。",tab:"基础信息",note:"原始询盘文本与结构化字段并排复核。",f1:["来源","虚拟邮件"],f2:["产品","UV 激光"]},
+        {id:"handler",name:"02 处理",roles:"Leader / Sales",action:"确认新建或匹配客户、主联系人、负责人和阶段；检查相似客户提示。",expected:"保存后创建同一客户下的一条 Lead；左侧计数刷新；重复保存不会产生副本。",pitfall:"名称相似不等于同一法律实体；无法确认时新建并保留说明。",tab:"客户",note:"客户候选：NordWerk Demo GmbH；需人工确认。",f1:["阶段","已分配"],f2:["负责人","Amy Wang"]},
+        {id:"followup",name:"03 跟进",roles:"Leader / Owner / Collaborator 按字段权限",action:"记录正式跟进、内容、下一步和计划日期；组合测试状态、地区、负责人及长期未跟进。",expected:"卡片显示最近跟进内容与日期；计划到期按下一计划日，长期未跟进按正式活动→询盘→创建日回退。",pitfall:"没有计划日期不自动等于逾期；多个筛选条件取交集。",tab:"跟进记录",note:"最近跟进：已完成首次在线会议。",f1:["最近跟进","2026-07-31"],f2:["下一步","寄送样品"]},
+        {id:"sampling",name:"04 售前/样品",roles:"Sales 发起；Tech 更新本人任务；Leader 管理",action:"新建售前/样品请求，填写负责人、到期日、参数、结果和报告链接。",expected:"卡片显示任务状态、Tech、到期日和最近跟进；详情可编辑已导入字段，不再出现空卡。",pitfall:"样品状态来自售前任务，不是仅凭销售阶段自动推断。",tab:"售前 / 样品",note:"样品参数：铝牌 3 件；结果待确认。",f1:["售前","Eric Zhou"],f2:["到期","2026-08-07"]},
+        {id:"deal",name:"05 成交",roles:"Leader / 有权 Sales",action:"填写报价单号、报价日期、PO、金额、币种和产品明细；测试赢单或丢单。",expected:"当前卡片明显选中；右侧编号和客户一致；金额与阶段统计刷新。",pitfall:"未保存时切换卡片应确认；不要重复点击关闭线索。",tab:"成交",note:"报价 QA-Q-001 · USD 12,500（虚拟）。",f1:["状态","已报价"],f2:["金额","USD 12,500"]},
+        {id:"fulfillment",name:"06 履约",roles:"Leader / 有权 Sales",action:"选择订单卡片，更新订单、发货和履约状态及关键日期。",expected:"保存后卡片状态和右侧详情同步；刷新、重启后保持。",pitfall:"必须先选择卡片；未选卡片时系统应给明确提示。",tab:"履约",note:"订单生产中，计划 45 天交付。",f1:["订单","QA-PO-001"],f2:["状态","生产中"]},
+        {id:"aftersales",name:"07 售后",roles:"Sales/Leader 发起；Tech 更新本人任务",action:"建立售后任务，指定 Tech、到期日、问题、结果和报告。",expected:"Tech 只看到本人任务和必要关联；完成状态在卡片和详情一致。",pitfall:"售后任务是并行工作流，不等于销售 Lead 自动进入新主阶段。",tab:"售后",note:"虚拟任务：安装培训安排。",f1:["Tech","Eric Zhou"],f2:["状态","待处理"]},
+        {id:"review",name:"数据复盘",roles:"Leader 全局；Sales 权限范围",action:"按阶段、结果、业务地区和坐标质量查看地图与列表；对异常位置进入坐标修正。",expected:"筛选口径与工作列表一致；离线显示提示，点位和列表仍可操作。",pitfall:"业务地区来自负责人账号，地图地理区域来自客户位置，两者不要混用。",tab:"数据质量",note:"坐标质量：近似，需要人工复核。",f1:["业务地区","欧洲"],f2:["坐标","近似"]},
+        {id:"coordinate",name:"坐标复核",roles:"Leader、Owner、Collaborator 可改；Watcher/Tech 只读",action:"按客户、城市、国家、地址搜索；从候选选点或手工经纬度并保存。",expected:"显示服务商、质量和并发版本；保存后复盘地图刷新。",pitfall:"自动候选始终待人工确认；禁止外发地址不用在线搜索。",tab:"客户",note:"候选服务商：以实际界面显示为准。",f1:["质量","待复核"],f2:["国家","德国"]},
+        {id:"trip",name:"出差规划",roles:"Leader / 有权 Sales",action:"创建计划、筛选地理区域客户、增删停靠点、预览路线、保存、导出和归档。",expected:"刷新后计划和停靠点保持；归档从活动列表移除但保留历史。",pitfall:"按客户地理位置选候选，不是按负责人业务地区替代距离规划。",tab:"基础信息",note:"QA Europe Visit · 3 个停靠点（虚拟）。",f1:["计划","QA Europe Visit"],f2:["状态","草稿"]},
+        {id:"transfer",name:"导出 / 导入",roles:"Leader：Excel/治理/定向 Sales JSON；Sales：本人 JSON",action:"在独立页签执行 Excel、Sales JSON、数据治理或客户合并；每次先确认当前页签和文件。",expected:"预检结果绑定同一文件；结果明确为成功、部分完成、失败或无法确认。",pitfall:"Excel、Sales JSON、Tech 任务包、完整备份和附件传递是五条不同链路。",tab:"数据质量",note:"Sales JSON 预检：允许 1、跳过 0、错误 0。",f1:["文件","QA 包"],f2:["结果","可导入"]},
+        {id:"techpackage",name:"Tech 任务包",roles:"Leader 分发/合并；Tech 接收/回传；Sales 不可用",action:"Leader 选 Tech 导出完整分配快照 .jpttask；Tech 预检导入、更新任务后导出 .jptresult；Leader 再预检合并。",expected:"接收人精确匹配，只交换最小任务字段；快照撤回可控，同字段冲突阻断，不同字段可合并，重复包幂等。",pitfall:"任务包不是普通 JSON；首版没有设备数字签名，必须使用可信内部渠道。",tab:"售前 / 样品",note:".jpttask 完整快照 → Tech 结果 → .jptresult（虚拟闭环）。",f1:["接收人","Eric Zhou"],f2:["预检","错误 0 / 冲突 0"]},
+        {id:"merge",name:"客户合并",roles:"Leader",action:"用法律名称、品牌名或别名搜索；选择来源和保留目标，核对只读迁移预览后执行一次。",expected:"来源归档；联系人、Lead、域名和别名迁入目标并留审计；两个名称都可搜索到目标。",pitfall:"相似度分数不构成自动合并依据；来源与目标选反时禁止执行。",tab:"客户",note:"来源将归档，目标保留；预览未写数据库。",f1:["来源","NordWerk Demo"],f2:["目标","NordWerk Demo GmbH"]},
+        {id:"auth",name:"团队与授权",roles:"Leader",action:"创建成员、设置角色/地区、接收申请、签发授权、换机重签和查看历史。",expected:"角色仅 Leader/Sales/Tech；一人一设备；错误验证码、设备、篡改或过期均失败。",pitfall:"当前离线模式不承诺远程即时停用；签发器口令不可找回。",tab:"基础信息",note:"成员 qa.sales.eu · Sales · 欧洲。",f1:["设备","已绑定"],f2:["有效期","90 天"]}
+      ];
+      const profileIds=["tester","team","platform","role","scenario"];
+      profileIds.forEach(id=>{ $(id).value=state.profile[id]??"";$(id).addEventListener("change",()=>{state.profile[id]=$(id).value;save();renderRoute()});$(id).addEventListener("input",()=>{state.profile[id]=$(id).value;save()}) });
+      function renderRoute(){const route=routes[$("scenario").value];$("routeText").innerHTML=`<b>${esc(route.title)}</b>${esc(route.text)}<br><small>当前角色：${esc($("role").value)}；平台：${esc($("platform").value||"尚未选择")}。</small>`}
+      document.querySelectorAll("[data-check]").forEach(input=>{input.checked=!!state.checks[input.dataset.check];input.closest(".task").classList.toggle("done",input.checked);input.addEventListener("change",()=>{state.checks[input.dataset.check]=input.checked;input.closest(".task").classList.toggle("done",input.checked);save();renderProgress()})});
+      function renderProgress(){const all=[...document.querySelectorAll("[data-check]")],done=all.filter(x=>x.checked).length,pct=Math.round(done/all.length*100);$("miniBar").style.width=pct+"%";$("miniProgress").textContent=pct+"%";$("gateSummary").innerHTML=["A","B","C","D"].map(g=>{const items=all.filter(x=>x.dataset.gate===g),n=items.filter(x=>x.checked).length;return `<div class="gate-box ${n===items.length?"pass":""}"><b>Gate ${g}</b><br>${n} / ${items.length} 已确认</div>`}).join("")}
+      function renderModule(id){const m=modules.find(x=>x.id===id)||modules[0];state.module=m.id;save();$("moduleTabs").querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.module===m.id));$("mockNav").innerHTML=modules.slice(0,8).map(x=>`<div class="${x.id===m.id?"active":""}">${esc(x.name)}</div>`).join("");$("mockCrumb").textContent=m.name;$("mockTitle").textContent=m.name;$("mockTab").textContent=m.tab;$("mockNote").textContent=m.note;$("fieldLabel1").textContent=m.f1[0];$("fieldValue1").textContent=m.f1[1];$("fieldLabel2").textContent=m.f2[0];$("fieldValue2").textContent=m.f2[1];$("moduleHeading").textContent=m.name;$("moduleRole").textContent=m.roles;$("moduleAction").textContent=m.action;$("moduleExpected").textContent=m.expected;$("modulePitfall").innerHTML="<strong>常见误区：</strong>"+esc(m.pitfall)}
+      $("moduleTabs").innerHTML=modules.map(m=>`<button type="button" role="tab" data-module="${m.id}">${esc(m.name)}</button>`).join("");$("moduleTabs").addEventListener("click",e=>{const b=e.target.closest("[data-module]");if(b)renderModule(b.dataset.module)});
+      document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{const node=$(b.dataset.copy);const text=[...node.childNodes].filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent).join("").trim();try{await navigator.clipboard.writeText(text);b.textContent="已复制"}catch{b.textContent="请手动复制"}setTimeout(()=>b.textContent="复制",1600)}));
+      function renderIssues(){const rows=$("issueRows");rows.innerHTML=state.issues.length?state.issues.map((x,i)=>`<tr><td><b>Gate ${esc(x.gate)}</b><br>${esc(x.module)}</td><td class="${x.severity==="P0"?"no":x.severity==="P1"?"limited":"yes"}">${esc(x.severity)}<br>${esc(x.blocking==="是"?"阻塞":"不阻塞")}</td><td><b>${esc(x.title)}</b><br>${esc(x.actual)}</td><td>${esc(x.evidence||"-")}</td><td><button type="button" data-edit="${i}">编辑</button> <button type="button" data-delete="${i}">删除</button></td></tr>`).join(""):`<tr><td colspan="5" class="empty">尚未记录问题</td></tr>`}
+      $("issueForm").addEventListener("submit",e=>{e.preventDefault();const issue={gate:$("issueGate").value,module:$("issueModule").value,severity:$("severity").value,blocking:$("blocking").value,title:$("issueTitle").value,evidence:$("evidence").value,repro:$("repro").value,expected:$("expected").value,actual:$("actual").value,savedAt:new Date().toISOString()};const index=$("editIndex").value;if(index==="")state.issues.push(issue);else state.issues[Number(index)]=issue;save();e.target.reset();$("editIndex").value="";$("saveIssue").textContent="加入问题清单";renderIssues();setStatus("问题记录已保存")});
+      $("issueRows").addEventListener("click",e=>{const edit=e.target.closest("[data-edit]"),del=e.target.closest("[data-delete]");if(edit){const i=Number(edit.dataset.edit),x=state.issues[i];$("editIndex").value=i;$("issueGate").value=x.gate;$("issueModule").value=x.module;$("severity").value=x.severity;$("blocking").value=x.blocking;$("issueTitle").value=x.title;$("evidence").value=x.evidence;$("repro").value=x.repro;$("expected").value=x.expected;$("actual").value=x.actual;$("saveIssue").textContent="保存修改";$("issues").scrollIntoView()}if(del&&confirm("确认删除这条问题记录？")){state.issues.splice(Number(del.dataset.delete),1);save();renderIssues()}});
+      $("cancelEdit").addEventListener("click",()=>{$("issueForm").reset();$("editIndex").value="";$("saveIssue").textContent="加入问题清单"});
+      function download(name,type,content){const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement("a");a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
+      function exportJson(){download(`JPT-${VERSION}-团队实测记录.json`,"application/json;charset=utf-8",JSON.stringify({version:VERSION,exportedAt:new Date().toISOString(),...state},null,2));setStatus("完整测试记录已导出")}
+      $("exportBtn").addEventListener("click",exportJson);$("exportSummary").addEventListener("click",exportJson);
+      $("exportCsv").addEventListener("click",()=>{if(!state.issues.length)return setStatus("没有可导出的问题");const fields=["gate","module","severity","blocking","title","repro","expected","actual","evidence","savedAt"],cell=v=>`"${String(v??"").replaceAll('"','""')}"`;download(`JPT-${VERSION}-问题清单.csv`,"text/csv;charset=utf-8","\ufeff"+[fields.join(","),...state.issues.map(x=>fields.map(f=>cell(x[f])).join(","))].join("\r\n"));setStatus("问题 CSV 已导出")});
+      $("resetProgress").addEventListener("click",()=>{if(!confirm("确认清空当前浏览器保存的档案、勾选进度和问题记录？此操作无法撤销。"))return;localStorage.removeItem(KEY);location.reload()});
+      $("guideSearch").addEventListener("input",e=>{const q=e.target.value.trim().toLowerCase();let visible=0;document.querySelectorAll(".guide-section").forEach(s=>{const show=!q||s.textContent.toLowerCase().includes(q);s.classList.toggle("hide",!show);if(show)visible++});$("searchEmpty").classList.toggle("hide",visible>0)});
+      $("menuBtn").addEventListener("click",()=>{const open=$("guideNav").classList.toggle("open");$("menuBtn").setAttribute("aria-expanded",String(open))});$("guideNav").addEventListener("click",e=>{if(e.target.closest("a"))$("guideNav").classList.remove("open")});
+      const navLinks=[...$("guideNav").querySelectorAll("a")];const observer=new IntersectionObserver(entries=>entries.forEach(x=>{if(x.isIntersecting){navLinks.forEach(a=>a.classList.toggle("active",a.hash==="#"+x.target.id))}}),{rootMargin:"-20% 0px -70%"});document.querySelectorAll(".guide-section").forEach(s=>observer.observe(s));
+      renderRoute();renderModule(state.module);renderProgress();renderIssues();
+      if(new URLSearchParams(location.search).get("browser-smoke")==="1")setTimeout(()=>{
+        try{
+          const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+          $("platform").value="Windows 11 x64";$("platform").dispatchEvent(new Event("change",{bubbles:true}));
+          $("role").value="Sales";$("role").dispatchEvent(new Event("change",{bubbles:true}));
+          $("scenario").value="history";$("scenario").dispatchEvent(new Event("change",{bubbles:true}));
+          assert($("routeText").textContent.includes("真实历史数据"),"route");
+          document.querySelector('[data-module="sampling"]').click();
+          assert($("moduleHeading").textContent==="04 售前/样品","module");
+          const check=document.querySelector('[data-check="prepare-package"]');check.click();
+          assert($("miniProgress").textContent!=="0%","progress");
+          $("issueModule").value="JSON 数据交换";$("severity").value="P1";$("blocking").value="是";$("issueTitle").value="虚拟自检问题";$("evidence").value="qa-smoke.png";$("repro").value="选择虚拟数据包并预检";$("expected").value="允许导入";$("actual").value="虚拟异常";$("issueForm").requestSubmit();
+          assert($("issueRows").textContent.includes("虚拟自检问题"),"issue create");
+          document.querySelector("[data-edit='0']").click();$("issueTitle").value="虚拟自检问题（已编辑）";$("issueForm").requestSubmit();
+          assert($("issueRows").textContent.includes("已编辑"),"issue edit");
+          const originalConfirm=window.confirm;window.confirm=()=>true;document.querySelector("[data-delete='0']").click();window.confirm=originalConfirm;
+          assert($("issueRows").textContent.includes("尚未记录问题"),"issue delete");
+          $("guideSearch").value="JSON";$("guideSearch").dispatchEvent(new Event("input",{bubbles:true}));assert(document.querySelectorAll(".guide-section:not(.hide)").length>0,"search");
+          assert(JSON.parse(localStorage.getItem(KEY)).profile.role==="Sales","persistence");
+          assert(document.documentElement.scrollWidth<=window.innerWidth+1,"horizontal overflow");
+          document.title="JPT GUIDE BROWSER SMOKE PASS";
+        }catch(error){document.title="JPT GUIDE BROWSER SMOKE FAIL: "+error.message}
+      },50);
+    })();
+  </script>
+</body>
+</html>

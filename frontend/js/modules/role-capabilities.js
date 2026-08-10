@@ -1,6 +1,7 @@
 /** Global-role UI capability matrix. Backend authorization remains authoritative. */
 (function() {
-    const TECH_MODULES = new Set(['sampling', 'aftersales']);
+    const TECH_WORKFLOW_MODULES = new Set(['sampling', 'aftersales']);
+    const TECH_MODULES = new Set([...TECH_WORKFLOW_MODULES, 'export']);
 
     function isTech() {
         return State.user?.role === 'tech';
@@ -24,6 +25,14 @@
         const spreadsheetAllowed = State.user?.role === 'leader';
         document.querySelectorAll('[data-leader-spreadsheet]').forEach(item => {
             item.classList.toggle('hidden', !spreadsheetAllowed);
+        });
+        const salesExchangeAllowed = State.user?.role === 'leader' || State.user?.role === 'sales';
+        document.querySelectorAll('[data-sales-exchange]').forEach(item => {
+            item.classList.toggle('hidden', !salesExchangeAllowed);
+        });
+        const techExchangeAllowed = State.user?.role === 'leader' || State.user?.role === 'tech';
+        document.querySelectorAll('[data-tech-task-exchange]').forEach(item => {
+            item.classList.toggle('hidden', !techExchangeAllowed);
         });
         const importInput = document.getElementById('import-file');
         if (importInput) importInput.disabled = !spreadsheetAllowed;

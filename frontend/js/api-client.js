@@ -835,6 +835,67 @@ const ApiClient = (function() {
         return response.json();
     }
 
+    // ===== Tech Task Package API =====
+    async function downloadTechTaskPackage(path, body, fallbackFilename) {
+        const token = getToken();
+        const response = await fetch(`${API_BASE}${path}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify(body || {})
+        });
+        if (!response.ok) {
+            const error = await readErrorResponse(response);
+            throw new ApiError(error.message, response.status, error.details);
+        }
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename\*?=(?:UTF-8''|["']?)([^"';]+)/i);
+        const filename = match
+            ? decodeURIComponent(match[1].replace(/["']/g, ''))
+            : fallbackFilename;
+        return { blob: await response.blob(), filename };
+    }
+
+    async function sendTechTaskPackage(path, file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        return request(path, { method: 'POST', body: formData });
+    }
+
+    async function exportTechTaskAssignments(recipientUserId) {
+        return downloadTechTaskPackage(
+            '/data/tech-tasks/assignments/export',
+            { recipient_user_id: recipientUserId },
+            'tech-assignments.jpttask'
+        );
+    }
+
+    async function preflightTechTaskAssignments(file) {
+        return sendTechTaskPackage('/data/tech-tasks/assignments/preflight', file);
+    }
+
+    async function importTechTaskAssignments(file) {
+        return sendTechTaskPackage('/data/tech-tasks/assignments/import', file);
+    }
+
+    async function exportTechTaskResults() {
+        return downloadTechTaskPackage(
+            '/data/tech-tasks/results/export',
+            {},
+            'tech-results.jptresult'
+        );
+    }
+
+    async function preflightTechTaskResults(file) {
+        return sendTechTaskPackage('/data/tech-tasks/results/preflight', file);
+    }
+
+    async function importTechTaskResults(file) {
+        return sendTechTaskPackage('/data/tech-tasks/results/import', file);
+    }
+
     async function spreadsheetImportRequest(path, file, fields = {}, operation = 'preflight') {
         const token = getToken();
         const formData = new FormData();
@@ -1073,6 +1134,12 @@ const ApiClient = (function() {
         exportData,
         importData,
         preflightImportData,
+        exportTechTaskAssignments,
+        preflightTechTaskAssignments,
+        importTechTaskAssignments,
+        exportTechTaskResults,
+        preflightTechTaskResults,
+        importTechTaskResults,
         preflightSpreadsheetImport,
         commitSpreadsheetImport,
         listDataQualityIssues,

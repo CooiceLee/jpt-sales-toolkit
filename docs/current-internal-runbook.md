@@ -1,6 +1,6 @@
 # JPT Sales Toolkit 当前内部试运行手册
 
-当前团队内部稳定基线：`v0.11.7-internal`。它仍是 `UNSIGNED-INTERNAL` 内部版本；可分发范围以源码回归、三个目标平台安装包烟测和团队 Gate 验收结果为准。
+当前待测候选：`v0.11.8-internal`。它是加入 Tech 任务包的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release。源码和 Windows x64、macOS Apple Silicon arm64、macOS Intel x86_64 原生 CI 门禁全部通过前，GitHub Release 保持 Draft；通过后可转为非 Draft 的 Pre-release 供团队下载。团队实测全部通过前，既有稳定基线仍为 `v0.11.7-internal`，不得标记为 Stable / Latest 或用本候选替代。
 
 ## 入口
 
@@ -24,7 +24,8 @@
 - Coordinate Review：坐标队列、地图选点、经纬度输入、邮件地址解析选点、坐标变更审计。
 - External XLSX Import：Leader 使用独立四步向导完成备份、工作簿选择、固定窗口预检/修正和原子提交；人员映射、客户匹配和问题采用折叠分组，标准模板与源文件不进入安装包。
 - Account Mapping：来源姓名按 owner / collaborator / actor / task_assignee 等用途映射到已有 Leader / Sales / Tech 账号；同名跨销售与技术职责可分别选择账号，XLSX 不创建账号，角色错配阻断提交。
-- Data Package Sync：成员终端使用 JSON 数据包导出/导入，执行权限过滤、冲突合并和导入前后快照；Leader 向 Sales 分发时必须先选择接收成员，导出包只包含该成员作为负责人的 Lead，并在导入端校验接收账号。JSON 只有在同一文件预检 `errors=0` 且权限跳过数为 0 时才允许提交；结果明确区分成功、部分完成和失败。Leader→Sales→Leader 往返按来源 Lead ID 回写原记录，联系人源 ID 会映射为本地联系人 ID，单条异常不会留下半写入客户或 Lead。该链路不以 XLSX 作为同步协议。
+- Sales Data Package Sync：成员终端使用定向 JSON 数据包导出/导入，执行权限过滤、冲突合并和导入前后快照；Leader 向 Sales 分发时必须先选择接收成员，导出包只包含该成员作为负责人的 Lead，并在导入端校验接收账号。JSON 只有在同一文件预检 `errors=0` 且权限跳过数为 0 时才允许提交；结果明确区分成功、部分完成和失败。Leader→Sales→Leader 往返按来源 Lead ID 回写原记录，联系人源 ID 会映射为本地联系人 ID，单条异常不会留下半写入客户或 Lead。该链路不以 XLSX 作为同步协议。
+- Tech Task Packages：Leader 在独立页签选择精确 Tech 账号，导出该账号当前全部未归档分配任务的完整快照 `.jpttask`；Tech 预检、导入、更新本人售前/样品或售后任务，再导出 `.jptresult` 给原 Leader 预检合并。新完整快照中缺失的任务只在 Tech 没有未导出更改，或结果已导出且此后未再修改时才可撤回；否则整包阻断。同一结果字段被 Leader 与 Tech 改成不同值时阻断，不同字段可合并；旧快照、改派、归档、接收账号不符和同包 ID 异内容均拒绝，重复包保持幂等。包内不含报价、金额、联系人或附件文件，首版无设备数字签名，只能通过可信内部渠道点对点传递。该链路与 Sales JSON、XLSX 相互独立。
 - Data Governance：国家/区域后端规范化、坐标审计、基础批量修复 API。
 - Business Region：按 Lead 负责人账号筛选 `GLOBAL / 欧洲 / 北美/加拿大/澳洲 / 俄罗斯/土耳其/中东 / 东南亚`；`GLOBAL` 是真实归属，“全部地区”才是清空地区条件。地区与负责人、技术、搜索和时间条件取交集，不能用客户地址代替负责人业务归属。
 - Follow-up Time：`已逾期 / 今日到期 / 未来 7 天` 只判断计划的下一次跟进日期；长期未跟进时间按“最近正式跟进 → 询盘日期 → 创建日期”回退计算，可与业务地区及成员条件组合。未设置计划日期的记录不会被错误算入到期页，空页面会说明具体原因。
@@ -35,13 +36,14 @@
 
 ## 文档归档
 
-- `docs/v0.11.7-validation-result.md`：当前内部稳定版的全面审计、修补、源码门禁和原生三平台发布验证记录。
+- `docs/v0.11.8-validation-result.md`：当前内测候选的验证草案；只登记已有证据，尚未完成的源码与原生三平台门禁保持 Pending。
+- `docs/v0.11.7-validation-result.md`：既有内部稳定基线的全面审计、修补、源码门禁和原生三平台发布验证记录。
 - `docs/v0.11.6-validation-result.md`：上一候选的 JSON 定向分发、卡片排序、升级保护和三平台本地构建验证记录。
 - `docs/v0.11.5-validation-result.md`：历史候选的体验、地图、升级保护和冻结 App 验证记录。
 - `docs/v0.6-internal-runbook.md`：历史试运行手册，保留作归档。
 - `docs/v0.7-trial-runbook.md`：v0.7 数据复盘和出差规划阶段说明。
 - `docs/v0.8-plus-module-roadmap.md`：后续模块规划和状态。
-- `docs/v0.11.0-validation-result.md`：当前安装、XLSX 导入、权限映射和数据包同步验证记录。
+- `docs/v0.11.0-validation-result.md`：历史安装、XLSX 导入、权限映射和数据包同步验证记录。
 - `docs/v0.10.0-validation-result.md`：上一版权限授权与跨平台安装包验证记录。
 - `docs/v0.9.0-validation-result.md`：上一版 v0.9 验证记录。
 - `docs/deployment/`：当前桌面安装、账号签发、试运行和发布说明。

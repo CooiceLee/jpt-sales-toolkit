@@ -32,6 +32,7 @@ from .routers import (
     spreadsheet_import_router,
     data_quality_issues_router,
     inquiry_aggregate_router,
+    tech_task_exchange_router,
 )
 
 # Application root directory
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(spreadsheet_import_router, prefix="/api")
     app.include_router(data_quality_issues_router, prefix="/api")
     app.include_router(inquiry_aggregate_router, prefix="/api")
+    app.include_router(tech_task_exchange_router, prefix="/api")
 
     @app.get("/api/health", include_in_schema=False)
     async def health_check():

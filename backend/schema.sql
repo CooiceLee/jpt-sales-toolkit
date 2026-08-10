@@ -369,6 +369,54 @@ CREATE TABLE IF NOT EXISTS after_sales_tasks (
 );
 
 -- ============================================================================
+-- Offline Leader / Tech Task Package Exchange (application schema v2)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS tech_task_exchange_batches (
+    package_id TEXT PRIMARY KEY,
+    package_type TEXT NOT NULL CHECK (
+        package_type IN ('tech_task_assignment', 'tech_task_results')
+    ),
+    direction TEXT NOT NULL CHECK (
+        direction IN ('leader_to_tech', 'tech_to_leader')
+    ),
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    source_user_id TEXT NOT NULL REFERENCES users(id),
+    recipient_user_id TEXT NOT NULL REFERENCES users(id),
+    parent_package_id TEXT,
+    payload_sha256 TEXT NOT NULL,
+    manifest_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('exported', 'imported')),
+    created_at TEXT NOT NULL,
+    imported_at TEXT,
+    imported_by TEXT REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS tech_task_exchange_bindings (
+    id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organizations(id),
+    task_type TEXT NOT NULL CHECK (task_type IN ('pre_sales', 'after_sales')),
+    source_task_id TEXT NOT NULL,
+    local_task_id TEXT NOT NULL,
+    source_lead_id TEXT NOT NULL,
+    local_lead_id TEXT NOT NULL REFERENCES leads(id),
+    source_customer_id TEXT NOT NULL,
+    local_customer_id TEXT NOT NULL REFERENCES customers(id),
+    leader_user_id TEXT NOT NULL REFERENCES users(id),
+    tech_user_id TEXT NOT NULL REFERENCES users(id),
+    source_row_version INTEGER NOT NULL,
+    source_snapshot_json TEXT NOT NULL,
+    source_package_id TEXT NOT NULL,
+    local_row_version_at_sync INTEGER NOT NULL,
+    last_exported_local_row_version INTEGER,
+    last_exported_result_snapshot_json TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(organization_id, task_type, source_task_id, tech_user_id)
+);
+
+-- ============================================================================
 -- Import Identity and Governance
 -- ============================================================================
 
@@ -590,6 +638,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pre_sales_client_request
     WHERE client_request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_after_sales_tasks_lead ON after_sales_tasks(lead_id);
 CREATE INDEX IF NOT EXISTS idx_after_sales_assignee ON after_sales_tasks(assignee_id, status);
+CREATE INDEX IF NOT EXISTS idx_tech_exchange_batches_recipient
+    ON tech_task_exchange_batches(recipient_user_id, direction, created_at);
+CREATE INDEX IF NOT EXISTS idx_tech_exchange_bindings_local
+    ON tech_task_exchange_bindings(task_type, local_task_id);
+CREATE INDEX IF NOT EXISTS idx_tech_exchange_bindings_source_lead
+    ON tech_task_exchange_bindings(organization_id, source_lead_id, tech_user_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_lead ON attachments(lead_id, category);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_trip_plans_owner ON trip_plans(owner_id, status);

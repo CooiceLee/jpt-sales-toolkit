@@ -3,6 +3,7 @@
 from fastapi import HTTPException, status
 
 from ..services import AfterSalesTaskService, PreSalesTaskService
+from ..services.permission_policy import tech_result_json_denied_fields
 from .deps import get_actor_role_for_lead
 
 
@@ -40,6 +41,7 @@ def ensure_tech_update_fields(
     user: dict,
     data: dict,
     allowed_fields: frozenset[str],
+    current_task: dict | None = None,
 ) -> None:
     if user["role"] != "tech":
         return
@@ -49,6 +51,18 @@ def ensure_tech_update_fields(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Technical users cannot update task fields: {', '.join(denied)}",
         )
+    if "result_json" in data:
+        denied_result = tech_result_json_denied_fields(
+            data["result_json"], (current_task or {}).get("result_json")
+        )
+        if denied_result:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Technical users cannot add or change unsupported result fields: "
+                    + ", ".join(denied_result)
+                ),
+            )
 
 
 def ensure_task_creation_allowed(lead_id: str, user: dict) -> None:

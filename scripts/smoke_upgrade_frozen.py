@@ -17,7 +17,13 @@ if str(ROOT) not in sys.path:
 from backend.services.admin_service import AdminService
 from backend.repositories import read_app_schema_version
 from scripts.smoke_frozen import free_port, wait_for_health
-from test_safe_upgrade import _assert_integrity, _counts, _seed_fixture, _sha256
+from test_safe_upgrade import (
+    _assert_integrity,
+    _authorization_state,
+    _counts,
+    _seed_fixture,
+    _sha256,
+)
 
 
 def _run_once(
@@ -77,7 +83,7 @@ def main() -> None:
     parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument(
         "--fixture-version",
-        choices=("0.11.3-internal", "0.11.4-internal"),
+        choices=("0.11.3-internal", "0.11.4-internal", "0.11.7-internal"),
         required=True,
     )
     parser.add_argument("--expect-disk-image", action="store_true")
@@ -110,6 +116,7 @@ def main() -> None:
     assert _counts(data_dir / "database.sqlite") == expected["counts"]
     assert _sha256(data_dir / "attachments" / "fixture.txt") == expected["attachment_sha"]
     assert _sha256(data_dir / "config" / "authorization_issuer.pem") == expected["config_sha"]
+    assert _authorization_state(data_dir / "database.sqlite") == expected["authorization_state"]
     _assert_integrity(data_dir / "database.sqlite")
     backups = list((data_dir / "backups").glob("pre_upgrade_*.zip"))
     assert len(backups) == 1
@@ -148,7 +155,10 @@ def main() -> None:
         args.launch_with_default_data_dir,
     )
     assert _counts(data_dir / "database.sqlite") == expected["counts"]
-    assert read_app_schema_version(data_dir / "database.sqlite") == 0
+    assert read_app_schema_version(data_dir / "database.sqlite") == expected[
+        "source_schema_version"
+    ]
+    assert _authorization_state(data_dir / "database.sqlite") == expected["authorization_state"]
     _assert_integrity(data_dir / "database.sqlite")
     safety_databases = list((data_dir / "backups").glob("pre_recovery_current_*.sqlite"))
     assert len(safety_databases) == 1

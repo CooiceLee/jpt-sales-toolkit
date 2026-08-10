@@ -4,7 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if [[ -x ".venv/bin/python" ]]; then
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  :
+elif [[ -x ".venv/bin/python" ]]; then
   PYTHON_BIN=".venv/bin/python"
 elif [[ -x ".venv/Scripts/python.exe" ]]; then
   PYTHON_BIN=".venv/Scripts/python.exe"
@@ -73,11 +75,13 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_restore_maintenance_gate.py
 "$PYTHON_BIN" test_safe_upgrade.py
 "$PYTHON_BIN" test_roundtrip_export_import.py
+"$PYTHON_BIN" test_tech_task_package_exchange.py
 "$PYTHON_BIN" test_json_sales_distribution.py
 "$PYTHON_BIN" test_json_import_record_atomicity.py
 "$PYTHON_BIN" test_json_recipient_export.py
 "$PYTHON_BIN" test_json_roundtrip_business_fields.py
 "$PYTHON_BIN" test_json_exchange_frontend_contract.py
+"$PYTHON_BIN" test_tech_task_package_frontend_contract.py
 "$PYTHON_BIN" test_import_identity_schema.py
 "$PYTHON_BIN" test_member_identity_service.py
 "$PYTHON_BIN" test_spreadsheet_importing.py

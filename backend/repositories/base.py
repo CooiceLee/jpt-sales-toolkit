@@ -18,17 +18,23 @@ from .authorization_schema import (
 )
 from .import_governance_schema import apply_import_governance_schema
 from .member_identity_schema import apply_member_identity_schema
+from .tech_task_exchange_schema import (
+    apply_tech_task_exchange_result_snapshot_schema,
+    apply_tech_task_exchange_schema,
+)
 
 # Database connection singleton
 _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
 _connection_init_lock = threading.RLock()
 _SQLITE_BUSY_TIMEOUT_MS = 5000
-APP_SCHEMA_VERSION = 1
+APP_SCHEMA_VERSION = 3
 APP_SCHEMA_MIGRATIONS = (
     # Historical migration numbers are immutable. Future schema versions must
     # append a new explicit tuple instead of rebinding the v1 record.
     (1, "runtime_schema_v1"),
+    (2, "tech_task_exchange_v1"),
+    (3, "tech_task_exchange_result_snapshot_v1"),
 )
 _APP_SCHEMA_LEDGER_DDL = """
 CREATE TABLE IF NOT EXISTS app_schema_migrations (
@@ -51,6 +57,8 @@ _RUNTIME_REQUIRED_TABLES = {
     "customer_aliases",
     "trip_plans",
     "trip_plan_stops",
+    "tech_task_exchange_batches",
+    "tech_task_exchange_bindings",
 }
 _RUNTIME_REQUIRED_COLUMNS = {
     "customers": {
@@ -61,6 +69,7 @@ _RUNTIME_REQUIRED_COLUMNS = {
     },
     "lead_activities": {"archived_at"},
     "customer_contacts": {"archived_at"},
+    "tech_task_exchange_bindings": {"last_exported_result_snapshot_json"},
     "pre_sales_tasks": {"client_request_id"},
     "leads": {"primary_contact_id", "quantity_text"},
     "after_sales_tasks": {"customer_satisfaction", "lessons_learned", "remarks"},
@@ -72,6 +81,8 @@ _RUNTIME_REQUIRED_INDEXES = {
     "idx_users_username_nocase",
     "idx_device_auth_active_device",
     "idx_data_quality_issues_batch",
+    "idx_tech_exchange_batches_recipient",
+    "idx_tech_exchange_bindings_local",
 }
 
 
@@ -227,6 +238,23 @@ def _apply_runtime_schema_v1(conn: sqlite3.Connection) -> None:
     apply_import_governance_schema(conn)
 
 
+def _apply_runtime_schema_v2(conn: sqlite3.Connection) -> None:
+    """Add the isolated Leader/Tech task-package ledger and bindings."""
+    apply_tech_task_exchange_schema(conn)
+
+
+def _apply_runtime_schema_v3(conn: sqlite3.Connection) -> None:
+    """Track the last result state exported by each Tech binding."""
+    apply_tech_task_exchange_result_snapshot_schema(conn)
+
+
+def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
+    """Reapply every idempotent runtime step when drift is detected."""
+    _apply_runtime_schema_v1(conn)
+    _apply_runtime_schema_v2(conn)
+    _apply_runtime_schema_v3(conn)
+
+
 def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> None:
     """Apply audited, transactional and idempotent runtime migrations."""
     conn.execute("BEGIN IMMEDIATE")
@@ -236,6 +264,8 @@ def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> Non
         current = _app_schema_version(conn)
         migration_steps = {
             1: _apply_runtime_schema_v1,
+            2: _apply_runtime_schema_v2,
+            3: _apply_runtime_schema_v3,
         }
         for version, name in APP_SCHEMA_MIGRATIONS:
             if version <= current:
@@ -253,7 +283,7 @@ def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> Non
             )
             current = version
         if current == APP_SCHEMA_VERSION and _runtime_schema_has_drift(conn):
-            _apply_runtime_schema_v1(conn)
+            _repair_current_runtime_schema(conn)
         if int(conn.execute("PRAGMA user_version").fetchone()[0]) != current:
             conn.execute(f"PRAGMA user_version = {current}")
         conn.commit()

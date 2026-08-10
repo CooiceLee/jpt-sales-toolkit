@@ -55,10 +55,17 @@
     }
 
     function defaultWorkspace() {
-        return State.user?.role === 'leader' ? 'spreadsheet' : 'json';
+        if (State.user?.role === 'leader') return 'spreadsheet';
+        return State.user?.role === 'tech' ? 'tech' : 'json';
+    }
+    function workspaceAllowed(target) {
+        const role = State.user?.role;
+        if (role === 'leader') return ['spreadsheet', 'json', 'tech', 'governance', 'merge'].includes(target);
+        if (role === 'tech') return target === 'tech';
+        return target === 'json';
     }
     window.showTransferWorkspace = function(target) {
-        if (target !== 'json' && State.user?.role !== 'leader') target = 'json';
+        if (!workspaceAllowed(target)) target = defaultWorkspace();
         document.querySelectorAll('.transfer-workspace').forEach(item => {
             item.classList.toggle('active', item.id === `transfer-${target}`);
         });
@@ -71,10 +78,10 @@
     window.DataTransferWorkspace = {
         ensureAccessible() {
             const active = document.querySelector('.transfer-workspace.active')?.id?.replace('transfer-', '');
-            const allowed = active === 'json' || State.user?.role === 'leader';
-            window.showTransferWorkspace(active && allowed ? active : defaultWorkspace());
+            window.showTransferWorkspace(active && workspaceAllowed(active) ? active : defaultWorkspace());
             window.SpreadsheetImportProgress?.sync?.();
             window.JsonExport?.ensureRecipients?.();
+            window.TechTaskPackageView?.ensureRole?.();
             bindJsonImportGate();
         }
     };

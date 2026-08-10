@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT 0.11.7 Leader 账号、Excel 与数据治理</title>
+  <title>JPT 0.11.8 Leader 账号、Excel 与数据治理</title>
   <style>
     :root{--wine:#8b1a1a;--wine2:#611010;--ink:#1d1d1f;--muted:#65605d;--bg:#f4f3f1;--paper:#fff;--line:#ddd7d3;--soft:#f7efec;--ok:#176d3b;--warn:#965a00;--error:#b22525;--blue:#245b87;--shadow:0 14px 40px rgba(49,34,29,.08)}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}.wrap{width:min(1120px,calc(100% - 40px));margin:auto}
@@ -18,14 +18,14 @@
   </style>
 </head>
 <body>
-  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> LEADER GUIDE</a><nav aria-label="页面导航"><a href="#upgrade">升级</a><a href="#auth">账号</a><a href="#excel">Excel</a><a href="#region">地区与跟进</a><a href="#merge">客户合并</a><a href="#map">地图</a><a href="#sync">JSON 同步</a></nav></div></header>
-  <section class="hero"><div class="wrap"><div class="kicker">LEADER GUIDE · GATE B / C / D</div><h1>账号、Excel 导入与数据治理</h1><p class="lead">Leader 先建立真实成员和业务地区，再独立处理 Excel。预检不写数据库；只有阻断项清零、人工修正确认后才提交。客户合并、地图复核和 JSON 定向同步各自保留独立验证证据。</p><div class="pills"><span class="pill">v0.11.7-internal</span><span class="pill">Leader 专属治理</span><span class="pill">Excel 四步向导</span><span class="pill">定向 Sales 分发</span></div></div></section>
+  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> LEADER GUIDE</a><nav aria-label="页面导航"><a href="#upgrade">升级</a><a href="#auth">账号</a><a href="#excel">Excel</a><a href="#region">地区与跟进</a><a href="#merge">客户合并</a><a href="#map">地图</a><a href="#sync">Sales JSON</a><a href="#tech-package">Tech 任务包</a></nav></div></header>
+  <section class="hero"><div class="wrap"><div class="kicker">LEADER GUIDE · GATE B / C / D</div><h1>账号、Excel 导入与数据治理</h1><p class="lead">Leader 先建立真实成员和业务地区，再独立处理 Excel。预检不写数据库；只有阻断项清零、人工修正确认后才提交。客户合并、地图复核、Sales JSON 与 Tech 任务包各自保留独立验证证据。</p><div class="pills"><span class="pill">v0.11.8-internal</span><span class="pill">Leader 专属治理</span><span class="pill">Excel 四步向导</span><span class="pill">定向 Sales / Tech 分发</span></div></div></section>
   <main class="wrap">
     <section class="flow" aria-label="独立验收顺序">
       <article><b>A</b><strong>程序先通过</strong><p>安装、授权、保存、退出、重启和备份独立正常。</p></article>
       <article><b>B</b><strong>Excel 再导入</strong><p>完整备份、预检、人工修正、提交、幂等和更新。</p></article>
       <article><b>C</b><strong>权限单独核对</strong><p>用多个真实角色验证归属、可见范围和敏感字段。</p></article>
-      <article><b>D</b><strong>JSON 独立同步</strong><p>两个终端验证导出、预检、合并、重复导入和附件边界。</p></article>
+      <article><b>D</b><strong>终端包独立同步</strong><p>分别验证 Sales JSON 与 Tech <code>.jpttask / .jptresult</code>的定向、预检、合并和幂等。</p></article>
     </section>
 
     <h2 id="upgrade">覆盖升级：先保护旧数据</h2>
@@ -84,7 +84,7 @@
 
     <h3>Excel 异常处理速查</h3>
     <table><thead><tr><th>现象</th><th>判断</th><th>处理</th></tr></thead><tbody>
-      <tr><td>预检内容把页面拉得很长</td><td>仍在使用旧界面或旧程序副本</td><td>新版应有固定高度复核窗口；退出旧后台并核对 v0.11.7</td></tr>
+      <tr><td>预检内容把页面拉得很长</td><td>仍在使用旧界面或旧程序副本</td><td>新版应有固定高度复核窗口；退出旧后台并核对 v0.11.8</td></tr>
       <tr><td>选择文件后提示只有 Leader 可用</td><td>角色不正确</td><td>退出并使用已授权 Leader；不要修改文件绕过权限</td></tr>
       <tr><td>导入按钮不可用</td><td>未预检、仍有阻断项，或修正后尚未复检</td><td>展开问题分组，修正并重新预检直至可以导入</td></tr>
       <tr><td>提交响应中断</td><td>客户端无法确认事务结果</td><td>不要立即重复提交；重开程序核对批次、计数和目标记录</td></tr>
@@ -121,7 +121,7 @@
       <article class="step"><div><h3>验证与回退</h3><p>只使用不敏感测试地址，确认返回服务商及候选正常。当前版本没有 Key 输入界面；无法完成受控系统配置时保持 Nominatim，不要让成员复制 Key 或把 Key 写入共享文件。</p></div></article>
     </section>
 
-    <h2>6. 0.11.7 界面操作快查</h2>
+    <h2>6. 0.11.8 界面操作快查</h2>
     <div class="grid2">
       <article class="panel"><h3>左上角全局搜索</h3><p>输入至少两个字符，在当前账号权限范围内搜索询盘编号、客户、联系人或国家。使用上下方向键选择、Enter 打开、Esc 关闭；Tech 只会跳转到其允许访问的任务模块。</p></article>
       <article class="panel"><h3>卡片与右侧详情</h3><p>点击卡片后，当前卡片会保持明显选中状态，右侧标题同时显示询盘编号和客户。切换卡片前若表单有未保存修改，系统会要求确认。</p></article>
@@ -135,18 +135,43 @@
       <article class="panel"><h3>边界与异常</h3><ul><li>Excel 用于外部/历史数据摄取，不是持续同步协议。</li><li>JSON 只包含附件元数据，附件本体独立传递。</li><li>完整备份不是普通成员同步包。</li><li><code>.jptauth</code>、<code>.jptreq</code> 不进入业务同步目录。</li><li>不要把 Leader 全量包改名后发送；应重新选择目标成员导出。</li><li>旧版无接收成员字段的包仍会逐条做权限过滤；不能用它证明新版定向分发已通过。</li><li>单条异常会回滚该记录及其从属联系人，不应留下半写入实体。</li></ul></article>
     </div>
 
-    <h2>8. Leader 放行清单</h2>
+    <h2 id="tech-package">8. Tech 任务包分发与结果合并</h2>
+    <aside class="callout info"><strong>与 Sales JSON 完全分开。</strong>Leader 向 Tech 分发 <code>.jpttask</code>，Tech 处理后回传 <code>.jptresult</code>。两类文件不进入“JSON 数据交换”，Sales 也不参与该链路。</aside>
+    <section class="steps">
+      <article class="step"><div><h3>准备账号、任务与完整备份</h3><p>确认目标成员是启用中的 Tech 账号，且售前/样品或售后任务已指定给该账号。每轮 Tech 任务包往返测试、程序升级或批量合并前都先创建完整备份，记录任务数和关键状态。</p></div></article>
+      <article class="step"><div><h3>选择精确 Tech 导出完整快照</h3><p>进入“导出 / 导入 → 技术任务包”，在“向技术人员分发任务”中选择实际成员，再点击“下载 <code>.jpttask</code>”。该包是当前终端上该 Tech 当时全部未归档分配的完整快照，不是增量包；新快照中缺失的旧任务代表撤回分配。任一 Leader 后续签发的新快照都会替代此前其他 Leader 为同一 Tech 签发的旧快照。记录目标用户名、导出时间、文件名和任务数；禁止复制 Leader 全量包后改名分发。</p></div></article>
+      <article class="step"><div><h3>用可信内部渠道发给本人</h3><p>任务包只允许指定 Tech 账号导入。建议点对点发送，并通过另一条通道告知文件名、任务数和时间。首版仅有内容校验，尚无设备数字签名；不能依赖公开网盘链接或文件后缀判断真伪。</p></div></article>
+      <article class="step"><div><h3>要求 Tech 预检、导入并业务更新</h3><p>Tech 应在独立“技术任务包”页签预检和导入，再到“售前 / 样品”或“售后”卡片更新允许的状态与结果。导入新快照时，缺失任务会以“分配已撤回”警告归档；但 Tech 有未导出更改，或导出后又修改时，撤回必须阻断。导入后任务数和关联客户上下文应一致，Tech 不应看到报价、金额、PO、输单原因、联系人或附件文件。</p></div></article>
+      <article class="step"><div><h3>收取并预检 <code>.jptresult</code></h3><p>Tech 保存任务更新后导出结果包。Leader 在“导入技术处理结果”选择文件，先点击“预检结果包”；核对来源 Tech、本 Leader 接收账号、任务归属、基础版本、错误和冲突。三方比较只在 Leader 与 Tech 都改动同一结果字段且值不同时阻断；不同字段的变更可合并保留。更换文件后必须重新预检。</p></div></article>
+      <article class="step"><div><h3>合并结果并验证回执</h3><p>仅当同一文件无错误、无冲突时点击“导入结果”。成功后在 Leader 的原任务卡片核对状态、结果文本和售后状态联动，再回复 Tech “已合并”。再次导入同一包应识别为重复包，不应重复改写。</p></div></article>
+    </section>
+    <div class="grid2">
+      <article class="panel"><h3>最小数据边界</h3><p><code>.jpttask</code> 仅包含该 Tech 当前被分配且未归档的任务、执行必需的客户/需求上下文与原始任务版本；<code>.jptresult</code> 仅回传 Tech 允许更新的状态和结果字段。联系人、附件和销售敏感字段均不在此链路中。</p></article>
+      <article class="panel"><h3>升级与旧数据</h3><p>Tech 任务包使用增量 schema 迁移增加同步标记和包收据，不删除原客户、Lead、售前或售后数据。仍必须依次完成升级前备份、升级后数量/卡片抽查和第二次启动核对；任何减少或错配都按 P0 停止。</p></article>
+    </div>
+    <h3>Tech 包预检异常处理</h3>
+    <table><thead><tr><th>情况</th><th>不要做</th><th>Leader 动作</th></tr></thead><tbody>
+      <tr><td>接收人/组织不匹配或文件被篡改</td><td>不改文件名冒充，不绕过预检</td><td>隔离文件，核对渠道和账号后重新导出</td></tr>
+      <tr><td>任务已改派、归档或缺失</td><td>不把旧 Tech 结果强行写给新负责人</td><td>确认最终归属；需要时重新分发并人工迁移有效内容</td></tr>
+      <tr><td>快照撤回任务</td><td>新完整快照不含旧任务；Tech 无未导出更改，或更改已导出且后续未再修改</td><td>允许带“分配已撤回”警告导入，Tech 本地对应任务归档</td></tr>
+      <tr><td>撤回时有未导出更改</td><td>Tech 从未导出更改，或导出结果后又修改</td><td>阻断整个快照导入；Tech 先重新导出，Leader 合并后再发新快照</td></tr>
+      <tr><td>同字段冲突</td><td>Leader 和 Tech 在原快照后修改同一结果字段，且新值不同</td><td>阻断并人工核对；不同字段可三方合并，不必因任务其他字段变化而全部拒绝</td></tr>
+      <tr><td>旧完整快照或重复包</td><td>旧快照时间/任务基线倒退必须阻断；已成功的同一包应幂等</td><td>核对包 ID、导入时间与当前任务；旧快照重新导出，重复包不写入</td></tr>
+    </tbody></table>
+    <aside class="callout warn"><strong>原子性要求：</strong>同一结果包中任一任务存在错误或冲突时，不应当把其他任务部分静默写入。先保留预检证据，解决所有阻断项后再使用新包。</aside>
+
+    <h2>9. Leader 放行清单</h2>
     <ul class="check">
-      <li>v0.11.7 版本和平台正确</li><li>升级前 pre_upgrade 备份已验证</li><li>Gate A 独立通过</li><li>成员角色和业务地区正确</li><li>导入前完整备份已记录</li><li>Excel 预检确认零写入</li><li>成员映射角色合法</li><li>客户匹配经过人工确认</li><li>阻断项为 0 才提交</li><li>提交批次和统计已记录</li><li>相同文件重复导入不重复</li><li>更新保留稳定外部键</li><li>多角色权限交叉验证</li><li>计划到期与长期未跟进口径正确</li><li>GLOBAL 与全部地区不混淆</li><li>各工作页卡片排序稳定</li><li>客户合并先预览后执行</li><li>地图质量和离线状态可理解</li><li>JSON 已选择目标 Sales</li><li>JSON 同一文件预检错误与权限跳过均为 0</li><li>JSON 结果不是部分完成</li><li>目标与非目标成员交叉验证</li><li>主联系人和姓名联系人均保留</li><li>Leader 往返更新原 Lead</li><li>JSON 与 Excel 独立验证</li><li>异常数据可从备份恢复</li>
+      <li>v0.11.8 版本和平台正确</li><li>升级前 pre_upgrade 备份已验证</li><li>Gate A 独立通过</li><li>成员角色和业务地区正确</li><li>导入前完整备份已记录</li><li>Excel 预检确认零写入</li><li>成员映射角色合法</li><li>客户匹配经过人工确认</li><li>阻断项为 0 才提交</li><li>提交批次和统计已记录</li><li>相同文件重复导入不重复</li><li>更新保留稳定外部键</li><li>多角色权限交叉验证</li><li>计划到期与长期未跟进口径正确</li><li>GLOBAL 与全部地区不混淆</li><li>各工作页卡片排序稳定</li><li>客户合并先预览后执行</li><li>地图质量和离线状态可理解</li><li>JSON 已选择目标 Sales</li><li>JSON 同一文件预检错误与权限跳过均为 0</li><li>JSON 结果不是部分完成</li><li>目标与非目标成员交叉验证</li><li>主联系人和姓名联系人均保留</li><li>Leader 往返更新原 Lead</li><li>Tech <code>.jpttask</code> 已选精确接收账号</li><li><code>.jpttask</code> 是完整快照，缺失任务代表 Leader 撤回</li><li>非目标 Tech 不能预检/导入同一包</li><li>Tech 任务卡只显示必需上下文，无金额/联系人/附件</li><li>已导出且未再修改的任务可被新快照撤回</li><li>未导出或导出后又修改的结果不会被撤回覆盖</li><li><code>.jptresult</code> 仅在同字段冲突时阻断，不同字段可合并</li><li>改派、归档和旧快照结果被阻断</li><li>重复 Tech 包不产生重复写入</li><li>Tech 任务包与 Sales JSON / Excel 独立验证</li><li>异常数据可从备份恢复</li>
     </ul>
 
-    <h2>9. 问题严重级别</h2>
+    <h2>10. 问题严重级别</h2>
     <table><thead><tr><th>级别</th><th>定义</th><th>动作</th></tr></thead><tbody>
       <tr><td class="danger">P0</td><td>数据丢失/错误、权限泄露、授权绕过、错误客户合并</td><td>立即停止测试，隔离文件和终端，保留备份与证据</td></tr>
       <tr><td class="danger">P1</td><td>安装、登录、预检、提交、同步等核心链路阻塞</td><td>停止进入下一 Gate，记录完整复现步骤</td></tr>
       <tr><td class="good">P2</td><td>低频且有明确安全绕行方式</td><td>记录影响和绕行方式，纳入后续修复</td></tr>
     </tbody></table>
   </main>
-  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="01-团队成员安装与日常操作.html">成员指南</a>　·　JPT v0.11.7-internal Leader 操作资料</div></footer>
+  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="01-团队成员安装与日常操作.html">成员指南</a>　·　JPT v0.11.8-internal Leader 操作资料</div></footer>
 </body>
 </html>

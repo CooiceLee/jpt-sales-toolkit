@@ -1,6 +1,6 @@
 # 桌面安装包发布手册
 
-当前团队内部稳定版本：`v0.11.7-internal`。
+当前团队测试 / Pre-release 候选：`v0.11.8-internal`。完成源码及 Windows x64、macOS arm64、macOS x86_64 原生 CI 门禁前，GitHub Release 保持 Draft；门禁通过后可转为非 Draft 的 Pre-release 供团队下载。团队实测通过前，既有稳定基线仍为 `v0.11.7-internal`；本候选不得标记为 Stable / Latest 或替代既有稳定基线。
 
 ## 构建入口
 
@@ -48,7 +48,7 @@ GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
 6. 任一步失败，自动从刚生成的备份恢复原数据库并停止启动；不得带病进入业务页面。
 7. 同一版本第二次启动不得重复迁移、重复创建升级备份或改写业务数据库。
 
-发布 Gate 必须同时跑 `test_safe_upgrade.py`，并在冻结安装包中完成以下覆盖升级烟测：Windows 使用 0.11.3 夹具，macOS 使用 0.11.4 夹具，核对核心表数量、附件哈希、授权配置、设备授权、完整性、外键以及二次启动数据库哈希。卸载后夹具数据目录仍必须存在。
+发布 Gate 必须同时跑 `test_safe_upgrade.py`，并保留 Windows 0.11.3、macOS 0.11.4 历史夹具作为旧版本兼容回归；此外，Windows x64、macOS arm64、macOS x86_64 三个平台都必须新增实际 `v0.11.7 schema 1 → v0.11.8 schema 3` 覆盖升级烟测。每组均核对核心表数量、Tech 任务包迁移表、附件哈希、授权配置、设备授权、完整性、外键以及二次启动数据库哈希；Windows 卸载后夹具数据目录仍必须存在。
 
 自动升级失败时，先保留弹窗或 `launcher.log` 证据，不要删除数据目录。完全退出 JPT 后，管理员可直接使用已安装程序的离线恢复入口，不依赖源码环境：
 

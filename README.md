@@ -2,7 +2,7 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前团队内部稳定基线：`v0.11.7-internal`。它是 `UNSIGNED-INTERNAL` 内部版本，不等同于已签名的公开正式版。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、卡片排序、地图坐标、数据复盘、出差规划、拜访执行和定向数据分发入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
+当前待测候选：`v0.11.8-internal`。它是加入 Tech 任务包的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release，不等同于已签名的公开正式版。三个目标平台原生 CI 门禁通过后，可从 Draft 转为非 Draft 的 Pre-release 供团队下载；团队实测全部完成前，既有稳定基线仍为 `v0.11.7-internal`，不得标记为 Stable / Latest 或用本候选替代。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、卡片排序、地图坐标、数据复盘、出差规划、拜访执行、Sales 定向数据分发和 Tech 任务包入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
 
 ## 功能概览
 
@@ -18,7 +18,7 @@
 | Data | Data Review | 经营复盘、风险 Lead、高价值 Lead 和权限隔离分析 |
 | Data | Trip Planner | 候选客户、区域路线、停留时间、拜访执行、结果回填和导出 |
 | Data | Coordinate Review | 精确/近似/缺失坐标质量队列、地图选点、经纬度录入和地址解析选点 |
-| Ops | Export / Import | 销售数据包导出、导入预检、Leader 汇总导入、权限过滤合并和数据治理 |
+| Ops | Export / Import | Sales JSON 定向交换、Tech 任务包往返、导入预检、Leader 汇总合并和数据治理 |
 | Ops | Customer Merge | 名称/别名模糊候选、只读迁移预览和 Leader 安全合并 |
 
 ## 快速开始
@@ -65,7 +65,7 @@ python3 run.py --no-browser
 
 `run.py` 当前启动的是 v2 单机版入口：`backend.app_v2:app`。
 
-`--data-dir` 不得指向网络盘供多台电脑并发使用；当前 SQLite 单机架构不支持多个终端同时写同一目录。团队成员各自使用本机数据目录，通过 JSON 数据包同步；未来集中部署时应由单一服务器进程管理数据库，成员通过浏览器访问。
+`--data-dir` 不得指向网络盘供多台电脑并发使用；当前 SQLite 单机架构不支持多个终端同时写同一目录。团队成员各自使用本机数据目录；Sales 使用定向 JSON，Tech 使用独立 `.jpttask / .jptresult` 任务包同步。未来集中部署时应由单一服务器进程管理数据库，成员通过浏览器访问。
 
 ### 局域网试运行
 
@@ -101,6 +101,8 @@ SMOKE_USER="leader01" SMOKE_PASSWORD="<账号清单中的一次性密码>" \
 2. **定期导出**：通过 Export / Import 导出 JSON 数据包
 3. **发送给 Leader**：通过内部约定渠道发送导出的 JSON 文件
 4. **Leader 合并**：Leader 导入各 Sales 的文件，系统按权限和匹配规则合并
+
+Tech 不使用上述 Sales JSON 链路。Leader 在独立“Tech Task Packages / 技术任务包”页签选择精确 Tech 账号，导出该账号当前全部未归档分配任务的完整快照 `.jpttask`；Tech 预检、导入并在售前/样品或售后任务中保存结果，导出 `.jptresult` 回传，Leader 预检后合并。同一结果字段双方改成不同值时整包阻断，不同字段可合并；新完整快照只有在 Tech 没有未导出修改，或结果已导出且此后未再修改时，才可撤回其中缺失的旧任务。任务包不包含报价、金额、联系人或附件文件，首版没有设备数字签名，只能通过可信内部渠道点对点传递。
 
 ### 合并规则
 
@@ -198,4 +200,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.11.7-internal*
+*JPT Sales Toolkit v0.11.8-internal · internal candidate*

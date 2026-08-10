@@ -94,6 +94,8 @@ jobs:
           $env:LOCALAPPDATA = "$pwd\isolated-localappdata"
           $upgradeData = "$env:LOCALAPPDATA\JPT Sales Toolkit\data"
           python scripts/smoke_upgrade_frozen.py "$installDir\JPT Sales Toolkit.exe" --data-dir $upgradeData --fixture-version 0.11.3-internal --launch-with-default-data-dir
+          $schemaOneData = "$pwd\upgrade-0.11.7"
+          python scripts/smoke_upgrade_frozen.py "$installDir\JPT Sales Toolkit.exe" --data-dir $schemaOneData --fixture-version 0.11.7-internal
           $uninstallProcess = Start-Process -Wait -PassThru -FilePath "$installDir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
           if ($uninstallProcess.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($uninstallProcess.ExitCode)" }
           if (Test-Path "$installDir\JPT Sales Toolkit.exe") { throw "Installed executable remains after uninstall" }
@@ -182,6 +184,13 @@ jobs:
             --fixture-version 0.11.4-internal \
             "$mount_dir/JPT Sales Toolkit.app/Contents/MacOS/JPT Sales Toolkit"
           test -f "$upgrade_data/database.sqlite"
+          schema_one_data="$RUNNER_TEMP/jpt-upgrade-${{ matrix.arch }}-0.11.7"
+          python scripts/smoke_upgrade_frozen.py \
+            --expect-disk-image \
+            --data-dir "$schema_one_data" \
+            --fixture-version 0.11.7-internal \
+            "$mount_dir/JPT Sales Toolkit.app/Contents/MacOS/JPT Sales Toolkit"
+          test -f "$schema_one_data/database.sqlite"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}-installer

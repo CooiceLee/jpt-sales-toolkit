@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT Sales Toolkit 0.11.7 团队使用入口</title>
+  <title>JPT Sales Toolkit 0.11.8 团队使用入口</title>
   <style>
     :root{--wine:#8b1a1a;--wine-dark:#611010;--ink:#1d1d1f;--muted:#65615e;--line:#ddd7d3;--paper:#fff;--bg:#f4f3f1;--soft:#f7efec;--ok:#176b3a;--warn:#915700;--shadow:0 18px 52px rgba(52,35,29,.09)}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:linear-gradient(145deg,#faf9f7,#efedea);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
@@ -19,12 +19,12 @@
   </style>
 </head>
 <body>
-  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="文档导航"><a href="01-团队成员安装与日常操作.html">成员指南</a><a href="02-Leader账号导入与治理.html">Leader 指南</a><a href="03-团队测试与反馈.html">测试反馈</a><a href="#gates">验收顺序</a></nav></div></header>
+  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="文档导航"><a href="04-大规模团队全流程互动操作手册.html">全流程互动手册</a><a href="01-团队成员安装与日常操作.html">成员指南</a><a href="02-Leader账号导入与治理.html">Leader 指南</a><a href="03-团队测试与反馈.html">测试反馈</a><a href="#gates">验收顺序</a></nav></div></header>
   <section class="hero"><div class="wrap">
-    <div class="eyebrow">JPT Sales Toolkit · Team Stable Internal</div>
+    <div class="eyebrow">JPT Sales Toolkit · Internal Candidate</div>
     <h1>先装好程序，再导入数据。<br>权限、同步各自验证。</h1>
-    <p class="lead">这是 v0.11.7-internal 团队内部稳定版的离线操作入口。安装、Excel、账号权限和 JSON 数据同步是四条相互独立的验收链路；任何一条失败，都应保留证据并停止进入下一条。</p>
-    <div class="pills"><span class="pill">v0.11.7-internal</span><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon / Intel</span><span class="pill">UNSIGNED-INTERNAL</span></div>
+    <p class="lead">这是加入 Tech 任务包的 v0.11.8-internal 团队测试 / Pre-release 离线入口。安装、Excel、账号权限和终端数据包同步是四条相互独立的验收链路；Gate D 还要分别验证 Sales JSON 与 Tech 任务包。任何一条失败，都应保留证据并停止进入下一条；原生三平台门禁和团队实测全部通过前，既有稳定基线仍为 v0.11.7-internal，不得用本候选替代。</p>
+    <div class="pills"><span class="pill">v0.11.8-internal</span><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon / Intel</span><span class="pill">UNSIGNED-INTERNAL</span></div>
   </div></section>
   <main><div class="wrap">
     <aside class="callout"><strong>安装包不携带业务数据。</strong>Excel 工作簿、账号授权、JSON 同步包和完整备份均独立分发。覆盖升级会在任何数据库迁移前自动生成并验证本机 <code>pre_upgrade</code> 完整备份；卸载也不会删除用户数据目录。不要把真实客户数据、授权文件或签发口令放入公共安装包、公共群或代码仓库。</aside>
@@ -34,18 +34,19 @@
       <article class="gate"><b>A</b><h3>安装与基础程序</h3><p>选择正确平台包，完成安装、授权、登录、基础增删改查、退出重启和备份。</p><div class="pass">通过：无 Excel 也能独立运行</div></article>
       <article class="gate"><b>B</b><h3>Excel 导入与更新</h3><p>Leader 独立执行完整备份、预检、人工修正、原子提交、重复导入和更新验证。</p><div class="pass">通过：可审查、可修正、可回滚</div></article>
       <article class="gate"><b>C</b><h3>账号与权限</h3><p>用 Leader、目标/非目标 Sales、目标/非目标 Tech 检查数据归属和敏感字段边界。</p><div class="pass">通过：归属准确、无越权</div></article>
-      <article class="gate"><b>D</b><h3>JSON 分发与同步</h3><p>Leader 选择目标 Sales 后定向导出；两个独立终端验证接收账号、联系人、合并、幂等和附件边界。</p><div class="pass">通过：归属准确且不产生副本</div></article>
+      <article class="gate"><b>D</b><h3>终端包分发与同步</h3><p>分别验证 Leader ↔ Sales 定向 JSON，以及 Leader → Tech <code>.jpttask</code> → Leader <code>.jptresult</code> 的账号、预检、冲突、合并和幂等。</p><div class="pass">通过：精确接收且不产生副本</div></article>
     </section>
 
     <h2>按角色进入</h2>
     <section class="cards">
+      <article class="card"><h3>大规模团队：全流程互动操作手册</h3><p>选择平台、角色和数据起点；从安装、虚拟业务闭环到 Excel、权限、Sales JSON、Tech 任务包、地图、出差及结果导出，一页完成实测。</p><a class="button" href="04-大规模团队全流程互动操作手册.html">打开互动手册</a></article>
       <article class="card"><h3>团队成员：安装与日常操作</h3><p>Windows / macOS 安装、设备申请、授权激活、升级退出、业务地区、计划到期、长期未跟进和地图坐标质量。</p><a class="button" href="01-团队成员安装与日常操作.html">打开成员指南</a></article>
-      <article class="card"><h3>Leader：账号、Excel 与数据治理</h3><p>账号地区、四步 Excel 导入、客户名称/别名模糊候选、安全合并、地图复核和 JSON 终端同步。</p><a class="button" href="02-Leader账号导入与治理.html">打开 Leader 指南</a></article>
+      <article class="card"><h3>Leader：账号、Excel 与数据治理</h3><p>账号地区、四步 Excel 导入、客户名称/别名模糊候选、安全合并、地图复核、Sales JSON 与 Tech 任务包同步。</p><a class="button" href="02-Leader账号导入与治理.html">打开 Leader 指南</a></article>
       <article class="card"><h3>标准工作簿口径</h3><p>查阅工作表、外部键、更新语义、账号角色、客户别名、文件安全和重复导入规则。</p><a class="button secondary" href="../import-workbook-standard.md">打开标准格式说明</a></article>
       <article class="card"><h3>团队验收与问题反馈</h3><p>离线记录 Gate A–D、平台、角色、预期、实际、证据和严重级别，并导出 CSV / JSON。</p><a class="button secondary" href="03-团队测试与反馈.html">打开反馈表</a></article>
     </section>
 
-    <h2>0.11.7 关键业务口径</h2>
+    <h2>0.11.8 关键业务口径</h2>
     <table>
       <thead><tr><th>功能</th><th>本版口径</th><th>不要这样理解</th></tr></thead>
       <tbody>
@@ -56,6 +57,7 @@
         <tr><td><strong>地图</strong></td><td>精确、近似、缺失三种坐标质量；离线时列表和修正仍可用</td><td>近似点不能作为准确拜访地址</td></tr>
         <tr><td><strong>卡片排序</strong></td><td>各工作页按阶段、计划日和关键业务日期稳定排序</td><td>不是统一按客户名称，也不依赖数据库偶然顺序</td></tr>
         <tr><td><strong>定向 JSON</strong></td><td>Leader 先选择目标 Sales，只导出该成员负责的 Lead；同一文件预检无错误、无权限跳过后才可导入</td><td>不能把 Leader 全量包直接发给任意成员，也不能把“部分完成”当成完整成功</td></tr>
+        <tr><td><strong>Tech 任务包</strong></td><td><code>.jpttask</code> 是指定 Tech 的完整任务快照；Tech 用 <code>.jptresult</code> 回传，同字段冲突阻断，不同字段可合并</td><td>不能用普通 JSON/Excel 导入，也不能依赖首版包的文件后缀证明来源；只走可信内部渠道</td></tr>
       </tbody>
     </table>
 
@@ -70,6 +72,6 @@
     </table>
     <p class="fine">本指南不包含真实账号、客户、文件哈希或密钥。离线打开时，页面本身不访问互联网。</p>
   </div></main>
-  <footer class="footer"><div class="wrap">JPT Sales Toolkit v0.11.7-internal · 团队内部稳定版操作资料 · 2026-07</div></footer>
+  <footer class="footer"><div class="wrap">JPT Sales Toolkit v0.11.8-internal · 团队测试 / Pre-release 操作资料 · 2026-08</div></footer>
 </body>
 </html>

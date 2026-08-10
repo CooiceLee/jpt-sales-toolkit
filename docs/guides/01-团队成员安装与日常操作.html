@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT 0.11.7 团队成员安装与日常操作</title>
+  <title>JPT 0.11.8 团队成员安装与日常操作</title>
   <style>
     :root{--wine:#8b1a1a;--wine2:#651212;--ink:#1d1d1f;--muted:#66615e;--bg:#f4f3f1;--paper:#fff;--line:#ded8d4;--soft:#f7efec;--ok:#176d3b;--warn:#945900;--blue:#245b87}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}.wrap{width:min(1080px,calc(100% - 40px));margin:auto}
@@ -18,8 +18,8 @@
   </style>
 </head>
 <body>
-  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="页面导航"><a href="#install">安装</a><a href="#activate">激活</a><a href="#followup">跟进筛选</a><a href="#map">地图</a><a href="02-Leader账号导入与治理.html">Leader 指南</a></nav></div></header>
-  <section class="hero"><div class="wrap"><div class="kicker">MEMBER GUIDE · GATE A</div><h1>团队成员安装与日常操作</h1><p class="lead">先证明程序可以独立安装、授权、保存和恢复，再参加 Excel、权限或同步测试。安装新版会保留原本地账号和数据，不会强制重新建号。</p><div class="pills"><span class="pill">v0.11.7-internal</span><span class="pill">Leader / Sales / Tech</span><span class="pill">一名成员默认一台电脑</span><span class="pill">Windows / macOS</span></div></div></section>
+  <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="页面导航"><a href="#install">安装</a><a href="#activate">激活</a><a href="#followup">跟进筛选</a><a href="#tech-package">Tech 任务包</a><a href="#map">地图</a><a href="02-Leader账号导入与治理.html">Leader 指南</a></nav></div></header>
+  <section class="hero"><div class="wrap"><div class="kicker">MEMBER GUIDE · GATE A</div><h1>团队成员安装与日常操作</h1><p class="lead">先证明程序可以独立安装、授权、保存和恢复，再参加 Excel、权限或同步测试。安装新版会保留原本地账号和数据，不会强制重新建号。</p><div class="pills"><span class="pill">v0.11.8-internal</span><span class="pill">Leader / Sales / Tech</span><span class="pill">一名成员默认一台电脑</span><span class="pill">Windows / macOS</span></div></div></section>
   <main class="wrap">
     <section class="metrics"><div class="metric"><b>1</b>名成员默认绑定 1 台设备</div><div class="metric"><b>90</b>天固定离线授权周期</div><div class="metric"><b>A</b>先独立完成安装验收</div></section>
 
@@ -32,7 +32,7 @@
     <aside class="callout warn"><strong>内部未签名版本：</strong>只有在文件名、版本和 Leader 提供的校验记录一致时，才处理系统“未知发布者”提示。不提供 Linux 版本，也不要使用来源不明的命令关闭系统安全保护。</aside>
 
     <section class="grid2">
-      <article class="panel"><h3>Windows 安装</h3><ol><li>完全退出旧 JPT，并关闭旧的本机浏览器页签。</li><li>运行 Windows x64 安装程序并按向导完成。</li><li>从“开始”菜单打开 JPT，不要继续用旧目录副本。</li><li>页面打开后确认标题栏为 <code>v0.11.7-internal</code>。</li></ol></article>
+      <article class="panel"><h3>Windows 安装</h3><ol><li>完全退出旧 JPT，并关闭旧的本机浏览器页签。</li><li>运行 Windows x64 安装程序并按向导完成。</li><li>从“开始”菜单打开 JPT，不要继续用旧目录副本。</li><li>页面打开后确认标题栏为 <code>v0.11.8-internal</code>。</li></ol></article>
       <article class="panel"><h3>macOS 安装</h3><ol><li>通过 JPT 的退出入口完全退出旧程序；只关浏览器不等于退出。</li><li>打开与芯片匹配的 DMG，把 App 拖入“应用程序”。</li><li>在 Finder 推出 DMG。</li><li>从“应用程序”打开 JPT，确认标题栏版本。</li></ol></article>
     </section>
     <aside class="callout"><strong>升级后没有重新创建账号是正常的。</strong>账号、授权、附件和业务数据保存在独立数据目录。新版只替换程序；不要通过删除数据目录来“刷新界面”。若仍看到旧界面，应确认旧后台已退出、DMG 已推出，并从正确的应用副本重新打开。</aside>
@@ -54,7 +54,7 @@
       <article class="step"><div><h3>导入并设置本地密码</h3><p>导入授权、输入验证码、设置至少 8 位密码。姓名、角色或设备任一不符时停止，让 Leader 重新签发。</p></div></article>
       <article class="step"><div><h3>完成持久化检查</h3><p>建立一条带唯一测试标识的记录，查看、修改、归档或删除；完全退出并重新启动，确认预期数据仍在。</p></div></article>
     </section>
-    <aside class="callout ok"><strong>Gate A 通过后再拿 Excel。</strong>程序安装、账号激活和本地保存必须在没有工作簿、没有 JSON 同步包的情况下单独通过。</aside>
+    <aside class="callout ok"><strong>Gate A 通过后再拿业务文件。</strong>程序安装、账号激活和本地保存必须在没有工作簿、Sales JSON、<code>.jpttask</code> 或 <code>.jptresult</code> 的情况下单独通过。</aside>
 
     <h2 id="followup">3. 业务地区与跟进时间怎么筛</h2>
     <div class="grid2">
@@ -74,7 +74,37 @@
     </section>
     <aside class="callout warn"><strong>不要用 Excel 代替成员同步。</strong>Excel 由 Leader 做外部数据摄取；Leader → Sales 的日常分发使用定向 JSON。JSON 只携带附件元数据，附件本体与完整备份仍需独立传递。</aside>
 
-    <h2 id="map">5. 地图坐标质量</h2>
+    <h2 id="tech-package">5. Tech 任务包（Tech Task Packages）</h2>
+    <aside class="callout info"><strong>这是 Tech 专用的独立同步链路。</strong><code>.jpttask</code> 用于 Leader 向指定 Tech 分发任务，<code>.jptresult</code> 用于 Tech 向 Leader 回传处理结果。它们虽然是 JSON 格式文件，但不能放到“JSON 数据交换”中导入，也不能用 Excel 代替。每个 <code>.jpttask</code> 都是当前 Leader 终端上该 Tech 当时全部未归档分配的<strong>完整快照</strong>，不是只追加新任务的增量包；任一 Leader 后续签发的新快照都会替代此前其他 Leader 为同一 Tech 签发的旧快照。</aside>
+    <section class="steps">
+      <article class="step"><div><h3>收到指定给本人的 <code>.jpttask</code></h3><p>Leader 必须先在“技术任务包 / Tech Task Packages”中选择你的实际账号后导出。通过团队批准的内部渠道点对点收取；不要转发给其他 Tech，不要修改文件内容。</p></div></article>
+      <article class="step"><div><h3>先预检（Preflight Assignments）</h3><p>用 Tech 账号进入“导出 / 导入 → 技术任务包”，选择 <code>.jpttask</code> 后点击“预检分配包”。核对文件类型、来源 Leader、接收账号、任务数、错误、冲突和“分配已撤回”警告。完整快照中不再出现的旧任务会被视为 Leader 撤回；预检只检查，不写入业务数据。</p></div></article>
+      <article class="step"><div><h3>导入任务并核对</h3><p>只有当前同一文件预检无错误、无冲突时才导入。成功后到“售前 / 样品”和“售后”页面，按询盘编号、客户和到期日核对任务；打开卡片确认请求内容可读。接受撤回警告后，对应 Tech 本地任务会归档，不再留在当前任务列表。</p></div></article>
+      <article class="step"><div><h3>在业务页更新结果</h3><p>售前 / 样品任务仅更新本人允许的状态和结果内容，例如当前进展、结果摘要、下一步、样品结果和报告链接；售后任务更新状态、解决方案、客户满意度、经验教训和备注。保存后重新打开卡片，确认内容仍在。</p></div></article>
+      <article class="step"><div><h3>导出 <code>.jptresult</code> 回传</h3><p>回到“技术任务包”，点击“下载 <code>.jptresult</code>”。该文件只携带已保存的待回传任务结果；用可信内部渠道发回原 Leader，同时说明任务数和导出时间。文件导出不等于 Leader 已合并，需等待其回执。</p></div></article>
+    </section>
+    <div class="grid2">
+      <article class="panel"><h3>包内有什么</h3><p>仅包含当前指定给该 Tech 的售前/样品或售后任务、完成任务必需的最小客户与需求上下文，以及 Tech 允许回传的结果字段。</p></article>
+      <article class="panel"><h3>包内不包含什么</h3><p>不包含报价、成交金额、PO、输单原因等销售敏感字段，不包含联系人、附件文件或完整数据库。需要图纸、照片或报告附件时，应按团队文件规则独立受控传递。</p></article>
+    </div>
+    <table><thead><tr><th>预检提示</th><th>含义</th><th>正确处理</th></tr></thead><tbody>
+      <tr><td>接收账号不匹配</td><td>包已精准绑定另一名 Tech</td><td>不要改名或继续导入；请 Leader 重新选择本人账号导出</td></tr>
+      <tr><td>任务已改派、归档或不存在</td><td>Leader 端任务状态已变更</td><td>停止使用旧包，让 Leader 确认归属后导出新包</td></tr>
+      <tr><td>完整快照撤回分配</td><td>新快照不含旧任务；如 Tech 没有未导出更改，或结果已导出且导出后未再修改，可安全撤回</td><td>核对“分配已撤回”警告后导入；本地任务将归档</td></tr>
+      <tr><td>本地有未导出更改</td><td>Tech 从未导出该更改，或导出 <code>.jptresult</code> 后又修改了任务</td><td>撤回/刷新必须阻断；先重新导出并请 Leader 合并，再导入新 <code>.jpttask</code></td></tr>
+      <tr><td>同字段冲突</td><td>Leader 和 Tech 都在原快照后修改了同一结果字段，且新值不同</td><td>阻断合并，不强制覆盖；不同字段的变更可保留各自结果</td></tr>
+      <tr><td>旧完整快照</td><td>包的生成时间不新于上次已导入快照，或单条任务基线倒退</td><td>禁止导入；请 Leader 基于当前任务重新导出</td></tr>
+      <tr><td>采纳旧版源记录</td><td>旧数据库副本中的任务、Lead、客户、负责人、版本和允许同步内容与任务包完全一致</td><td>可带警告导入；系统复用原记录并建立关联，不重复新增，未知历史结果字段原样保留</td></tr>
+      <tr><td>源记录不一致</td><td>旧数据库副本已落后、被修改或只存在部分关联记录</td><td>整包阻断；不要强制覆盖，改用干净的 Tech 安装或先由 Leader 核对迁移</td></tr>
+      <tr><td>重复包</td><td>该包已成功导入</td><td>系统应幂等处理且不重复新增；保留结果作为验收证据</td></tr>
+    </tbody></table>
+    <aside class="callout warn"><strong>首版安全边界：</strong>任务包有内容校验和精准接收账号校验，但尚无设备级数字签名，不能单凭文件后缀证明来源可信。只使用团队批准的可信内部渠道；对来源或内容有疑问时与 Leader 另通道确认。旧包拦截还会比较带时区的生成时间，请让 Windows 和 macOS 保持“自动设置日期与时间”。</aside>
+    <h3>Tech 任务包 Gate D 确认</h3>
+    <ul class="check">
+      <li>Tech 只能预检/导入定向给本人的 <code>.jpttask</code></li><li>已确认 <code>.jpttask</code> 是完整快照，缺失任务代表撤回</li><li>任务导入后在售前/样品或售后可查看</li><li>Tech 更新已保存并可导出 <code>.jptresult</code></li><li>已导出且未再修改的结果允许后续快照撤回</li><li>导出后又修改的任务不会被撤回覆盖</li><li>任务包不含销售敏感字段、联系人和附件文件</li><li>改派、归档和同字段冲突不会被强制覆盖</li><li>已导入的重复包不会重复写入</li>
+    </ul>
+
+    <h2 id="map">6. 地图坐标质量</h2>
     <section class="grid3">
       <article class="panel"><h3>精确</h3><p>已有经过确认的经纬度，可用于地图定位；拜访前仍应核对地址和联系人。</p></article>
       <article class="panel"><h3>近似</h3><p>仅按国家、城市或区域给出参考位置，不能用于判断楼宇、路线终点或实际距离。</p></article>
@@ -82,22 +112,23 @@
     </section>
     <aside class="callout info"><strong>没有底图不等于数据丢失。</strong>地图底图和地址解析需要网络。地址搜索与批量地理编码会把位置字段发送给一个或多个外部服务；启用高德后，可回退故障会继续查询 Nominatim，界面显示实际候选服务商。高德只负责可选地理编码，不替换 CARTO/OpenStreetMap 底图；打开地图也会产生外部瓦片请求。普通成员不要自行配置或索取高德 Key，不允许外发的客户地址请使用人工经纬度或地图选点。离线或瓦片加载失败时，客户列表、筛选、坐标质量和人工修正仍应可用。</aside>
 
-    <h2>6. Gate A 完成清单</h2>
+    <h2>7. Gate A 完成清单</h2>
     <ul class="check">
-      <li>安装包与设备架构一致</li><li>标题栏为 v0.11.7-internal</li><li>中英文切换不改变页面布局</li><li>窄屏仍可滚动使用左侧导航</li><li>仪表盘接口失败显示错误和重试，不显示假 0</li><li>姓名、角色和设备正确</li><li>可生成并导入设备授权</li><li>新增、查看、修改正常</li><li>归档/删除操作可纠正</li><li>完全退出后后台停止</li><li>升级前后数量与原附件一致</li><li>第二次启动数据仍在</li><li>业务地区显示正确</li><li>时间筛选口径清楚</li><li>卡片排序刷新后稳定</li><li>地图质量状态可理解</li>
+      <li>安装包与设备架构一致</li><li>标题栏为 v0.11.8-internal</li><li>中英文切换不改变页面布局</li><li>窄屏仍可滚动使用左侧导航</li><li>仪表盘接口失败显示错误和重试，不显示假 0</li><li>姓名、角色和设备正确</li><li>可生成并导入设备授权</li><li>新增、查看、修改正常</li><li>归档/删除操作可纠正</li><li>完全退出后后台停止</li><li>升级前后数量与原附件一致</li><li>第二次启动数据仍在</li><li>业务地区显示正确</li><li>时间筛选口径清楚</li><li>卡片排序刷新后稳定</li><li>地图质量状态可理解</li>
     </ul>
 
-    <h2>7. 常见异常</h2>
+    <h2>8. 常见异常</h2>
     <table><thead><tr><th>现象</th><th>原因判断</th><th>处理</th></tr></thead><tbody>
       <tr><td>提示旧版仍在运行</td><td>只关闭了浏览器，后台进程仍占用数据目录</td><td>回到旧版使用退出入口，确认完全停止后再打开新版</td></tr>
       <tr><td>macOS 显示安装位置警告</td><td>正在从 DMG 运行</td><td>退出，拖入“应用程序”，推出 DMG，再从“应用程序”打开</td></tr>
       <tr><td>升级后仍是旧界面</td><td>打开了旧副本或旧页面</td><td>关闭旧页签，核对应用位置和标题栏版本后重开</td></tr>
       <tr><td>升级失败并停止启动</td><td>备份校验、schema 迁移或迁移后数据库检查未通过</td><td>不要删除数据目录；保留提示和 launcher.log，使用自动生成的 pre_upgrade 备份联系 Leader/管理员恢复</td></tr>
       <tr><td>授权设备不匹配</td><td>使用了其他电脑或其他成员的授权</td><td>本机重新生成申请，由 Leader 对应成员重新签发</td></tr>
+      <tr><td>Tech 任务包无法导入</td><td>使用了普通 JSON 页签、接收账号不符，或文件已过时/被改动</td><td>到“技术任务包”重新预检；按具体冲突请 Leader 核对并重新导出</td></tr>
       <tr><td>地图没有底图</td><td>离线或底图服务不可用</td><td>继续使用列表；需要定位时联网后重试，不要把近似点当精确点</td></tr>
       <tr><td>地址搜索失败</td><td>页面会区分无结果、断网、超时、限流或服务配置错误</td><td>按具体提示重试或人工选点；不要把服务故障当作客户地址错误</td></tr>
     </tbody></table>
   </main>
-  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="02-Leader账号导入与治理.html">Leader 指南 →</a>　·　JPT v0.11.7-internal</div></footer>
+  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="02-Leader账号导入与治理.html">Leader 指南 →</a>　·　JPT v0.11.8-internal</div></footer>
 </body>
 </html>

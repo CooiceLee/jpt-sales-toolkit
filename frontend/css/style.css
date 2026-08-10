@@ -2050,6 +2050,12 @@ html, body {
 .json-exchange-grid .kpi-card { min-height:280px; }
 .json-exchange-grid .form-input { margin:12px 0; }
 .json-import-actions { display:flex;gap:8px; }
+.tech-package-note { display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px 14px;border:1px solid #ead7df;border-radius:11px;background:#fff7fa;color:var(--ink-700);font-size:13px; }
+.tech-package-note strong { flex:0 0 auto;color:var(--wine-700); }
+.tech-package-report { max-height:300px;margin-top:12px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable; }
+.tech-package-report .governance-report { margin:0;padding:12px;border:1px solid var(--border-color);border-radius:10px;background:var(--cream-50); }
+.tech-package-report .governance-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+[data-tech-task-role][hidden] { display:none !important; }
 .import-resolution-group { margin:12px 0;overflow:hidden;border:1px solid var(--border-color);border-radius:10px;background:#fff; }
 .import-resolution-group>summary { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;color:var(--ink-800);font-size:13px;font-weight:700;cursor:pointer;list-style:none; }
 .import-resolution-group>summary::-webkit-details-marker { display:none; }
