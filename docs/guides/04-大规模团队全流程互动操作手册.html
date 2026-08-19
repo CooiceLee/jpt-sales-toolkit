@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT 0.11.8 大规模团队全流程互动操作手册</title>
+  <title>JPT 0.11.9 大规模团队全流程互动操作手册</title>
   <style>
     :root{--wine:#8b1a1a;--wine2:#641111;--ink:#1d1d1f;--muted:#68625f;--bg:#f3f1ee;--paper:#fff;--line:#ddd6d1;--soft:#f8efec;--ok:#176b3a;--warn:#946000;--danger:#a32323;--blue:#245b87;--shadow:0 15px 42px rgba(54,35,28,.08)}
     *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:76px}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}code{background:#f2ece9;color:#741616;border-radius:5px;padding:2px 5px;overflow-wrap:anywhere}.hide{display:none!important}
@@ -50,13 +50,13 @@
       <section class="hero guide-section" id="start">
         <div class="eyebrow">JPT · TEAM TEST GUIDE</div>
         <h1>从安装到业务闭环，<br>一页完成团队实测。</h1>
-        <p>适用版本：<strong>v0.11.8-internal</strong> 团队测试 / Pre-release。原生三平台门禁和团队实测全部通过前，既有稳定基线仍为 v0.11.7-internal，不得用本候选替代。本页离线运行，不上传任何信息。请选择平台、角色和数据起点；页面会生成推荐路线，并在当前浏览器保存勾选进度、测试档案和问题清单。</p>
-        <div class="pills"><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon / Intel</span><span class="pill">Leader / Sales / Tech</span><span class="pill">有历史数据 / 从零开始</span><span class="pill">UNSIGNED-INTERNAL</span></div>
+        <p>适用版本：<strong>v0.11.9-internal</strong> 团队测试 / Pre-release。本次只分发 Windows 10/11 x64 与 macOS Apple Silicon arm64；覆盖升级以 v0.11.8-internal 为直接基线。两平台门禁和团队实测全部通过前不得标记为 Stable / Latest。本页离线运行，不上传任何信息。请选择平台、角色和数据起点；页面会生成推荐路线，并在当前浏览器保存勾选进度、测试档案和问题清单。</p>
+        <div class="pills"><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon arm64</span><span class="pill">Leader / Sales / Tech</span><span class="pill">有历史数据 / 从零开始</span><span class="pill">UNSIGNED-INTERNAL</span></div>
         <div class="profile" style="margin-top:22px">
           <div class="profile-grid">
             <label>测试人<input id="tester" placeholder="例如：王小明"></label>
             <label>团队 / 小组<input id="team" placeholder="例如：欧洲测试组"></label>
-            <label>平台<select id="platform"><option value="">请选择</option><option>Windows 10 x64</option><option>Windows 11 x64</option><option>macOS Apple Silicon</option><option>macOS Intel</option></select></label>
+            <label>平台<select id="platform"><option value="">请选择</option><option>Windows 10 x64</option><option>Windows 11 x64</option><option>macOS Apple Silicon</option></select></label>
             <label>测试角色<select id="role"><option>Leader</option><option>Sales</option><option>Tech</option></select></label>
             <label>数据起点<select id="scenario"><option value="manual">没有历史文档：从零录入</option><option value="synthetic">没有历史文档：用标准模板做虚拟导入</option><option value="history">已有历史 Excel：真实导入</option><option value="upgrade">已有旧版程序和本地数据：覆盖升级</option></select></label>
           </div>
@@ -91,7 +91,7 @@
           <tr><td>客户 / 线索</td><td>NordWerk Demo GmbH · <code>QA-TEAM-001</code></td><td>所有模块统一使用，便于检索和清理</td></tr>
         </tbody></table></div>
         <div class="task-list">
-          <label class="task"><input type="checkbox" data-check="prepare-package" data-gate="A"><span>安装包文件名、平台和版本均为 0.11.8<small>不使用旧 DMG、旧目录或聊天转存的未知副本</small></span></label>
+          <label class="task"><input type="checkbox" data-check="prepare-package" data-gate="A"><span>安装包文件名、平台和版本均为 0.11.9<small>不使用旧 DMG、旧目录或聊天转存的未知副本</small></span></label>
           <label class="task"><input type="checkbox" data-check="prepare-hash" data-gate="A"><span>安装包 SHA-256 与清单一致<small>不一致时停止，不继续处理系统安全提示</small></span></label>
           <label class="task"><input type="checkbox" data-check="prepare-accounts" data-gate="C"><span>权限测试所需四个虚拟身份已分配<small>密码由成员本机设置，不写在手册或群聊</small></span></label>
           <label class="task"><input type="checkbox" data-check="prepare-id" data-gate="A"><span>确定唯一测试标识<small>建议团队缩写 + 日期 + 序号，便于归档测试数据</small></span></label>
@@ -101,15 +101,15 @@
       <section class="section guide-section" id="install">
         <div class="section-head"><div><h2>1. 安装、首次启动与升级</h2><p>只关闭浏览器页面不等于退出 JPT；覆盖安装前必须从左下角用户菜单选择“退出 JPT”。</p></div><span class="tag">Gate A</span></div>
         <div class="grid2">
-          <article class="card"><h3>Windows 10 / 11 x64</h3><ol><li>确认文件名包含 <code>Windows-x64</code> 和 <code>UNSIGNED-INTERNAL</code>。</li><li>双击 Setup；若 SmartScreen 提示，先核对来源和哈希，再选择“更多信息 → 仍要运行”。</li><li>按向导完成，不自行改变用户数据目录。</li><li>从“开始”菜单打开 JPT；不要运行旧解压目录副本。</li><li>浏览器应打开本机 <code>127.0.0.1</code>，标题栏显示 <code>v0.11.8-internal</code>。</li></ol></article>
-          <article class="card"><h3>macOS Apple Silicon / Intel</h3><ol><li> → 关于本机，确认芯片；选择 arm64 或 Intel DMG。</li><li>打开 DMG，把 App 拖入“应用程序”；升级时选择替换。</li><li>推出 JPT 磁盘映像，不能直接运行 DMG 内 App。</li><li>从“应用程序”打开；未签名提示时右键 App → 打开，并再次确认。</li><li>标题栏确认 <code>v0.11.8-internal</code>。</li></ol></article>
+          <article class="card"><h3>Windows 10 / 11 x64</h3><ol><li>确认文件名包含 <code>Windows-x64</code> 和 <code>UNSIGNED-INTERNAL</code>。</li><li>双击 Setup；若 SmartScreen 提示，先核对来源和哈希，再选择“更多信息 → 仍要运行”。</li><li>按向导完成，不自行改变用户数据目录。</li><li>从“开始”菜单打开 JPT；不要运行旧解压目录副本。</li><li>浏览器应打开本机 <code>127.0.0.1</code>，标题栏显示 <code>v0.11.9-internal</code>。</li></ol></article>
+          <article class="card"><h3>macOS Apple Silicon arm64</h3><ol><li> → 关于本机，确认芯片为 Apple；Intel Mac 不使用本次 DMG。</li><li>打开 DMG，把 App 拖入“应用程序”；升级时选择替换。</li><li>推出 JPT 磁盘映像，不能直接运行 DMG 内 App。</li><li>从“应用程序”打开；未签名提示时右键 App → 打开，并再次确认。</li><li>标题栏确认 <code>v0.11.9-internal</code>。</li></ol></article>
         </div>
         <aside class="callout warn"><strong>升级后没有重新建号是正常的。</strong>程序文件与用户数据分离。Windows 数据在 <code>%LOCALAPPDATA%\JPT Sales Toolkit\data</code>；macOS 数据在 <code>~/Library/Application Support/JPT Sales Toolkit/data</code>。不要删除数据目录来刷新界面。</aside>
         <div class="diagram" aria-label="安装与数据保留示意图">
           <svg viewBox="0 0 900 210" role="img" aria-labelledby="installTitle"><title id="installTitle">程序升级与数据保留流程</title>
             <rect x="20" y="35" width="190" height="130" rx="18" fill="#fff" stroke="#8b1a1a"/><text x="115" y="72" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">旧版程序</text><text x="115" y="106" text-anchor="middle" fill="#68625f" font-size="14">退出 JPT</text><text x="115" y="132" text-anchor="middle" fill="#68625f" font-size="14">记录客户 / 线索 / 附件</text>
             <path d="M220 100 H320" stroke="#8b1a1a" stroke-width="3"/><path d="M310 90 L325 100 L310 110" fill="none" stroke="#8b1a1a" stroke-width="3"/>
-            <rect x="340" y="20" width="220" height="160" rx="18" fill="#f8efec" stroke="#8b1a1a"/><text x="450" y="58" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">首次启动新版</text><text x="450" y="91" text-anchor="middle" fill="#68625f" font-size="14">自动创建并验证 pre_upgrade</text><text x="450" y="117" text-anchor="middle" fill="#68625f" font-size="14">校验通过才迁移</text><text x="450" y="143" text-anchor="middle" fill="#68625f" font-size="14">失败则恢复并停止</text>
+            <rect x="340" y="20" width="220" height="160" rx="18" fill="#f8efec" stroke="#8b1a1a"/><text x="450" y="58" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">首次启动新版</text><text x="450" y="91" text-anchor="middle" fill="#68625f" font-size="14">先检查 schema</text><text x="450" y="117" text-anchor="middle" fill="#68625f" font-size="14">需要迁移才建 pre_upgrade</text><text x="450" y="143" text-anchor="middle" fill="#68625f" font-size="14">无需迁移则保持原位</text>
             <path d="M570 100 H670" stroke="#8b1a1a" stroke-width="3"/><path d="M660 90 L675 100 L660 110" fill="none" stroke="#8b1a1a" stroke-width="3"/>
             <rect x="690" y="35" width="190" height="130" rx="18" fill="#fff" stroke="#176b3a"/><text x="785" y="72" text-anchor="middle" fill="#176b3a" font-size="18" font-weight="700">核对并重启</text><text x="785" y="106" text-anchor="middle" fill="#68625f" font-size="14">原账号、总数、阶段</text><text x="785" y="132" text-anchor="middle" fill="#68625f" font-size="14">跟进、附件均一致</text>
           </svg>
@@ -117,7 +117,7 @@
         <div class="task-list">
           <label class="task"><input type="checkbox" data-check="install-launch" data-gate="A"><span>正确安装副本成功启动<small>版本正确，浏览器访问 127.0.0.1</small></span></label>
           <label class="task"><input type="checkbox" data-check="install-persist" data-gate="A"><span>退出 JPT 后第二次启动成功<small>不是只关闭浏览器标签页</small></span></label>
-          <label class="task"><input type="checkbox" data-check="install-upgrade" data-gate="A"><span>如为升级，原账号、数量、阶段和附件一致<small>自动备份存在；第二次启动不重复迁移</small></span></label>
+          <label class="task"><input type="checkbox" data-check="install-upgrade" data-gate="A"><span>如为升级，原账号、数量、阶段和附件一致<small>升级前完整备份；需要迁移时才有自动 pre_upgrade</small></span></label>
           <label class="task"><input type="checkbox" data-check="install-offline" data-gate="A"><span>无地图网络时核心业务仍可使用<small>底图失败不应阻塞客户列表和人工坐标</small></span></label>
         </div>
       </section>
@@ -196,7 +196,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         <div class="section-head"><div><h2>4. 界面结构与各模块实际操作</h2><p>点击模块名称切换下方图示、建议动作、成功判定和常见误区。图中账号和线索均为虚拟示例。</p></div><span class="tag">全角色按权限验证</span></div>
         <div class="module-tabs" id="moduleTabs" role="tablist" aria-label="模块选择"></div>
         <figure class="mock" aria-label="JPT 模块界面虚拟示意">
-          <div class="mock-top"><span>销售管线 / <b id="mockCrumb">仪表盘</b></span><span>v0.11.8-internal　中 / EN</span></div>
+          <div class="mock-top"><span>销售管线 / <b id="mockCrumb">仪表盘</b></span><span>v0.11.9-internal　中 / EN</span></div>
           <div class="mock-body">
             <nav class="mock-nav" id="mockNav"></nav>
             <div class="mock-main"><h3 id="mockTitle">仪表盘</h3><div class="mock-toolbar"><div class="mock-field">搜索客户、联系人、国家</div><div class="mock-field">全部地区</div></div><article class="lead-card"><span class="id">JPT-QA-0001 · QA-TEAM-001</span><h4>NordWerk Demo GmbH</h4><dl><dt id="fieldLabel1">负责人</dt><dd id="fieldValue1">Amy Wang</dd><dt id="fieldLabel2">下一步</dt><dd id="fieldValue2">线上会议</dd></dl></article></div>
@@ -262,7 +262,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
           <div class="flow-item"><strong>回传</strong>Tech 保存更新，导出 <code>.jptresult</code></div>
           <div class="flow-item"><strong>Leader</strong>预检版本和归属，原子合并并回执</div>
         </div>
-        <aside class="callout warn"><strong>开始前：</strong>Leader 先创建完整备份，记录目标 Tech、售前/样品任务数、售后任务数和导出时间。旧版本升级使用增量数据库迁移，不应删除现有客户、Lead 或任务；升级后仍要抽查原卡片并第二次启动。</aside>
+        <aside class="callout warn"><strong>开始前：</strong>Leader 先创建完整备份，记录目标 Tech、售前/样品任务数、售后任务数和导出时间。v0.11.8 直升 v0.11.9 不改变 schema，不应删除或重建现有客户、Lead 或任务；升级后仍要抽查原卡片并第二次启动。</aside>
 
         <h3>Leader 分发 <code>.jpttask</code></h3>
         <div class="steps">
@@ -277,6 +277,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
           <article class="card"><h3>1 · 预检与导入</h3><ol><li>用被指定的 Tech 账号登录。</li><li>在“技术任务包”选择 <code>.jpttask</code>。</li><li>点击“预检分配包”，核对来源、接收人、任务数、错误、冲突和撤回警告。</li><li>仅当同一文件无阻断时点击“导入任务”；接受撤回警告后，缺失任务会归档。</li><li>到“售前 / 样品”与“售后”核对卡片和请求内容。</li></ol></article>
           <article class="card"><h3>2 · 更新与回传</h3><ol><li>售前/样品更新本人允许的状态、进展、结果摘要、下一步、样品结果或报告链接。</li><li>售后更新状态、解决方案、满意度、经验教训和备注。</li><li>保存并重开卡片，确认更新仍在。</li><li>回到任务包页签，点击“下载 <code>.jptresult</code>”。</li><li>回传给原 Leader，等待“已合并”回执。</li></ol></article>
         </div>
+        <aside class="callout info"><strong>Tech 左侧数字不是全部任务数。</strong>“售前 / 样品管理”和“售后”分别统计本人当前 <code>Open / In Progress</code>、任务/Lead/客户均未归档的去重 Lead 数；“全部任务”还会列出已完成或已取消任务，所以页面任务总数可以更大。导入、保存状态或刷新后，两处导航数字都应按这个口径更新。</aside>
 
         <h3>Leader 预检并合并 <code>.jptresult</code></h3>
         <div class="steps">
@@ -360,14 +361,14 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         <div class="table-wrap" style="margin-top:16px"><table class="issue-table"><thead><tr><th>Gate / 模块</th><th>级别</th><th>问题与实际</th><th>证据</th><th>操作</th></tr></thead><tbody id="issueRows"></tbody></table></div>
       </section>
       <div class="search-empty hide" id="searchEmpty">没有找到匹配内容，请尝试更短的关键词。</div>
-      <p class="footer">JPT Sales Toolkit v0.11.8-internal · 团队测试 / Pre-release · 本手册离线运行，不连接程序数据库，也不上传记录。</p>
+      <p class="footer">JPT Sales Toolkit v0.11.9-internal · 团队测试 / Pre-release · 本手册离线运行，不连接程序数据库，也不上传记录。</p>
     </main>
   </div>
 
   <script>
     (() => {
       "use strict";
-      const VERSION="0.11.8-internal", KEY="jpt-0118-large-team-guide-v1";
+      const VERSION="0.11.9-internal", KEY="jpt-0119-large-team-guide-v1";
       const $=id=>document.getElementById(id);
       const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
       const initial={profile:{tester:"",team:"",platform:"",role:"Leader",scenario:"manual"},checks:{},issues:[],module:"dashboard"};
@@ -379,7 +380,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         manual:{title:"推荐路线：从零业务闭环",text:"先完成 Gate A 安装与账号，再用 QA-TEAM-001 手工走完 Parser → Handler → Follow-up → 售前/样品 → Deal → Fulfillment → After-sales；Gate B 可记 N/A；随后完成权限 Gate C 和终端包 Gate D。"},
         synthetic:{title:"推荐路线：虚拟标准模板",text:"Gate A 通过后复制标准模板，填 1–2 条虚拟记录，完成 Gate B；再以导入记录验证全部业务模块、角色权限 Gate C 和终端包 Gate D。"},
         history:{title:"推荐路线：真实历史数据",text:"Gate A 和完整备份先通过；Leader 使用原文件完成只读预检、账号/客户映射和原子提交；抽查警告记录、幂等更新、权限 Gate C，再完成终端包 Gate D。"},
-        upgrade:{title:"推荐路线：覆盖升级",text:"先退出旧 JPT 并记录账号、客户/线索数量和附件；安装新版，确认 pre_upgrade 备份、迁移和第二次启动；随后按团队是否有 Excel 选择真实或从零路径。"}
+        upgrade:{title:"推荐路线：覆盖升级",text:"先退出旧 JPT，创建完整备份并记录账号、客户/线索数量和附件；安装新版，确认 v0.11.8 schema 3 原位保留且未伪造迁移包，再完成第二次启动；随后按团队是否有 Excel 选择真实或从零路径。"}
       };
       const modules=[
         {id:"dashboard",name:"仪表盘",roles:"Leader 看全团队；Sales 看权限范围；Tech 仅相关任务视图",action:"核对总询盘、最近 7 天、跟进中、赢单及地图；改变地区、阶段、结果和坐标质量筛选。",expected:"计数与左侧一致；接口失败显示错误和重试，不显示假 0；地图慢或离线不阻塞列表。",pitfall:"仪表盘用于复盘，不直接替代各模块的业务编辑。",tab:"数据质量",note:"1 项待复核：询盘日期需要人工确认。",f1:["负责人","Amy Wang"],f2:["下一步","线上会议"]},

@@ -162,13 +162,21 @@ def test_packaging_sources() -> None:
     workflow = (ROOT / ".github" / "workflows" / "build-installers.yml").read_text(
         encoding="utf-8"
     )
-    for runner in ("windows-2022", "macos-15", "macos-15-intel"):
+    for runner in ("windows-2022", "macos-15"):
         assert runner in workflow
+    for intel_marker in (
+        "macos-15-intel", "Intel-x86_64", "macos-Intel", "macos-x64", "x86_64",
+    ):
+        assert intel_marker not in workflow
+    assert "AppleSilicon-arm64" in workflow
+    assert workflow.count("name: macos-AppleSilicon-arm64-installer") == 1
+    assert workflow.count("path: release/*.dmg") == 1
     assert "UNSIGNED-INTERNAL" in workflow
     assert 'tags:\n      - "v*-internal"' in workflow
     assert "VERSION must end in -internal" in workflow
     assert "smoke_upgrade_frozen.py" in workflow
     assert "--fixture-version 0.11.7-internal" in workflow
+    assert "--fixture-version 0.11.8-internal" in workflow
     assert "--launch-with-default-data-dir" in workflow
     assert '$env:LOCALAPPDATA = "$pwd\\isolated-localappdata"' in workflow
     assert "Uninstall removed the default user data directory" in workflow

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT 0.11.8 团队成员安装与日常操作</title>
+  <title>JPT 0.11.9 团队成员安装与日常操作</title>
   <style>
     :root{--wine:#8b1a1a;--wine2:#651212;--ink:#1d1d1f;--muted:#66615e;--bg:#f4f3f1;--paper:#fff;--line:#ded8d4;--soft:#f7efec;--ok:#176d3b;--warn:#945900;--blue:#245b87}
     *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:var(--bg);font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}.wrap{width:min(1080px,calc(100% - 40px));margin:auto}
@@ -19,7 +19,7 @@
 </head>
 <body>
   <header class="top"><div class="wrap"><a class="brand" href="00-开始这里.html"><span>JPT</span> TEAM GUIDE</a><nav aria-label="页面导航"><a href="#install">安装</a><a href="#activate">激活</a><a href="#followup">跟进筛选</a><a href="#tech-package">Tech 任务包</a><a href="#map">地图</a><a href="02-Leader账号导入与治理.html">Leader 指南</a></nav></div></header>
-  <section class="hero"><div class="wrap"><div class="kicker">MEMBER GUIDE · GATE A</div><h1>团队成员安装与日常操作</h1><p class="lead">先证明程序可以独立安装、授权、保存和恢复，再参加 Excel、权限或同步测试。安装新版会保留原本地账号和数据，不会强制重新建号。</p><div class="pills"><span class="pill">v0.11.8-internal</span><span class="pill">Leader / Sales / Tech</span><span class="pill">一名成员默认一台电脑</span><span class="pill">Windows / macOS</span></div></div></section>
+  <section class="hero"><div class="wrap"><div class="kicker">MEMBER GUIDE · GATE A</div><h1>团队成员安装与日常操作</h1><p class="lead">先证明程序可以独立安装、授权、保存和恢复，再参加 Excel、权限或同步测试。安装新版会保留原本地账号和数据，不会强制重新建号。本次候选是团队测试 / Pre-release，只分发 Windows 10/11 x64 与 macOS Apple Silicon arm64。</p><div class="pills"><span class="pill">v0.11.9-internal</span><span class="pill">Leader / Sales / Tech</span><span class="pill">一名成员默认一台电脑</span><span class="pill">Windows x64 / Apple Silicon</span></div></div></section>
   <main class="wrap">
     <section class="metrics"><div class="metric"><b>1</b>名成员默认绑定 1 台设备</div><div class="metric"><b>90</b>天固定离线授权周期</div><div class="metric"><b>A</b>先独立完成安装验收</div></section>
 
@@ -27,16 +27,16 @@
     <table><thead><tr><th>设备</th><th>应选择</th><th>如何确认</th></tr></thead><tbody>
       <tr><td>Windows 10 / 11</td><td>Windows x64 Setup <code>.exe</code></td><td>设置 → 系统 → 系统信息，确认 64 位</td></tr>
       <tr><td>Mac M 系列芯片</td><td>macOS Apple Silicon arm64 <code>.dmg</code></td><td> → 关于本机，芯片显示 Apple</td></tr>
-      <tr><td>Mac Intel 芯片</td><td>macOS Intel x86_64 <code>.dmg</code></td><td> → 关于本机，处理器显示 Intel</td></tr>
+      <tr><td>Mac Intel 芯片</td><td>本次不提供安装资产</td><td>保留原已验证版本；不要使用 Apple Silicon DMG</td></tr>
     </tbody></table>
     <aside class="callout warn"><strong>内部未签名版本：</strong>只有在文件名、版本和 Leader 提供的校验记录一致时，才处理系统“未知发布者”提示。不提供 Linux 版本，也不要使用来源不明的命令关闭系统安全保护。</aside>
 
     <section class="grid2">
-      <article class="panel"><h3>Windows 安装</h3><ol><li>完全退出旧 JPT，并关闭旧的本机浏览器页签。</li><li>运行 Windows x64 安装程序并按向导完成。</li><li>从“开始”菜单打开 JPT，不要继续用旧目录副本。</li><li>页面打开后确认标题栏为 <code>v0.11.8-internal</code>。</li></ol></article>
+      <article class="panel"><h3>Windows 安装</h3><ol><li>完全退出旧 JPT，并关闭旧的本机浏览器页签。</li><li>运行 Windows x64 安装程序并按向导完成。</li><li>从“开始”菜单打开 JPT，不要继续用旧目录副本。</li><li>页面打开后确认标题栏为 <code>v0.11.9-internal</code>。</li></ol></article>
       <article class="panel"><h3>macOS 安装</h3><ol><li>通过 JPT 的退出入口完全退出旧程序；只关浏览器不等于退出。</li><li>打开与芯片匹配的 DMG，把 App 拖入“应用程序”。</li><li>在 Finder 推出 DMG。</li><li>从“应用程序”打开 JPT，确认标题栏版本。</li></ol></article>
     </section>
     <aside class="callout"><strong>升级后没有重新创建账号是正常的。</strong>账号、授权、附件和业务数据保存在独立数据目录。新版只替换程序；不要通过删除数据目录来“刷新界面”。若仍看到旧界面，应确认旧后台已退出、DMG 已推出，并从正确的应用副本重新打开。</aside>
-    <aside class="callout ok"><strong>新版会先备份再迁移。</strong>第一次打开旧数据时，程序会在本地 <code>data/backups</code> 生成并校验 <code>pre_upgrade_...zip</code>，校验通过后才更新数据库；失败会恢复原数据库并停止启动。离线恢复只接受这类自动 <code>pre_upgrade</code> ZIP，替换前还会保存当前数据库为 <code>pre_recovery_current_*.sqlite</code>；保存失败就不会开始恢复。不要删除这些文件，也不要在失败后继续录入数据。</aside>
+    <aside class="callout ok"><strong>先做完整备份，再判断是否迁移。</strong>v0.11.8 schema 3 直升 v0.11.9 schema 3 不改变 schema，正常情况下不会新增 <code>pre_upgrade</code> 包；只有检测到需要迁移时，程序才会在本地 <code>data/backups</code> 额外生成并校验 <code>pre_upgrade_...zip</code>。失败会恢复原数据库并停止启动。离线恢复只接受这类自动 ZIP，替换前还会保存当前数据库为 <code>pre_recovery_current_*.sqlite</code>；保存失败就不会开始恢复。</aside>
 
     <h2>升级后必须完成的数据核对</h2>
     <section class="steps">
@@ -79,7 +79,7 @@
     <section class="steps">
       <article class="step"><div><h3>收到指定给本人的 <code>.jpttask</code></h3><p>Leader 必须先在“技术任务包 / Tech Task Packages”中选择你的实际账号后导出。通过团队批准的内部渠道点对点收取；不要转发给其他 Tech，不要修改文件内容。</p></div></article>
       <article class="step"><div><h3>先预检（Preflight Assignments）</h3><p>用 Tech 账号进入“导出 / 导入 → 技术任务包”，选择 <code>.jpttask</code> 后点击“预检分配包”。核对文件类型、来源 Leader、接收账号、任务数、错误、冲突和“分配已撤回”警告。完整快照中不再出现的旧任务会被视为 Leader 撤回；预检只检查，不写入业务数据。</p></div></article>
-      <article class="step"><div><h3>导入任务并核对</h3><p>只有当前同一文件预检无错误、无冲突时才导入。成功后到“售前 / 样品”和“售后”页面，按询盘编号、客户和到期日核对任务；打开卡片确认请求内容可读。接受撤回警告后，对应 Tech 本地任务会归档，不再留在当前任务列表。</p></div></article>
+      <article class="step"><div><h3>导入任务并核对</h3><p>只有当前同一文件预检无错误、无冲突时才导入。成功后到“售前 / 样品”和“售后”页面，按询盘编号、客户和到期日核对任务；打开卡片确认请求内容可读。左侧数字统计本人 Open / In Progress、任务/Lead/客户未归档的去重 Lead 数；“全部任务”含已完成/已取消任务，总任务数可能更大。接受撤回警告后，对应 Tech 本地任务会归档。</p></div></article>
       <article class="step"><div><h3>在业务页更新结果</h3><p>售前 / 样品任务仅更新本人允许的状态和结果内容，例如当前进展、结果摘要、下一步、样品结果和报告链接；售后任务更新状态、解决方案、客户满意度、经验教训和备注。保存后重新打开卡片，确认内容仍在。</p></div></article>
       <article class="step"><div><h3>导出 <code>.jptresult</code> 回传</h3><p>回到“技术任务包”，点击“下载 <code>.jptresult</code>”。该文件只携带已保存的待回传任务结果；用可信内部渠道发回原 Leader，同时说明任务数和导出时间。文件导出不等于 Leader 已合并，需等待其回执。</p></div></article>
     </section>
@@ -114,7 +114,7 @@
 
     <h2>7. Gate A 完成清单</h2>
     <ul class="check">
-      <li>安装包与设备架构一致</li><li>标题栏为 v0.11.8-internal</li><li>中英文切换不改变页面布局</li><li>窄屏仍可滚动使用左侧导航</li><li>仪表盘接口失败显示错误和重试，不显示假 0</li><li>姓名、角色和设备正确</li><li>可生成并导入设备授权</li><li>新增、查看、修改正常</li><li>归档/删除操作可纠正</li><li>完全退出后后台停止</li><li>升级前后数量与原附件一致</li><li>第二次启动数据仍在</li><li>业务地区显示正确</li><li>时间筛选口径清楚</li><li>卡片排序刷新后稳定</li><li>地图质量状态可理解</li>
+      <li>安装包与设备架构一致</li><li>标题栏为 v0.11.9-internal</li><li>中英文切换不改变页面布局</li><li>窄屏仍可滚动使用左侧导航</li><li>仪表盘接口失败显示错误和重试，不显示假 0</li><li>Tech 左侧有效工作量计数与口径一致</li><li>姓名、角色和设备正确</li><li>可生成并导入设备授权</li><li>新增、查看、修改正常</li><li>归档/删除操作可纠正</li><li>完全退出后后台停止</li><li>升级前后数量与原附件一致</li><li>第二次启动数据仍在</li><li>业务地区显示正确</li><li>时间筛选口径清楚</li><li>卡片排序刷新后稳定</li><li>地图质量状态可理解</li>
     </ul>
 
     <h2>8. 常见异常</h2>
@@ -129,6 +129,6 @@
       <tr><td>地址搜索失败</td><td>页面会区分无结果、断网、超时、限流或服务配置错误</td><td>按具体提示重试或人工选点；不要把服务故障当作客户地址错误</td></tr>
     </tbody></table>
   </main>
-  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="02-Leader账号导入与治理.html">Leader 指南 →</a>　·　JPT v0.11.8-internal</div></footer>
+  <footer class="footer"><div class="wrap"><a href="00-开始这里.html">← 返回团队入口</a>　·　<a href="02-Leader账号导入与治理.html">Leader 指南 →</a>　·　JPT v0.11.9-internal</div></footer>
 </body>
 </html>

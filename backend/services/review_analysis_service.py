@@ -171,8 +171,7 @@ class ReviewAnalysisService:
             f"""
             SELECT COUNT(*) FROM leads
             WHERE {where_clause}
-            AND service_status IS NOT NULL
-            AND service_status != 'None'
+            AND service_status IN ('Open', 'In Progress')
             """,
             params,
         ).fetchone()[0]

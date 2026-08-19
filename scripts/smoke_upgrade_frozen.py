@@ -15,14 +15,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.services.admin_service import AdminService
-from backend.repositories import read_app_schema_version
+from backend.repositories import APP_SCHEMA_VERSION, read_app_schema_version
 from scripts.smoke_frozen import free_port, wait_for_health
 from test_safe_upgrade import (
     _assert_integrity,
     _authorization_state,
     _counts,
+    _schema_ledger,
     _seed_fixture,
     _sha256,
+    _tech_exchange_state,
 )
 
 
@@ -83,7 +85,12 @@ def main() -> None:
     parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument(
         "--fixture-version",
-        choices=("0.11.3-internal", "0.11.4-internal", "0.11.7-internal"),
+        choices=(
+            "0.11.3-internal",
+            "0.11.4-internal",
+            "0.11.7-internal",
+            "0.11.8-internal",
+        ),
         required=True,
     )
     parser.add_argument("--expect-disk-image", action="store_true")
@@ -106,6 +113,8 @@ def main() -> None:
         )
 
     expected = _seed_fixture(data_dir, args.fixture_version)
+    is_current_schema = expected["source_schema_version"] == APP_SCHEMA_VERSION
+    source_database_hash = _sha256(data_dir / "database.sqlite")
     _run_once(
         executable,
         data_dir,
@@ -119,8 +128,16 @@ def main() -> None:
     assert _authorization_state(data_dir / "database.sqlite") == expected["authorization_state"]
     _assert_integrity(data_dir / "database.sqlite")
     backups = list((data_dir / "backups").glob("pre_upgrade_*.zip"))
-    assert len(backups) == 1
-    AdminService(data_dir=data_dir).validate_backup_archive(backups[0])
+    if is_current_schema:
+        assert backups == []
+        assert _sha256(data_dir / "database.sqlite") == source_database_hash
+        assert _schema_ledger(data_dir / "database.sqlite") == expected["schema_ledger"]
+        assert _tech_exchange_state(data_dir / "database.sqlite") == expected[
+            "tech_exchange_state"
+        ]
+    else:
+        assert len(backups) == 1
+        AdminService(data_dir=data_dir).validate_backup_archive(backups[0])
 
     # The second startup must not rewrite business data or create another
     # pre-upgrade backup after the schema ledger is current.
@@ -132,7 +149,17 @@ def main() -> None:
         args.launch_with_default_data_dir,
     )
     assert _sha256(data_dir / "database.sqlite") == first_hash
-    assert len(list((data_dir / "backups").glob("pre_upgrade_*.zip"))) == 1
+    expected_backup_count = 0 if is_current_schema else 1
+    assert len(list((data_dir / "backups").glob("pre_upgrade_*.zip"))) == expected_backup_count
+    if is_current_schema:
+        assert _schema_ledger(data_dir / "database.sqlite") == expected["schema_ledger"]
+        assert _tech_exchange_state(data_dir / "database.sqlite") == expected[
+            "tech_exchange_state"
+        ]
+        print(
+            f"PASS: frozen {args.fixture_version} no-migration preservation and idempotency"
+        )
+        return
 
     # Recovery must be available from the installed executable itself. It
     # validates the archive, owns the normal instance lock and exits without

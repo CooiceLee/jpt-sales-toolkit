@@ -66,7 +66,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo JPT Sales Toolkit 0.11.8-internal portable test fallback is installed at:
+echo JPT Sales Toolkit 0.11.9-internal portable test fallback is installed at:
 echo   %JPT_TARGET%
 echo Existing data remains at:
 echo   %JPT_DATA_DIR%

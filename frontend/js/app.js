@@ -1,5 +1,5 @@
 /**
- * JPT Sales Toolkit - v6.8 modular application entry
+ * JPT Sales Toolkit - v6.10 modular application entry
  * Global state, startup, navigation and dashboard shell.
  */
 
@@ -194,6 +194,11 @@ function startApp() {
 
     // Load initial data
     switchModule(RoleCapabilities.initialModule());
+    if (RoleCapabilities.isTech()) {
+        refreshTechNavigationCounts().catch(error => {
+            console.error('Tech navigation count initialization failed:', error);
+        });
+    }
 }
 
 // ===== API Helper (Legacy compatibility wrapper) =====

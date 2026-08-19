@@ -1,4 +1,4 @@
-"""Regression coverage for fail-safe upgrades from 0.11.3/0.11.4 data."""
+"""Regression coverage for fail-safe upgrades from supported desktop data."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from backend.config import APP_VERSION, init_settings
 from backend.repositories import APP_SCHEMA_VERSION, close_db, read_app_schema_version
+from backend.repositories.base import APP_SCHEMA_MIGRATIONS
 from backend.services.admin_service import AdminService
 from backend.startup_upgrade import initialize_database_safely
 
@@ -29,6 +30,7 @@ CORE_TABLES = (
     "device_authorizations",
 )
 NOW = "2026-07-01T00:00:00"
+V0118_SCHEMA_VERSION = 3
 
 
 def _sha256(path: Path) -> str:
@@ -74,18 +76,61 @@ def _authorization_state(db_path: Path) -> dict[str, list[tuple]]:
         conn.close()
 
 
+def _schema_ledger(db_path: Path) -> list[tuple]:
+    """Capture the audited application-schema ledger without normalizing it."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute(
+            "SELECT version, name, app_version, applied_at "
+            "FROM app_schema_migrations ORDER BY version"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def _tech_exchange_state(db_path: Path) -> dict[str, list[tuple]]:
+    """Capture v0.11.8 task-package state that a no-migration start must retain."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {
+            "batches": conn.execute(
+                "SELECT package_id, package_type, direction, organization_id, "
+                "source_user_id, recipient_user_id, parent_package_id, payload_sha256, "
+                "manifest_json, status, created_at, imported_at, imported_by "
+                "FROM tech_task_exchange_batches ORDER BY package_id"
+            ).fetchall(),
+            "bindings": conn.execute(
+                "SELECT id, organization_id, task_type, source_task_id, local_task_id, "
+                "source_lead_id, local_lead_id, source_customer_id, local_customer_id, "
+                "leader_user_id, tech_user_id, source_row_version, source_snapshot_json, "
+                "source_package_id, local_row_version_at_sync, "
+                "last_exported_local_row_version, last_exported_result_snapshot_json, "
+                "is_active, created_at, updated_at "
+                "FROM tech_task_exchange_bindings ORDER BY id"
+            ).fetchall(),
+        }
+    finally:
+        conn.close()
+
+
 def _seed_fixture(data_dir: Path, source_version: str) -> dict:
     data_dir.mkdir(parents=True, exist_ok=True)
     db_path = data_dir / "database.sqlite"
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript((ROOT / "backend" / "schema.sql").read_text(encoding="utf-8"))
-        # The source fixtures represent pre-v2 desktop databases even though
-        # the current canonical schema file already contains the additive
-        # Tech task exchange tables.
-        conn.execute("DROP TABLE IF EXISTS tech_task_exchange_bindings")
-        conn.execute("DROP TABLE IF EXISTS tech_task_exchange_batches")
-        source_schema_version = 1 if source_version == "0.11.7-internal" else 0
+        is_current_schema = source_version == "0.11.8-internal"
+        # Legacy source fixtures predate the v2 task-exchange tables even
+        # though the current canonical schema contains them. The v0.11.8
+        # fixture deliberately retains the real schema-v3 tables and ledger.
+        if not is_current_schema:
+            conn.execute("DROP TABLE IF EXISTS tech_task_exchange_bindings")
+            conn.execute("DROP TABLE IF EXISTS tech_task_exchange_batches")
+        source_schema_version = (
+            V0118_SCHEMA_VERSION
+            if is_current_schema
+            else (1 if source_version == "0.11.7-internal" else 0)
+        )
         if source_schema_version == 1:
             conn.execute(
                 "INSERT INTO app_schema_migrations "
@@ -93,6 +138,22 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
                 ("runtime_schema_v1", source_version, NOW),
             )
             conn.execute("PRAGMA user_version = 1")
+        elif is_current_schema:
+            ledger_app_versions = {
+                1: "0.11.7-internal",
+                2: source_version,
+                3: source_version,
+            }
+            conn.executemany(
+                "INSERT INTO app_schema_migrations "
+                "(version, name, app_version, applied_at) VALUES (?, ?, ?, ?)",
+                [
+                    (version, name, ledger_app_versions[version], NOW)
+                    for version, name in APP_SCHEMA_MIGRATIONS
+                    if version <= V0118_SCHEMA_VERSION
+                ],
+            )
+            conn.execute(f"PRAGMA user_version = {V0118_SCHEMA_VERSION}")
         if source_version == "0.11.3-internal":
             conn.execute("DROP INDEX IF EXISTS idx_pre_sales_client_request")
             conn.execute("ALTER TABLE pre_sales_tasks DROP COLUMN client_request_id")
@@ -100,6 +161,11 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL)",
             ("user-1", "fixture.leader", "hash", "Fixture Leader", "leader", "GLOBAL", NOW),
         )
+        if is_current_schema:
+            conn.execute(
+                "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL)",
+                ("user-2", "fixture.tech", "tech-hash", "Fixture Tech", "tech", "GLOBAL", NOW),
+            )
         conn.execute(
             "INSERT INTO user_credentials "
             "(id, organization_id, user_id, password_hash, password_scheme, "
@@ -107,6 +173,15 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "VALUES ('credential-1', ?, 'user-1', 'hash', 'legacy_sha256', 0, 1, ?, ?)",
             ("00000000-0000-0000-0000-000000000001", NOW, NOW),
         )
+        if is_current_schema:
+            conn.execute(
+                "INSERT INTO user_credentials "
+                "(id, organization_id, user_id, password_hash, password_scheme, "
+                "must_change_password, is_active, created_at, updated_at) "
+                "VALUES ('credential-2', ?, 'user-2', 'tech-hash', 'legacy_sha256', "
+                "0, 1, ?, ?)",
+                ("00000000-0000-0000-0000-000000000001", NOW, NOW),
+            )
         conn.execute(
             "INSERT INTO customers "
             "(id, display_name, normalized_name, country, city, address, region, "
@@ -138,21 +213,22 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "'preserve me', ?)",
             (NOW,),
         )
+        task_assignee = "user-2" if is_current_schema else "user-1"
         conn.execute(
             "INSERT INTO pre_sales_tasks "
             "(id, lead_id, assignee_id, status, request_json, created_at, created_by, "
             "updated_at, updated_by, row_version) VALUES "
-            "('pre-task-1', 'lead-1', 'user-1', 'Completed', '{}', ?, 'user-1', "
+            "('pre-task-1', 'lead-1', ?, 'Completed', '{}', ?, 'user-1', "
             "?, 'user-1', 1)",
-            (NOW, NOW),
+            (task_assignee, NOW, NOW),
         )
         conn.execute(
             "INSERT INTO after_sales_tasks "
             "(id, lead_id, assignee_id, issue_type, status, issue_description, "
             "created_at, created_by, updated_at, updated_by, row_version) VALUES "
-            "('after-task-1', 'lead-1', 'user-1', 'Other', 'Closed', 'fixture', "
+            "('after-task-1', 'lead-1', ?, 'Other', 'Closed', 'fixture', "
             "?, 'user-1', ?, 'user-1', 1)",
-            (NOW, NOW),
+            (task_assignee, NOW, NOW),
         )
         attachment_bytes = f"attachment-{source_version}".encode()
         attachment_sha = hashlib.sha256(attachment_bytes).hexdigest()
@@ -175,6 +251,46 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "'2027-07-01T00:00:00', 1, 'user-1', ?)",
             ("00000000-0000-0000-0000-000000000001", NOW, NOW, NOW),
         )
+        if is_current_schema:
+            conn.execute(
+                "INSERT INTO device_authorizations "
+                "(id, organization_id, user_id, device_fingerprint_hash, role, "
+                "activation_state, authorization_version, payload_json, signature, "
+                "signature_algorithm, signing_key_id, issued_at, valid_from, expires_at, "
+                "is_active, created_by, updated_at) VALUES "
+                "('device-2', ?, 'user-2', 'fixture-tech-device', 'tech', 'activated', 1, "
+                "'{}', 'tech-signature', 'ed25519', 'fixture-key', ?, ?, "
+                "'2027-07-01T00:00:00', 1, 'user-1', ?)",
+                ("00000000-0000-0000-0000-000000000001", NOW, NOW, NOW),
+            )
+            conn.execute(
+                "INSERT INTO tech_task_exchange_batches "
+                "(package_id, package_type, direction, organization_id, source_user_id, "
+                "recipient_user_id, parent_package_id, payload_sha256, manifest_json, "
+                "status, created_at, imported_at, imported_by) VALUES "
+                "('assignment-batch-1', 'tech_task_assignment', 'leader_to_tech', ?, "
+                "'user-1', 'user-2', NULL, ?, '{}', 'imported', ?, ?, 'user-2')",
+                (
+                    "00000000-0000-0000-0000-000000000001",
+                    "a" * 64,
+                    NOW,
+                    NOW,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO tech_task_exchange_bindings "
+                "(id, organization_id, task_type, source_task_id, local_task_id, "
+                "source_lead_id, local_lead_id, source_customer_id, local_customer_id, "
+                "leader_user_id, tech_user_id, source_row_version, source_snapshot_json, "
+                "source_package_id, local_row_version_at_sync, "
+                "last_exported_local_row_version, last_exported_result_snapshot_json, "
+                "is_active, created_at, updated_at) VALUES "
+                "('binding-1', ?, 'pre_sales', 'source-pre-task-1', 'pre-task-1', "
+                "'source-lead-1', 'lead-1', 'source-customer-1', 'customer-1', "
+                "'user-1', 'user-2', 1, '{}', 'assignment-batch-1', 1, 1, "
+                "'{\"status\":\"Completed\"}', 1, ?, ?)",
+                ("00000000-0000-0000-0000-000000000001", NOW, NOW),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -192,10 +308,52 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
     return {
         "counts": _counts(db_path),
         "authorization_state": _authorization_state(db_path),
+        "schema_ledger": _schema_ledger(db_path),
+        "tech_exchange_state": _tech_exchange_state(db_path) if is_current_schema else None,
         "source_schema_version": source_schema_version,
         "attachment_sha": _sha256(attachment_path),
         "config_sha": _sha256(config_path),
     }
+
+
+def test_current_schema_fixture() -> None:
+    """A v0.11.8 schema-v3 profile starts unchanged and without a backup."""
+    assert APP_SCHEMA_VERSION == V0118_SCHEMA_VERSION
+    close_db()
+    with tempfile.TemporaryDirectory(prefix="jpt_0.11.8-internal_") as temp_dir:
+        data_dir = Path(temp_dir) / "data"
+        expected = _seed_fixture(data_dir, "0.11.8-internal")
+        settings = init_settings(Path(temp_dir) / "app")
+        settings.data_dir = data_dir
+        settings.db_path = data_dir / "database.sqlite"
+        settings.upload_dir = data_dir / "attachments"
+        settings.backup_dir = data_dir / "backups"
+        settings.runtime_config_dir = data_dir / "config"
+        settings.backup_dir.mkdir()
+
+        before_hash = _sha256(settings.db_path)
+        result = initialize_database_safely(settings)
+        assert result.migrated is False
+        assert result.source_schema_version == APP_SCHEMA_VERSION
+        assert result.target_schema_version == APP_SCHEMA_VERSION
+        assert result.backup_path is None
+        assert not list(settings.backup_dir.glob("pre_upgrade_*.zip"))
+        assert _sha256(settings.db_path) == before_hash
+        assert _counts(settings.db_path) == expected["counts"]
+        assert _authorization_state(settings.db_path) == expected["authorization_state"]
+        assert _schema_ledger(settings.db_path) == expected["schema_ledger"]
+        assert _tech_exchange_state(settings.db_path) == expected["tech_exchange_state"]
+        assert _sha256(data_dir / "attachments" / "fixture.txt") == expected["attachment_sha"]
+        assert _sha256(data_dir / "config" / "authorization_issuer.pem") == expected["config_sha"]
+        _assert_integrity(settings.db_path)
+
+        first_hash = _sha256(settings.db_path)
+        second = initialize_database_safely(settings)
+        assert second.migrated is False and second.backup_path is None
+        assert _sha256(settings.db_path) == first_hash
+        assert not list(settings.backup_dir.glob("pre_upgrade_*.zip"))
+        assert _schema_ledger(settings.db_path) == expected["schema_ledger"]
+        assert _tech_exchange_state(settings.db_path) == expected["tech_exchange_state"]
 
 
 def _assert_integrity(db_path: Path) -> None:
@@ -580,6 +738,8 @@ def main() -> None:
     ):
         test_upgrade_fixture(source_version)
         print(f"PASS: {source_version} upgrade fixture")
+    test_current_schema_fixture()
+    print("PASS: 0.11.8 schema-v3 no-migration fixture")
     test_failed_migration_restores_original()
     print("PASS: failed migration restores validated original database")
     test_manual_recovery_is_scoped_and_preserves_current_database()

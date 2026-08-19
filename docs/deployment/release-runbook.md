@@ -1,21 +1,20 @@
 # 桌面安装包发布手册
 
-当前团队测试 / Pre-release 候选：`v0.11.8-internal`。完成源码及 Windows x64、macOS arm64、macOS x86_64 原生 CI 门禁前，GitHub Release 保持 Draft；门禁通过后可转为非 Draft 的 Pre-release 供团队下载。团队实测通过前，既有稳定基线仍为 `v0.11.7-internal`；本候选不得标记为 Stable / Latest 或替代既有稳定基线。
+当前团队测试 / Pre-release 候选：`v0.11.9-internal`。本次只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包。源码和两项原生 CI 门禁完成前，GitHub Release 保持 Draft；门禁通过后可转为非 Draft 的 Pre-release 供团队下载。覆盖升级以 `v0.11.8-internal` 为直接基线；团队实测通过前，本候选不得标记为 Stable / Latest。
 
 ## 构建入口
 
 GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
 
-- 手动运行：完成源码回归，构建三个内部测试产物及 `SHA256SUMS.txt` 并保存在 Actions Artifacts。
+- 手动运行：完成源码回归，构建两个内部测试安装包及 `SHA256SUMS.txt` 并保存在 Actions Artifacts。
 - 只接受与 `VERSION` 完全一致的 `v*-internal` 标签：完成同样构建后创建标记为 Pre-release 的 Draft Release，并生成 `SHA256SUMS.txt`。普通 `v*` 或非 internal 版本会在构建前被拒绝。
-- Windows、Apple Silicon 和 Intel Mac 必须在对应原生 Runner 上分别冻结；不接受 macOS 交叉生成 Windows 作为验证证据。
+- Windows 与 Apple Silicon Mac 必须在对应原生 Runner 上分别冻结；不接受 macOS 交叉生成 Windows 作为验证证据。本次工作流和 Release 不生成 Intel 安装资产。
 - Linux 不构建、不分发，也不属于产品支持范围。Ubuntu Runner 仅用于内部源码预检。
 
 ## 产物
 
 - Windows x64 Inno Setup EXE。
 - macOS arm64 DMG。
-- macOS x86_64 DMG。
 - SHA-256 校验文件。
 
 安装包只含统一程序，不按角色编译不同二进制。成员、角色、设备和到期时间只由 Leader 签发的 `.jptauth` 决定。业务 XLSX、标准导入模板、业务数据库和终端同步数据包必须作为独立文件分发。
@@ -25,7 +24,7 @@ GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
 1. `bash scripts/validate_v08.sh` 全部通过。
 2. 每个冻结程序通过版本一致性、`/api/health`、首次 Leader 初始化、登录、`.jptreq` 生成和经认证退出烟测。
 3. CI 必须通过 Windows 静默安装后启动/卸载烟测，以及 macOS DMG 校验、挂载后启动烟测；产物中不得出现旧用户配置、浏览器回归页面、XLSX、`.jptauth`、`.jptreq` 或业务数据库。
-4. 用实际 Windows 10/11、Apple Silicon Mac、Intel Mac 各完成一次安装、`Exit JPT`、重启和覆盖升级。
+4. 用实际 Windows 10/11 x64 与 Apple Silicon Mac 各完成一次安装、`Exit JPT`、重启和从 `v0.11.8-internal` 覆盖升级。
 5. 验证数据库、附件、授权密钥和签发密钥在升级后不变。
 6. 验证卸载不删除用户数据。
 7. 安装通过后再独立验证 XLSX 预检、提交、幂等更新和回滚；不得用预装数据掩盖安装问题。
@@ -33,12 +32,12 @@ GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
    Leader 向 Sales 导出时必须选择明确接收成员，文件只含该 Sales 负责的 Lead；导入端必须拒绝写给其他成员的定向包。旧版未携带接收成员信息的 JSON 仍按记录权限逐条过滤。
 9. 使用真实或等价数据验证五类负责人业务地区、组合筛选、计划到期与长期未跟进的独立口径、客户模糊候选/预览/合并，以及地图精确/近似/缺失和离线提示。
 10. 检查 `docs/guides/` 四份 HTML 可离线打开、互相跳转、版本一致，且不包含真实客户、账号、密钥或本机路径。
-11. 在处理、跟进、售前/样品、成交、履约和售后页核对固定业务排序；缺失/无效日期应落在有效日期之后，同值排序在刷新后保持稳定。
+11. 在处理、跟进、售前/样品、成交、履约和售后页核对固定业务排序；缺失/无效日期应落在有效日期之后，同值排序在刷新后保持稳定。Tech 还须确认左侧售前/售后数字按本人 `Open / In Progress`、未归档任务对应的去重 Lead 计数；“全部任务”含已完成/已取消任务时，任务总数可大于导航数字。
 12. 正式版必须补齐 Windows 代码签名和 macOS Developer ID、Hardened Runtime、notarization、stapling；在此之前产物只能标记 `UNSIGNED-INTERNAL`。
 
 ## 覆盖升级的数据保护门
 
-新版第一次打开旧数据库时，必须按以下固定顺序执行，不能跳步：
+新版第一次打开需要 schema 迁移的旧数据库时，必须按以下固定顺序执行，不能跳步：
 
 1. 只读识别当前 `app_schema_migrations` 版本；若数据库比程序更新，拒绝降级启动。
 2. 在任何 schema 写入前，在本地 `data/backups/` 创建 `pre_upgrade_schema<旧>_to_schema<新>_<时间>.zip`。
@@ -48,7 +47,7 @@ GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
 6. 任一步失败，自动从刚生成的备份恢复原数据库并停止启动；不得带病进入业务页面。
 7. 同一版本第二次启动不得重复迁移、重复创建升级备份或改写业务数据库。
 
-发布 Gate 必须同时跑 `test_safe_upgrade.py`，并保留 Windows 0.11.3、macOS 0.11.4 历史夹具作为旧版本兼容回归；此外，Windows x64、macOS arm64、macOS x86_64 三个平台都必须新增实际 `v0.11.7 schema 1 → v0.11.8 schema 3` 覆盖升级烟测。每组均核对核心表数量、Tech 任务包迁移表、附件哈希、授权配置、设备授权、完整性、外键以及二次启动数据库哈希；Windows 卸载后夹具数据目录仍必须存在。
+发布 Gate 必须同时跑 `test_safe_upgrade.py`，并保留 Windows 0.11.3、macOS 0.11.4 与 v0.11.7 schema 1 历史夹具作为旧版本兼容回归。本次 Windows x64、macOS Apple Silicon arm64 还必须执行实际 `v0.11.8 schema 3 → v0.11.9 schema 3` 原位覆盖升级：先做完整备份，再核对核心表数量、Tech 任务包表、附件哈希、授权配置、设备授权、完整性、外键及二次启动数据库哈希。由于 schema 版本不变，此直接升级不应伪造新的 `pre_upgrade` 迁移包；Windows 卸载后数据目录仍必须存在。
 
 自动升级失败时，先保留弹窗或 `launcher.log` 证据，不要删除数据目录。完全退出 JPT 后，管理员可直接使用已安装程序的离线恢复入口，不依赖源码环境：
 
@@ -80,6 +79,6 @@ macOS:
 
 ## 回滚
 
-安装程序只替换应用目录，用户数据目录不会被安装或卸载流程删除。升级前的自动完整备份是 schema 回滚的唯一依据；不要手工复制正在运行的 SQLite 文件，也不要通过删除数据目录刷新界面。
+安装程序只替换应用目录，用户数据目录不会被安装或卸载流程删除。自动 `pre_upgrade` 包是发生 schema 迁移时数据库回滚的依据；无 schema 变化的直接升级应先使用 Leader/管理员创建的完整备份。不要手工复制正在运行的 SQLite 文件，也不要通过删除数据目录刷新界面。
 
 `--recover-backup` 是数据库 schema 回滚入口，只接受 `pre_upgrade` 包，不恢复附件或授权配置。普通完整备份包含数据库、附件、账号凭据及授权/签发配置，只能由 Leader/管理员通过经认证的完整恢复接口处理；恢复期间独占维护门会阻止新业务请求。0.11.3 旧清单格式允许兼容恢复，但所有 ZIP 成员仍必须与旧清单完全一致并通过路径、类型、大小、CRC、哈希和 SQLite 完整性校验；旧锁与实例状态永不恢复。两类备份都按高敏感文件管理，不上传 GitHub、Release 或普通团队共享目录。

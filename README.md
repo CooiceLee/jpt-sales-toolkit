@@ -2,7 +2,7 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前待测候选：`v0.11.8-internal`。它是加入 Tech 任务包的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release，不等同于已签名的公开正式版。三个目标平台原生 CI 门禁通过后，可从 Draft 转为非 Draft 的 Pre-release 供团队下载；团队实测全部完成前，既有稳定基线仍为 `v0.11.7-internal`，不得标记为 Stable / Latest 或用本候选替代。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、卡片排序、地图坐标、数据复盘、出差规划、拜访执行、Sales 定向数据分发和 Tech 任务包入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
+当前待测候选：`v0.11.9-internal`。它是修复 Tech 任务导航计数的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release，不等同于已签名的公开正式版。本次只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包；对应 CI 门禁通过后，可从 Draft 转为非 Draft 的 Pre-release 供团队下载。覆盖升级以 `v0.11.8-internal` 为直接基线；团队实测全部完成前，不得把本候选标记为 Stable / Latest。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、卡片排序、地图坐标、数据复盘、出差规划、拜访执行、Sales 定向数据分发和 Tech 任务包入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
 
 ## 功能概览
 
@@ -32,7 +32,7 @@ Windows 与 macOS 的内部测试安装包由 `.github/workflows/build-installer
 ### 环境要求
 
 - 安装包支持 Windows 10/11 x64
-- 安装包支持 macOS Apple Silicon arm64 与 Intel x86_64
+- 本次可下载安装包支持 macOS Apple Silicon arm64；不生成 Intel 安装资产
 - Linux 不属于产品支持和发布范围
 
 ### 启动应用
@@ -103,6 +103,8 @@ SMOKE_USER="leader01" SMOKE_PASSWORD="<账号清单中的一次性密码>" \
 4. **Leader 合并**：Leader 导入各 Sales 的文件，系统按权限和匹配规则合并
 
 Tech 不使用上述 Sales JSON 链路。Leader 在独立“Tech Task Packages / 技术任务包”页签选择精确 Tech 账号，导出该账号当前全部未归档分配任务的完整快照 `.jpttask`；Tech 预检、导入并在售前/样品或售后任务中保存结果，导出 `.jptresult` 回传，Leader 预检后合并。同一结果字段双方改成不同值时整包阻断，不同字段可合并；新完整快照只有在 Tech 没有未导出修改，或结果已导出且此后未再修改时，才可撤回其中缺失的旧任务。任务包不包含报价、金额、联系人或附件文件，首版没有设备数字签名，只能通过可信内部渠道点对点传递。
+
+Tech 左侧“售前 / 样品管理”和“售后”的数字是本人当前有效工作量：分别统计状态为 `Open / In Progress`、任务/Lead/客户均未归档且当前仍分配给该 Tech 的去重 Lead 数。页面选择“全部任务”时还会展示已完成或已取消任务，因此卡片/任务总数可以大于左侧数字；这不是漏导入。
 
 ### 合并规则
 
@@ -200,4 +202,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.11.8-internal · internal candidate*
+*JPT Sales Toolkit v0.11.9-internal · internal Pre-release candidate*

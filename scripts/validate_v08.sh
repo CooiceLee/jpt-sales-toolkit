@@ -53,6 +53,7 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_authorization_api.py
 "$PYTHON_BIN" test_authorization_role_boundary.py
 "$PYTHON_BIN" test_authorization_security_regressions.py
+"$PYTHON_BIN" test_tech_workload_summary.py
 "$PYTHON_BIN" test_desktop_packaging_contract.py
 "$PYTHON_BIN" test_release_hygiene.py
 "$PYTHON_BIN" test_lan_test_accounts_security.py
@@ -82,6 +83,7 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_json_roundtrip_business_fields.py
 "$PYTHON_BIN" test_json_exchange_frontend_contract.py
 "$PYTHON_BIN" test_tech_task_package_frontend_contract.py
+"$PYTHON_BIN" test_tech_navigation_counts_frontend_contract.py
 "$PYTHON_BIN" test_import_identity_schema.py
 "$PYTHON_BIN" test_member_identity_service.py
 "$PYTHON_BIN" test_spreadsheet_importing.py

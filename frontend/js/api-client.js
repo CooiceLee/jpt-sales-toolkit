@@ -1,5 +1,5 @@
 /**
- * JPT Sales Toolkit - API Client v3.7
+ * JPT Sales Toolkit - API Client v3.9
  * Handles authentication, token management, and error handling
  */
 
@@ -501,6 +501,10 @@ const ApiClient = (function() {
     async function listAfterSalesTasks(params = {}) {
         const query = new URLSearchParams(params).toString();
         return request(`/after-sales-tasks${query ? '?' + query : ''}`);
+    }
+
+    async function getTaskWorkloadSummary() {
+        return request('/tasks/workload-summary');
     }
 
     async function createAfterSalesTask(leadId, data) {
@@ -1095,6 +1099,7 @@ const ApiClient = (function() {
         archivePreSalesTask,
         restorePreSalesTask,
         listAfterSalesTasks,
+        getTaskWorkloadSummary,
         createAfterSalesTask,
         updateAfterSalesTask,
         archiveAfterSalesTask,

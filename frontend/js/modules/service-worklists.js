@@ -24,10 +24,17 @@
         }
     }
 
-    function deriveServiceStatus(lead, tasks) {
-        if (lead.service_status && lead.service_status !== 'None') return lead.service_status;
+    function deriveTaskServiceStatus(tasks) {
         const statuses = new Set(tasks.map(task => task.status));
         return ['Open', 'In Progress', 'Resolved', 'Closed'].find(status => statuses.has(status)) || 'None';
+    }
+
+    function deriveServiceStatus(lead, tasks) {
+        // Tech sees only tasks assigned to the signed-in account.  The Lead-level
+        // status is global and may have been derived from another Tech's task.
+        if (RoleCapabilities.isTech()) return deriveTaskServiceStatus(tasks);
+        if (lead.service_status && lead.service_status !== 'None') return lead.service_status;
+        return deriveTaskServiceStatus(tasks);
     }
 
     async function loadAftersales() {

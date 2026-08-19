@@ -1,6 +1,6 @@
 # JPT Sales Toolkit 当前内部试运行手册
 
-当前待测候选：`v0.11.8-internal`。它是加入 Tech 任务包的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release。源码和 Windows x64、macOS Apple Silicon arm64、macOS Intel x86_64 原生 CI 门禁全部通过前，GitHub Release 保持 Draft；通过后可转为非 Draft 的 Pre-release 供团队下载。团队实测全部通过前，既有稳定基线仍为 `v0.11.7-internal`，不得标记为 Stable / Latest 或用本候选替代。
+当前待测候选：`v0.11.9-internal`。它是修复 Tech 任务导航计数的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release。本次只生成 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包；两项 CI 门禁全部通过前，GitHub Release 保持 Draft，通过后可转为非 Draft 的 Pre-release 供团队下载。覆盖升级以 `v0.11.8-internal` 为直接基线；团队实测全部通过前，不得标记为 Stable / Latest。
 
 ## 入口
 
@@ -26,19 +26,21 @@
 - Account Mapping：来源姓名按 owner / collaborator / actor / task_assignee 等用途映射到已有 Leader / Sales / Tech 账号；同名跨销售与技术职责可分别选择账号，XLSX 不创建账号，角色错配阻断提交。
 - Sales Data Package Sync：成员终端使用定向 JSON 数据包导出/导入，执行权限过滤、冲突合并和导入前后快照；Leader 向 Sales 分发时必须先选择接收成员，导出包只包含该成员作为负责人的 Lead，并在导入端校验接收账号。JSON 只有在同一文件预检 `errors=0` 且权限跳过数为 0 时才允许提交；结果明确区分成功、部分完成和失败。Leader→Sales→Leader 往返按来源 Lead ID 回写原记录，联系人源 ID 会映射为本地联系人 ID，单条异常不会留下半写入客户或 Lead。该链路不以 XLSX 作为同步协议。
 - Tech Task Packages：Leader 在独立页签选择精确 Tech 账号，导出该账号当前全部未归档分配任务的完整快照 `.jpttask`；Tech 预检、导入、更新本人售前/样品或售后任务，再导出 `.jptresult` 给原 Leader 预检合并。新完整快照中缺失的任务只在 Tech 没有未导出更改，或结果已导出且此后未再修改时才可撤回；否则整包阻断。同一结果字段被 Leader 与 Tech 改成不同值时阻断，不同字段可合并；旧快照、改派、归档、接收账号不符和同包 ID 异内容均拒绝，重复包保持幂等。包内不含报价、金额、联系人或附件文件，首版无设备数字签名，只能通过可信内部渠道点对点传递。该链路与 Sales JSON、XLSX 相互独立。
+- Tech Navigation Counts：Tech 左侧“售前 / 样品管理”和“售后”分别显示本人当前有效工作的去重 Lead 数。计数只纳入当前 Tech 负责、状态为 `Open / In Progress`，且任务、Lead、客户均未归档的记录；“全部任务”页面还可展示已完成/已取消任务，所以页面任务总数可以大于左侧计数。任务包导入、状态更新和页面刷新后会按同一口径重新读取，不再依赖 Leader/Sales 仪表盘权限。
 - Data Governance：国家/区域后端规范化、坐标审计、基础批量修复 API。
 - Business Region：按 Lead 负责人账号筛选 `GLOBAL / 欧洲 / 北美/加拿大/澳洲 / 俄罗斯/土耳其/中东 / 东南亚`；`GLOBAL` 是真实归属，“全部地区”才是清空地区条件。地区与负责人、技术、搜索和时间条件取交集，不能用客户地址代替负责人业务归属。
 - Follow-up Time：`已逾期 / 今日到期 / 未来 7 天` 只判断计划的下一次跟进日期；长期未跟进时间按“最近正式跟进 → 询盘日期 → 创建日期”回退计算，可与业务地区及成员条件组合。未设置计划日期的记录不会被错误算入到期页，空页面会说明具体原因。
 - Worklist Order：各工作页使用固定业务排序，而不是数据库偶然返回顺序。处理页按询盘日期由早到晚；跟进页按下一次跟进日期由近到远；售前/样品页优先进行中且按到期日；成交、履约、售后分别按阶段与关键业务日期排列。缺失或无效日期排在有效日期之后，同值再按询盘编号与内部 ID 稳定排序。
 - Customer Merge：Leader 使用客户名称和别名模糊候选、匹配分数与只读迁移预览核对联系人、Lead、域名和别名后执行一次安全合并；来源客户归档并保留审计。
 - Map Quality：地图明确区分精确、近似和缺失坐标；自动候选保持待复核，越界或不完整旧坐标降级为近似/缺失。Leader、owner、collaborator 可修正，watcher 与 Tech 只读；并发版本冲突要求刷新，不会静默覆盖。地址搜索和批量地理编码会把地址字段发送给一个或多个外部服务；默认公共 Nominatim，高德显式启用后为首选，但空结果、网络、超时、配额或无效响应会回退 Nominatim，Key/权限错误不回退。高德结果本地转为 WGS84；高德不替换 CARTO/OpenStreetMap 底图，打开地图仍会产生外部瓦片请求。公共 Nominatim 只用于小规模一次性查询。Windows 开始菜单启动需重新登录系统，macOS Finder 启动需由 `launchd`/MDM 注入 GUI 会话。Key 不进入前端、GitHub、安装包、启动脚本或日志；禁止外发的地址使用人工经纬度或地图选点。
-- Safe Upgrade：旧数据库在首次 schema 迁移前自动生成并验证完整 `pre_upgrade` 备份；迁移使用独立版本账本，失败自动恢复原数据库，第二次启动不重复写入。Windows/macOS 内测构建分别使用旧版夹具检查数据库、附件、授权和卸载保留。离线恢复入口只接受自动生成且清单标记为 `pre_upgrade` 的 ZIP；恢复前还会先把当前数据库保存为 `data/backups/pre_recovery_current_*.sqlite`，保存或校验失败时不会开始恢复。
+- Safe Upgrade：旧数据库在首次 schema 迁移前自动生成并验证完整 `pre_upgrade` 备份；迁移使用独立版本账本，失败自动恢复原数据库，第二次启动不重复写入。v0.11.8 schema 3 直升 v0.11.9 schema 3 不改变 schema，升级前人工完整备份，正常情况下不新增迁移包。Windows/macOS 内测构建分别使用旧版夹具检查数据库、附件、授权和卸载保留。离线恢复入口只接受自动生成且清单标记为 `pre_upgrade` 的 ZIP；恢复前还会先把当前数据库保存为 `data/backups/pre_recovery_current_*.sqlite`，保存或校验失败时不会开始恢复。
 
 ## 文档归档
 
-- `docs/v0.11.8-validation-result.md`：当前内测候选的验证草案；只登记已有证据，尚未完成的源码与原生三平台门禁保持 Pending。
-- `docs/v0.11.7-validation-result.md`：既有内部稳定基线的全面审计、修补、源码门禁和原生三平台发布验证记录。
-- `docs/v0.11.6-validation-result.md`：上一候选的 JSON 定向分发、卡片排序、升级保护和三平台本地构建验证记录。
+- `docs/v0.11.9-validation-result.md`：当前内测候选的验证证据账本；尚未完成的本地、CI 和原生安装门禁保持 Pending。
+- `docs/v0.11.8-validation-result.md`：直接覆盖升级基线与 Tech 任务包首版的历史验证记录。
+- `docs/v0.11.7-validation-result.md`：更早版本的全面审计、修补、源码门禁和原生三平台发布历史记录。
+- `docs/v0.11.6-validation-result.md`：更早候选的 JSON 定向分发、卡片排序、升级保护和三平台本地构建历史记录。
 - `docs/v0.11.5-validation-result.md`：历史候选的体验、地图、升级保护和冻结 App 验证记录。
 - `docs/v0.6-internal-runbook.md`：历史试运行手册，保留作归档。
 - `docs/v0.7-trial-runbook.md`：v0.7 数据复盘和出差规划阶段说明。
