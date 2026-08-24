@@ -4,6 +4,8 @@ window.resetTripPlannerFilters = async function() {
 };
 
 window.loadTripPlanner = async function(options = {}) {
+    if (!options.force && window.TripBriefingDraft?.guard?.({ silent: Boolean(options.automatic) })) return;
+    if (!options.force && window.TripVisitDraft?.guard?.({ silent: Boolean(options.automatic) })) return;
     const appendCandidates = !!options.appendCandidates;
     initTripPlannerMap();
     if (!appendCandidates) {
@@ -51,16 +53,19 @@ window.loadTripPlanner = async function(options = {}) {
             }
         } else {
             State.currentTripPlan = null;
+            window.TripPlanningDraft?.hydrate?.(null);
         }
         renderTripPlans();
         renderCurrentTripPlan();
         window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
+        window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
         renderTripMap();
     } else {
         console.error('Trip plans error:', plansResult.reason);
         setPanelError('trip-plan-list', 'Unable to load saved plans');
         renderCurrentTripPlan();
         window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
+        window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
     }
 };
 
@@ -85,15 +90,15 @@ function setTripBusy(busy) {
     const root = document.getElementById('module-trip-planner');
     if (!root) return;
     root.classList.toggle('trip-busy', busy);
-    root.querySelectorAll('button').forEach(button => {
+    root.querySelectorAll('button, input, select, textarea').forEach(control => {
         if (busy) {
-            if (!button.disabled) {
-                button.dataset.tripBusyDisabled = '1';
-                button.disabled = true;
+            if (!control.disabled) {
+                control.dataset.tripBusyDisabled = '1';
+                control.disabled = true;
             }
-        } else if (button.dataset.tripBusyDisabled === '1') {
-            button.disabled = false;
-            delete button.dataset.tripBusyDisabled;
+        } else if (control.dataset.tripBusyDisabled === '1') {
+            control.disabled = false;
+            delete control.dataset.tripBusyDisabled;
         }
     });
 }

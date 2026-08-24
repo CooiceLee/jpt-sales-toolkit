@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..repositories.base import ConflictError
 from ..services import ReviewService
@@ -25,7 +25,27 @@ Outcome = Literal["open", "won", "lost"]
 ServiceStatus = Literal["None", "Open", "In Progress", "Resolved", "Closed"]
 TripStatus = Literal["Draft", "Active", "Completed"]
 TripStopResult = Literal["Planned", "Visited", "Follow-up Needed", "Skipped"]
-TripTravelMode = Literal["auto", "drive", "ground_public", "flight"]
+TripTravelMode = Literal["auto", "drive", "ground_public", "flight", "other"]
+TripTransportMode = Literal["flight", "drive", "ground_public", "other"]
+TripRouteOrderMode = Literal["auto", "manual"]
+TripFreeStopCategory = Literal["rest", "hotel", "airport", "transit", "meal", "other"]
+TripPeriod = Literal["auto", "AM", "PM"]
+TripPlannedPeriod = Literal["AM", "PM"]
+TripConfirmationStatus = Literal[
+    "unconfirmed", "tentative", "confirmed", "needs_reconfirmation", "cancelled"
+]
+
+
+class TripLegOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_mode: Optional[TripTransportMode] = None
+    mode_locked: Optional[bool] = None
+    manual_distance_km: Optional[float] = Field(None, ge=0)
+    manual_time_hours: Optional[float] = Field(None, ge=0)
+    manual_travel_days: Optional[int] = Field(None, ge=0)
+    manual_travel_half_days: Optional[int] = Field(None, ge=0, le=60)
+    notes: Optional[str] = None
 
 
 def get_review_service() -> ReviewService:
@@ -58,6 +78,12 @@ class TripPlanCreate(BaseModel):
     destination_lat: Optional[float] = Field(None, ge=-90, le=90)
     destination_lng: Optional[float] = Field(None, ge=-180, le=180)
     travel_mode: TripTravelMode = "auto"
+    route_order_mode: TripRouteOrderMode = "auto"
+    transport_mode_priority: Optional[list[TripTransportMode]] = None
+    departure_window_start: Optional[str] = None
+    departure_window_end: Optional[str] = None
+    return_window_start: Optional[str] = None
+    return_window_end: Optional[str] = None
     avoid_weekends: bool = True
     holiday_dates: Optional[list[str]] = None
     description: Optional[str] = None
@@ -78,6 +104,12 @@ class TripPlanUpdate(BaseModel):
     destination_lat: Optional[float] = Field(None, ge=-90, le=90)
     destination_lng: Optional[float] = Field(None, ge=-180, le=180)
     travel_mode: Optional[TripTravelMode] = None
+    route_order_mode: Optional[TripRouteOrderMode] = None
+    transport_mode_priority: Optional[list[TripTransportMode]] = None
+    departure_window_start: Optional[str] = None
+    departure_window_end: Optional[str] = None
+    return_window_start: Optional[str] = None
+    return_window_end: Optional[str] = None
     avoid_weekends: Optional[bool] = None
     holiday_dates: Optional[list[str]] = None
     description: Optional[str] = None
@@ -90,9 +122,16 @@ class TripStopCreate(BaseModel):
     planned_date: Optional[str] = None
     planned_end_date: Optional[str] = None
     stay_days: Optional[int] = Field(None, ge=1, le=30)
+    duration_half_days: Optional[int] = Field(None, ge=1, le=60)
+    preferred_period: TripPeriod = "auto"
+    planned_start_period: Optional[TripPlannedPeriod] = None
+    planned_end_period: Optional[TripPlannedPeriod] = None
+    schedule_locked: bool = False
+    confirmation_status: TripConfirmationStatus = "unconfirmed"
     visit_purpose: Optional[str] = None
     notes: Optional[str] = None
     sequence_no: Optional[int] = None
+    allow_duplicate: bool = False
 
 
 class TripStopUpdate(BaseModel):
@@ -102,6 +141,12 @@ class TripStopUpdate(BaseModel):
     planned_date: Optional[str] = None
     planned_end_date: Optional[str] = None
     stay_days: Optional[int] = Field(None, ge=1, le=30)
+    duration_half_days: Optional[int] = Field(None, ge=1, le=60)
+    preferred_period: Optional[TripPeriod] = None
+    planned_start_period: Optional[TripPlannedPeriod] = None
+    planned_end_period: Optional[TripPlannedPeriod] = None
+    schedule_locked: Optional[bool] = None
+    confirmation_status: Optional[TripConfirmationStatus] = None
     visit_purpose: Optional[str] = None
     notes: Optional[str] = None
     result_status: Optional[TripStopResult] = None
@@ -125,13 +170,178 @@ class TripStopArchive(BaseModel):
     row_version: Optional[int] = Field(None, ge=1)
 
 
+class TripFreeStopCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: TripFreeStopCategory
+    location_name: str = Field(min_length=1, max_length=200)
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    stay_days: Optional[int] = Field(None, ge=1, le=30)
+    duration_half_days: Optional[int] = Field(None, ge=1, le=60)
+    preferred_period: TripPeriod = "auto"
+    planned_start_period: Optional[TripPlannedPeriod] = None
+    planned_end_period: Optional[TripPlannedPeriod] = None
+    schedule_locked: bool = False
+    confirmation_status: TripConfirmationStatus = "unconfirmed"
+    visit_purpose: Optional[str] = None
+    notes: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripFreeStopUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    row_version: Optional[int] = Field(None, ge=1)
+    category: Optional[TripFreeStopCategory] = None
+    location_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    address: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lng: Optional[float] = Field(None, ge=-180, le=180)
+    stay_days: Optional[int] = Field(None, ge=1, le=30)
+    duration_half_days: Optional[int] = Field(None, ge=1, le=60)
+    preferred_period: Optional[TripPeriod] = None
+    planned_start_period: Optional[TripPlannedPeriod] = None
+    planned_end_period: Optional[TripPlannedPeriod] = None
+    schedule_locked: Optional[bool] = None
+    confirmation_status: Optional[TripConfirmationStatus] = None
+    visit_purpose: Optional[str] = None
+    notes: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripFreeStopArchive(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    row_version: Optional[int] = Field(None, ge=1)
+
+
 class TripPlanArchive(BaseModel):
     row_version: Optional[int] = Field(None, ge=1)
 
 
-class TripItineraryGenerate(BaseModel):
+class TripBriefingLocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lng: Optional[float] = Field(None, ge=-180, le=180)
+    use_customer_default: bool = True
+
+
+class TripBriefingCustomerTeam(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = None
+    title: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripBriefingContact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_contact_id: Optional[str] = None
+    name: Optional[str] = None
+    position: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    role: Optional[str] = None
+    notes: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripBriefingParticipant(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str
+    display_name: Optional[str] = None
+    role: Optional[str] = None
+    responsibility: Optional[str] = None
+    notes: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripBriefingChannelPartnerCompanion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company_name: Optional[str] = None
+    name: str = Field(min_length=1)
+    position: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    notes: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripBriefingEquipment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["demo", "po", "other"]
+    model: Optional[str] = None
+    specification: Optional[str] = None
+    quantity: Optional[str] = None
+    owner_team: Optional[str] = None
+    notes: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripBriefingAgendaItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str
+    owner: Optional[str] = None
+    preparation: Optional[str] = None
+    expected_outcome: Optional[str] = None
+    sequence_no: Optional[int] = Field(None, ge=1)
+
+
+class TripVisitBriefingPut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     row_version: Optional[int] = Field(None, ge=1)
+    stop_row_version: int = Field(ge=1)
+    confirmation_status: TripConfirmationStatus = "unconfirmed"
+    timezone: Optional[str] = None
+    location: TripBriefingLocation = Field(default_factory=TripBriefingLocation)
+    customer_team: list[TripBriefingCustomerTeam] = Field(default_factory=list)
+    contacts: list[TripBriefingContact] = Field(default_factory=list)
+    participants: list[TripBriefingParticipant] = Field(default_factory=list)
+    channel_partner_companions: list[TripBriefingChannelPartnerCompanion] = Field(
+        default_factory=list
+    )
+    equipment: list[TripBriefingEquipment] = Field(default_factory=list)
+    agenda_items: list[TripBriefingAgendaItem] = Field(default_factory=list)
+
+
+class TripStopDurationOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    half_days: Optional[int] = Field(None, ge=1, le=60)
+    preferred_period: Optional[TripPeriod] = None
+    locked: Optional[bool] = None
+
+
+class TripItineraryGenerate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    row_version: Optional[int] = Field(None, ge=1)
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
     start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    region: Optional[Region] = None
     origin_name: Optional[str] = None
     origin_lat: Optional[float] = Field(None, ge=-90, le=90)
     origin_lng: Optional[float] = Field(None, ge=-180, le=180)
@@ -139,9 +349,23 @@ class TripItineraryGenerate(BaseModel):
     destination_lat: Optional[float] = Field(None, ge=-90, le=90)
     destination_lng: Optional[float] = Field(None, ge=-180, le=180)
     travel_mode: Optional[TripTravelMode] = None
+    route_order_mode: Optional[TripRouteOrderMode] = None
+    transport_mode_priority: Optional[list[TripTransportMode]] = None
+    departure_window_start: Optional[str] = None
+    departure_window_end: Optional[str] = None
+    return_window_start: Optional[str] = None
+    return_window_end: Optional[str] = None
     avoid_weekends: Optional[bool] = None
     holiday_dates: Optional[list[str]] = None
+    description: Optional[str] = None
     stop_stays: Optional[dict[str, int]] = None
+    stop_durations: Optional[dict[str, TripStopDurationOverride]] = None
+    stop_order: Optional[list[str]] = None
+    leg_overrides: Optional[dict[str, TripLegOverride]] = None
+
+
+class TripTransportSuggestionsRequest(TripItineraryGenerate):
+    force_refresh: bool = False
 
 
 @router.get("/dashboard")
@@ -246,7 +470,10 @@ async def create_trip_plan(
     data = request.model_dump(exclude_none=True)
     if user["role"] != "leader":
         data.pop("owner_id", None)
-    return service.create_trip_plan(data, user["id"])
+    try:
+        return service.create_trip_plan(data, user["id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.get("/trip-plans/{plan_id}")
@@ -262,6 +489,52 @@ async def get_trip_plan(
     return plan
 
 
+@router.get("/trip-plans/{plan_id}/stops/{stop_id}/briefing")
+async def get_trip_visit_briefing(
+    plan_id: str,
+    stop_id: str,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Get the saved visit briefing plus explicit Lead/contact suggestions."""
+    briefing = service.get_trip_visit_briefing(
+        plan_id, stop_id, user["id"], user["role"]
+    )
+    if briefing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Trip stop not found"
+        )
+    return briefing
+
+
+@router.put("/trip-plans/{plan_id}/stops/{stop_id}/briefing")
+async def put_trip_visit_briefing(
+    plan_id: str,
+    stop_id: str,
+    request: TripVisitBriefingPut,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Atomically replace a visit briefing using stop and briefing CAS versions."""
+    try:
+        briefing = service.put_trip_visit_briefing(
+            plan_id,
+            stop_id,
+            request.model_dump(),
+            user["id"],
+            user["role"],
+        )
+    except ConflictError as exc:
+        raise _conflict_http(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if briefing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Trip stop not found"
+        )
+    return briefing
+
+
 @router.patch("/trip-plans/{plan_id}")
 async def update_trip_plan(
     plan_id: str,
@@ -273,12 +546,14 @@ async def update_trip_plan(
     try:
         plan = service.update_trip_plan(
             plan_id,
-            request.model_dump(exclude_none=True),
+            request.model_dump(exclude_unset=True),
             user["id"],
             user["role"],
         )
     except ConflictError as exc:
         raise _conflict_http(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not plan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
     return plan
@@ -295,7 +570,7 @@ async def generate_trip_itinerary(
     try:
         plan = service.generate_trip_itinerary(
             plan_id,
-            request.model_dump(exclude_none=True),
+            request.model_dump(exclude_unset=True),
             user["id"],
             user["role"],
         )
@@ -319,7 +594,7 @@ async def preview_trip_itinerary(
     try:
         plan = service.preview_trip_itinerary(
             plan_id,
-            request.model_dump(exclude_none=True),
+            request.model_dump(exclude_unset=True),
             user["id"],
             user["role"],
         )
@@ -328,6 +603,31 @@ async def preview_trip_itinerary(
     if not plan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
     return plan
+
+
+@router.post("/trip-plans/{plan_id}/transport-suggestions")
+async def get_trip_transport_suggestions(
+    plan_id: str,
+    request: TripTransportSuggestionsRequest,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Return read-only, manually confirmed suggestions for previewed legs."""
+    data = request.model_dump(exclude_unset=True)
+    force_refresh = bool(data.pop("force_refresh", False))
+    try:
+        result = service.get_trip_transport_suggestions(
+            plan_id,
+            data,
+            user["id"],
+            user["role"],
+            force_refresh=force_refresh,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
+    return result
 
 
 @router.post("/trip-plans/{plan_id}/archive")
@@ -387,7 +687,7 @@ async def update_trip_stop(
         plan = service.update_trip_stop(
             plan_id,
             stop_id,
-            request.model_dump(exclude_none=True),
+            request.model_dump(exclude_unset=True),
             user["id"],
             user["role"],
         )
@@ -449,6 +749,78 @@ async def archive_trip_stop(
     return plan
 
 
+@router.post("/trip-plans/{plan_id}/free-stops")
+async def add_trip_free_stop(
+    plan_id: str,
+    request: TripFreeStopCreate,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Add a route stop that is independent from customers and Leads."""
+    try:
+        plan = service.add_trip_free_stop(
+            plan_id,
+            request.model_dump(exclude_none=True),
+            user["id"],
+            user["role"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
+    return plan
+
+
+@router.patch("/trip-plans/{plan_id}/free-stops/{free_stop_id}")
+async def update_trip_free_stop(
+    plan_id: str,
+    free_stop_id: str,
+    request: TripFreeStopUpdate,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Update an independent route stop."""
+    try:
+        plan = service.update_trip_free_stop(
+            plan_id,
+            free_stop_id,
+            request.model_dump(exclude_unset=True),
+            user["id"],
+            user["role"],
+        )
+    except ConflictError as exc:
+        raise _conflict_http(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Free stop not found")
+    return plan
+
+
+@router.post("/trip-plans/{plan_id}/free-stops/{free_stop_id}/archive")
+async def archive_trip_free_stop(
+    plan_id: str,
+    free_stop_id: str,
+    request: Optional[TripFreeStopArchive] = Body(None),
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Archive an independent route stop."""
+    try:
+        plan = service.archive_trip_free_stop(
+            plan_id,
+            free_stop_id,
+            user["id"],
+            user["role"],
+            request.row_version if request else None,
+        )
+    except ConflictError as exc:
+        raise _conflict_http(exc)
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Free stop not found")
+    return plan
+
+
 @router.get("/trip-plans/{plan_id}/export.md")
 async def export_trip_plan_markdown(
     plan_id: str,
@@ -456,7 +828,10 @@ async def export_trip_plan_markdown(
     service: ReviewService = Depends(get_review_service),
 ):
     """Export a trip plan as Markdown."""
-    content = service.export_trip_plan_markdown(plan_id, user["id"], user["role"])
+    try:
+        content = service.export_trip_plan_markdown(plan_id, user["id"], user["role"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
     filename_id = _safe_filename_id(plan_id)
@@ -474,7 +849,10 @@ async def export_trip_plan_csv(
     service: ReviewService = Depends(get_review_service),
 ):
     """Export a trip plan as CSV."""
-    content = service.export_trip_plan_csv(plan_id, user["id"], user["role"])
+    try:
+        content = service.export_trip_plan_csv(plan_id, user["id"], user["role"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
     filename_id = _safe_filename_id(plan_id)
@@ -485,6 +863,61 @@ async def export_trip_plan_csv(
     )
 
 
+def _formal_export_response(
+    content: Optional[bytes], plan_id: str, extension: str, media_type: str
+) -> Response:
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
+    filename_id = _safe_filename_id(plan_id)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="trip-plan-{filename_id}.{extension}"'},
+    )
+
+
+@router.get("/trip-plans/{plan_id}/export.xlsx")
+async def export_trip_plan_xlsx(
+    plan_id: str,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    try:
+        content = service.export_trip_plan_xlsx(plan_id, user["id"], user["role"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return _formal_export_response(
+        content, plan_id, "xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@router.get("/trip-plans/{plan_id}/export.html")
+async def export_trip_plan_html(
+    plan_id: str,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    try:
+        content = service.export_trip_plan_html(plan_id, user["id"], user["role"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return _formal_export_response(content, plan_id, "html", "text/html; charset=utf-8")
+
+
+@router.get("/trip-plans/{plan_id}/export.ics")
+async def export_trip_plan_ics(
+    plan_id: str,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    try:
+        content = service.export_trip_plan_ics(plan_id, user["id"], user["role"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return _formal_export_response(content, plan_id, "ics", "text/calendar; charset=utf-8")
+
+
 @router.get("/trip-plans/{plan_id}/execution")
 async def get_trip_execution(
     plan_id: str,
@@ -493,7 +926,10 @@ async def get_trip_execution(
     service: ReviewService = Depends(get_review_service),
 ):
     """Get a day-oriented visit execution view for a trip plan."""
-    data = service.get_trip_execution(plan_id, user["id"], user["role"], date)
+    try:
+        data = service.get_trip_execution(plan_id, user["id"], user["role"], date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if data is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
     return data
@@ -507,7 +943,12 @@ async def export_trip_execution_markdown(
     service: ReviewService = Depends(get_review_service),
 ):
     """Export one day of itinerary and visit reports as Markdown."""
-    content = service.export_trip_execution_markdown(plan_id, user["id"], user["role"], date)
+    try:
+        content = service.export_trip_execution_markdown(
+            plan_id, user["id"], user["role"], date
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
     filename_id = _safe_filename_id(plan_id)

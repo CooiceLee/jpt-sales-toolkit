@@ -8,11 +8,14 @@ import json
 from typing import Optional
 
 from ..repositories import CustomerRepository, AuditRepository
-from ..repositories.base import ConflictError
 from ..repositories.customer_alias_repository import CustomerAliasRepository
 from .country_service import CountryService
 from .customer_fuzzy_search import rank_merge_candidates
 from .customer_merge_service import CustomerMergeService
+from .trip_plan_invalidation import (
+    ROUTE_LOCATION_FIELDS,
+    invalidate_customer_route_dependencies,
+)
 
 
 def normalize_name(name: str) -> str:
@@ -130,7 +133,7 @@ class CustomerService:
                 data,
                 actor_id,
                 row_version,
-                commit=commit,
+                commit=False,
             )
 
             # Log audit
@@ -141,7 +144,7 @@ class CustomerService:
                 actor_id=actor_id,
                 before_json=json.dumps(dict(before)) if before else None,
                 after_json=json.dumps(data),
-                commit=commit,
+                commit=False,
             )
             if before and self._coordinate_payload_changed(before, updated, data):
                 self.audit_repo.log(
@@ -151,12 +154,25 @@ class CustomerService:
                     actor_id=actor_id,
                     before_json=json.dumps(self._coordinate_snapshot(before)),
                     after_json=json.dumps(self._coordinate_snapshot(updated)),
-                    commit=commit,
+                    commit=False,
                 )
+
+            if before and self._route_location_payload_changed(before, updated, data):
+                invalidate_customer_route_dependencies(
+                    self.customer_repo.conn,
+                    [customer_id],
+                    actor_id,
+                    "customer_location_changed",
+                )
+
+            if commit:
+                self.customer_repo.conn.commit()
 
             return updated
 
-        except ConflictError:
+        except Exception:
+            if commit:
+                self.customer_repo.conn.rollback()
             raise
 
     def _coordinate_snapshot(self, customer: dict) -> dict:
@@ -179,6 +195,11 @@ class CustomerService:
         if not coordinate_fields.intersection(payload):
             return False
         return self._coordinate_snapshot(before) != self._coordinate_snapshot(after)
+
+    @staticmethod
+    def _route_location_payload_changed(before: dict, after: dict, payload: dict) -> bool:
+        changed_fields = ROUTE_LOCATION_FIELDS.intersection(payload)
+        return any(before.get(field) != after.get(field) for field in changed_fields)
 
     def archive(self, customer_id: str, actor_id: str) -> bool:
         """Archive customer."""

@@ -1,6 +1,6 @@
 # JPT Sales Toolkit 当前内部试运行手册
 
-当前待测候选：`v0.11.9-internal`。它是修复 Tech 任务导航计数的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release。本次只生成 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包；两项 CI 门禁全部通过前，GitHub Release 保持 Draft，通过后可转为非 Draft 的 Pre-release 供团队下载。覆盖升级以 `v0.11.8-internal` 为直接基线；团队实测全部通过前，不得标记为 Stable / Latest。
+当前待测候选：`v0.12.0-internal`。它包含 Trip Planner v2 的完整路线与正式导出，是 `UNSIGNED-INTERNAL` 团队测试 / Draft Pre-release。本次只生成 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包。覆盖升级以 `v0.11.9-internal` 为直接基线；旧版 schema 3 会先生成并验证本机 `pre_upgrade` 备份，再升级到 schema 6。两平台构建和团队实测全部通过前，不得标记为 Stable / Latest。
 
 ## 入口
 
@@ -19,7 +19,7 @@
 
 - 销售漏斗 7 步：询盘解析、处理、跟进、打样、成交、履行、售后。
 - Data Review：经营复盘、风险 Lead、高价值 Lead、Owner/Region 维度统计。
-- Trip Planner：候选客户、路线预览/保存、计划归档、停留天数、周末/节假日避让、导出。
+- Trip Planner v2：硬日期窗、中国起返地点与时间窗、自动/手工顺序、四类逐段交通、人工锁定、自定义自由停靠、半天日程、多地点拜访、拜访准备、计划归档，以及 XLSX、离线 HTML、ICS、Markdown、CSV 导出。交通建议不要求账号或 Token，近似估算和外部查询链接由使用者复核后应用。
 - Visit Execution：按天查看拜访客户、联系人、地址、Lead 摘要，填写拜访模板，自动生成 Follow-up Needed，上传拜访附件，按天导出拜访报告。
 - Coordinate Review：坐标队列、地图选点、经纬度输入、邮件地址解析选点、坐标变更审计。
 - External XLSX Import：Leader 使用独立四步向导完成备份、工作簿选择、固定窗口预检/修正和原子提交；人员映射、客户匹配和问题采用折叠分组，标准模板与源文件不进入安装包。
@@ -33,12 +33,13 @@
 - Worklist Order：各工作页使用固定业务排序，而不是数据库偶然返回顺序。处理页按询盘日期由早到晚；跟进页按下一次跟进日期由近到远；售前/样品页优先进行中且按到期日；成交、履约、售后分别按阶段与关键业务日期排列。缺失或无效日期排在有效日期之后，同值再按询盘编号与内部 ID 稳定排序。
 - Customer Merge：Leader 使用客户名称和别名模糊候选、匹配分数与只读迁移预览核对联系人、Lead、域名和别名后执行一次安全合并；来源客户归档并保留审计。
 - Map Quality：地图明确区分精确、近似和缺失坐标；自动候选保持待复核，越界或不完整旧坐标降级为近似/缺失。Leader、owner、collaborator 可修正，watcher 与 Tech 只读；并发版本冲突要求刷新，不会静默覆盖。地址搜索和批量地理编码会把地址字段发送给一个或多个外部服务；默认公共 Nominatim，高德显式启用后为首选，但空结果、网络、超时、配额或无效响应会回退 Nominatim，Key/权限错误不回退。高德结果本地转为 WGS84；高德不替换 CARTO/OpenStreetMap 底图，打开地图仍会产生外部瓦片请求。公共 Nominatim 只用于小规模一次性查询。Windows 开始菜单启动需重新登录系统，macOS Finder 启动需由 `launchd`/MDM 注入 GUI 会话。Key 不进入前端、GitHub、安装包、启动脚本或日志；禁止外发的地址使用人工经纬度或地图选点。
-- Safe Upgrade：旧数据库在首次 schema 迁移前自动生成并验证完整 `pre_upgrade` 备份；迁移使用独立版本账本，失败自动恢复原数据库，第二次启动不重复写入。v0.11.8 schema 3 直升 v0.11.9 schema 3 不改变 schema，升级前人工完整备份，正常情况下不新增迁移包。Windows/macOS 内测构建分别使用旧版夹具检查数据库、附件、授权和卸载保留。离线恢复入口只接受自动生成且清单标记为 `pre_upgrade` 的 ZIP；恢复前还会先把当前数据库保存为 `data/backups/pre_recovery_current_*.sqlite`，保存或校验失败时不会开始恢复。
+- Safe Upgrade：从 v0.11.9 schema 3 升级到 v0.12.0 schema 6 前，应用会在任何 schema 写入前生成并验证完整 `pre_upgrade` 备份。迁移使用独立版本账本；失败会恢复原数据库并停止启动，第二次启动不会重复迁移或重复创建备份。Windows/macOS 内测构建分别检查客户、Lead、任务、附件、授权、Tech 包状态和卸载保留。离线恢复入口只接受自动生成且清单标记为 `pre_upgrade` 的 ZIP；恢复前还会先把当前数据库保存为 `data/backups/pre_recovery_current_*.sqlite`，保存或校验失败时不会开始恢复。
 
 ## 文档归档
 
-- `docs/v0.11.9-validation-result.md`：当前内测候选的验证证据账本；尚未完成的本地、CI 和原生安装门禁保持 Pending。
-- `docs/v0.11.8-validation-result.md`：直接覆盖升级基线与 Tech 任务包首版的历史验证记录。
+- `docs/v0.12.0-validation-result.md`：当前内测候选的验证证据账本；尚未完成的本地、CI 和原生安装门禁保持 Pending。
+- `docs/v0.11.9-validation-result.md`：直接覆盖升级基线与 Tech 导航计数修复的历史验证记录。
+- `docs/v0.11.8-validation-result.md`：Tech 任务包首版的历史验证记录。
 - `docs/v0.11.7-validation-result.md`：更早版本的全面审计、修补、源码门禁和原生三平台发布历史记录。
 - `docs/v0.11.6-validation-result.md`：更早候选的 JSON 定向分发、卡片排序、升级保护和三平台本地构建历史记录。
 - `docs/v0.11.5-validation-result.md`：历史候选的体验、地图、升级保护和冻结 App 验证记录。

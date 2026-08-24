@@ -641,6 +641,17 @@ const ApiClient = (function() {
         return request(`/review/trip-plans/${planId}`);
     }
 
+    async function getTripBriefing(planId, stopId) {
+        return request(`/review/trip-plans/${planId}/stops/${stopId}/briefing`);
+    }
+
+    async function putTripBriefing(planId, stopId, data) {
+        return request(`/review/trip-plans/${planId}/stops/${stopId}/briefing`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    }
+
     async function updateTripPlan(planId, data) {
         return request(`/review/trip-plans/${planId}`, {
             method: 'PATCH',
@@ -658,6 +669,35 @@ const ApiClient = (function() {
 
     async function addTripStop(planId, data) {
         return request(`/review/trip-plans/${planId}/stops`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function addTripFreeStop(planId, data) {
+        return request(`/review/trip-plans/${planId}/free-stops`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function updateTripFreeStop(planId, stopId, data) {
+        return request(`/review/trip-plans/${planId}/free-stops/${stopId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function archiveTripFreeStop(planId, stopId, rowVersion = null) {
+        const body = rowVersion ? { row_version: rowVersion } : {};
+        return request(`/review/trip-plans/${planId}/free-stops/${stopId}/archive`, {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+    }
+
+    async function getTripTransportSuggestions(planId, data) {
+        return request(`/review/trip-plans/${planId}/transport-suggestions`, {
             method: 'POST',
             body: JSON.stringify(data)
         });
@@ -712,15 +752,14 @@ const ApiClient = (function() {
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            throw new ApiError(errorText || `Export failed: ${response.status}`, response.status);
+            const error = await readErrorResponse(response);
+            throw new ApiError(error.message, response.status, error.details);
         }
 
-        const disposition = response.headers.get('Content-Disposition');
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename\*?=(?:UTF-8''|["']?)([^"';]+)/i);
         let filename = `trip-plan.${format}`;
-        if (disposition && disposition.includes('filename=')) {
-            filename = disposition.split('filename=')[1].replace(/"/g, '');
-        }
+        if (match) filename = decodeURIComponent(match[1].replace(/["']/g, ''));
         const blob = await response.blob();
         return { blob, filename };
     }
@@ -1119,9 +1158,17 @@ const ApiClient = (function() {
         listTripPlans,
         createTripPlan,
         getTripPlan,
+        getTripBriefing,
+        putTripBriefing,
+        getTripVisitBriefing: getTripBriefing,
+        updateTripVisitBriefing: putTripBriefing,
         updateTripPlan,
         archiveTripPlan,
         addTripStop,
+        addTripFreeStop,
+        updateTripFreeStop,
+        archiveTripFreeStop,
+        getTripTransportSuggestions,
         updateTripStop,
         reorderTripStops,
         generateTripItinerary,

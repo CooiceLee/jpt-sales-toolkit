@@ -3,7 +3,7 @@ function renderTripMap() {
     State.tripMapLayer.clearLayers();
     const bounds = [];
     const selectedCustomerIds = new Set(
-        (State.currentTripPlan?.stops || []).filter(Boolean).map(stop => stop.customer_id)
+        (State.currentTripPlan?.stops || []).filter(stop => stop?.stop_kind !== 'free').map(stop => stop.customer_id)
     );
 
     (State.tripCandidates || []).forEach((candidate, index) => {
@@ -21,6 +21,16 @@ function renderTripMap() {
         marker.bindTooltip(escapeHtml(
             `${candidate.customer_name || ''} · ${Number(candidate.score) || 0}`
         ));
+        const hasExactCoordinates = window.TripCandidateState?.hasExactCoordinates
+            ? window.TripCandidateState.hasExactCoordinates(candidate)
+            : Boolean(pair && candidate.coordinate_quality === 'exact' && !candidate.needs_coordinate_review);
+        const candidateAction = hasExactCoordinates
+            ? `<button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add to Plan'))}</button>`
+            : `<div class="trip-coordinate-required">${escapeHtml(I18n.t('Precise coordinates are required before this customer can be added.'))}</div>
+                <div class="trip-popup-actions">
+                    <button type="button" class="btn btn-primary btn-sm" disabled>${escapeHtml(I18n.t('Add to Plan'))}</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="openTripCandidateCoordinateReview(${index})">${escapeHtml(I18n.t('Open Coordinate Review'))}</button>
+                </div>`;
         marker.bindPopup(`
             <div class="map-popup">
                 <div class="map-popup-title">${escapeHtml(candidate.customer_name)}</div>
@@ -29,7 +39,7 @@ function renderTripMap() {
                     <span>${escapeHtml(I18n.t('{count} open', { count: Number(candidate.open_count) || 0 }))}</span>
                     <span>${escapeHtml(formatMoney(candidate.pipeline_value || 0))}</span>
                 </div>
-                <button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add to Plan'))}</button>
+                ${candidateAction}
             </div>
         `);
         marker.addTo(State.tripMapLayer);
@@ -54,10 +64,22 @@ function renderTripMap() {
         };
         addPoint(plan.origin_lat, plan.origin_lng, plan.origin_name || I18n.t('Origin'), '#2b6cb0');
         (plan.stops || []).filter(Boolean).forEach(stop => {
-            const point = MapSupport.coordinatePair(stop.lat, stop.lng);
+            const location = window.TripVisitState?.visitLocation?.(stop) || stop;
+            const point = MapSupport.coordinatePair(location.lat, location.lng);
             if (!point) return;
             routePoints.push(point);
             bounds.push(point);
+            const isFree = stop.stop_kind === 'free';
+            const label = location.name || stop.location_name || stop.customer_name || I18n.t('Stop');
+            const address = [location.address, location.city, location.postal_code, location.country]
+                .filter(Boolean).join(', ');
+            L.circleMarker(point, {
+                radius: isFree ? 8 : 6,
+                color: '#ffffff', weight: 2,
+                fillColor: isFree ? '#d97706' : '#1f5135', fillOpacity: 0.95,
+            }).bindTooltip(escapeHtml(`${stop.sequence_no || ''}. ${label}${address ? ` · ${address}` : ''}${
+                isFree ? ` · ${I18n.t('Personal stop')}` : ''
+            }`)).addTo(State.tripMapLayer);
         });
         addPoint(plan.destination_lat, plan.destination_lng, plan.destination_name || I18n.t('Destination'), '#7c3aed');
         if (routePoints.length >= 2) {

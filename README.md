@@ -2,7 +2,7 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前待测候选：`v0.11.9-internal`。它是修复 Tech 任务导航计数的 `UNSIGNED-INTERNAL` 团队测试 / Pre-release，不等同于已签名的公开正式版。本次只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包；对应 CI 门禁通过后，可从 Draft 转为非 Draft 的 Pre-release 供团队下载。覆盖升级以 `v0.11.8-internal` 为直接基线；团队实测全部完成前，不得把本候选标记为 Stable / Latest。当前启动、账号授权、备份、回归、业务地区、长期未跟进、客户合并、卡片排序、地图坐标、数据复盘、出差规划、拜访执行、Sales 定向数据分发和 Tech 任务包入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
+当前待测候选：`v0.12.0-internal`。它包含 Trip Planner v2 的路线、交通、半天日程、拜访准备和正式行程导出，是 `UNSIGNED-INTERNAL` 团队测试 / Draft Pre-release，不等同于已签名的公开正式版。本次只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包。覆盖升级以 `v0.11.9-internal` 为直接基线；程序会在任何 schema 写入前自动生成并验证本机 `pre_upgrade` 备份，再把 schema 3 升级到 schema 6。两平台构建和团队实测全部完成前，不得把本候选标记为 Stable / Latest。当前启动、账号授权、备份、业务地区、客户合并、地图、出差规划、Sales 定向数据分发和 Tech 任务包入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
 
 ## 功能概览
 
@@ -16,7 +16,7 @@
 | 6 | Order Fulfillment | 订单履行跟踪 |
 | 7 | After-sales Support | 售后问题管理 |
 | Data | Data Review | 经营复盘、风险 Lead、高价值 Lead 和权限隔离分析 |
-| Data | Trip Planner | 候选客户、区域路线、停留时间、拜访执行、结果回填和导出 |
+| Data | Trip Planner | 硬日期窗、手工/自动顺序、逐段交通、自由停靠、半天日程、拜访准备和 XLSX/HTML/ICS/Markdown/CSV 导出 |
 | Data | Coordinate Review | 精确/近似/缺失坐标质量队列、地图选点、经纬度录入和地址解析选点 |
 | Ops | Export / Import | Sales JSON 定向交换、Tech 任务包往返、导入预检、Leader 汇总合并和数据治理 |
 | Ops | Customer Merge | 名称/别名模糊候选、只读迁移预览和 Leader 安全合并 |
@@ -131,6 +131,14 @@ Tech 左侧“售前 / 样品管理”和“售后”的数字是本人当前有
 - 自动候选始终保留为待人工复核；Leader、owner 和 collaborator 可修正坐标，watcher 与 Tech 只读。版本冲突会要求刷新重试，不会静默覆盖另一终端的新修改。
 - Leader 可按客户名称或别名查看模糊候选与匹配分数。选择来源和保留目标后，必须先核对只读迁移预览，再执行一次合并；来源客户会归档而不是物理删除。
 
+### Trip Planner v2
+
+- 先设置中国出发地、返程地、日期窗和可用交通方式，再选择自动顺序或手工顺序。路线不得超过结束日期；日期、地点、停留时长或顺序变化后，应重新预览并保存。
+- 每段行程可使用航班、自驾、公共交通或其他方式，也可填写人工时长、距离和备注并锁定。交通建议不需要账号或 Token；应用会给出近似估算和外部查询链接，最终方式由使用者确认。
+- 除客户拜访外，可加入酒店、休息、机场、中转和其他自由停靠点。日程按上午/下午排列，支持半天停留、多地点和同一客户多次拜访。
+- 每次客户拜访可补充地址快照、客户人员、渠道代理公司陪同人员（如有）、JPT 内部参会人员、Demo/PO/其他设备、拜访议题和确认状态。路线日期或地点改变后，相关拜访会提示重新确认。
+- 正式分发可下载 XLSX、离线 HTML 和 ICS；原 Markdown、CSV 仍可使用。导出前应保存当前路线，过期路线或未保存修改不会进入正式文件。
+
 ## 配置文件说明
 
 ```
@@ -202,4 +210,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.11.9-internal · internal Pre-release candidate*
+*JPT Sales Toolkit v0.12.0-internal · UNSIGNED-INTERNAL Draft Pre-release candidate*

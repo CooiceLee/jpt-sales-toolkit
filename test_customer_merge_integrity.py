@@ -56,6 +56,34 @@ def _insert_trip_stop(conn, ids: dict, lead_id: str) -> str:
     return stop_id
 
 
+def _seed_generated_trip_route(conn, ids: dict, stop_id: str) -> str:
+    """Create one locked active leg so merge invalidation is observable."""
+    now = now_iso()
+    leg_id = "merge-leg"
+    conn.execute(
+        """UPDATE trip_plans
+           SET itinerary_generated_at = ?, itinerary_summary = ?,
+               updated_at = ?, updated_by = ?
+           WHERE id = 'merge-plan'""",
+        (now, json.dumps({"valid": True}), now, ids["leader"]),
+    )
+    conn.execute(
+        """INSERT INTO trip_plan_legs
+           (id, plan_id, leg_key, sequence_no, from_kind, from_label,
+            to_kind, to_stop_id, to_label, selected_mode, mode_locked,
+            distance_km, time_hours, travel_days, manual_distance_km,
+            manual_time_hours, manual_travel_days, notes,
+            created_at, created_by, updated_at, updated_by, row_version)
+           VALUES (?, 'merge-plan', ?, 1, 'origin', 'Origin',
+                   'stop', ?, 'Old Europe Laser', 'other', 1,
+                   9, 1, 0, 9, 1, 0, 'Locked before merge',
+                   ?, ?, ?, ?, 1)""",
+        (leg_id, f"origin>{stop_id}", stop_id, now, ids["leader"], now, ids["leader"]),
+    )
+    conn.commit()
+    return leg_id
+
+
 def test_alias_lifecycle_and_match(path: Path) -> None:
     ids = _fresh_db(path)
     aliases = CustomerAliasService()
@@ -184,6 +212,7 @@ def test_complete_merge(path: Path) -> None:
     }, ids["sales"])
     leads.archive(archived_lead, ids["leader"])
     stop_id = _insert_trip_stop(customers.conn, ids, active_lead)
+    leg_id = _seed_generated_trip_route(customers.conn, ids, stop_id)
 
     source = customers.get_by_id(ids["source"])
     target = customers.get_by_id(ids["target"])
@@ -214,6 +243,21 @@ def test_complete_merge(path: Path) -> None:
     assert retired_domain[0] == ids["target"] and retired_domain[1] and "#merged-" in retired_domain[2]
     assert CustomerService().match(None, "Old Europe Laser")[0]["id"] == ids["target"]
 
+    route = conn.execute(
+        "SELECT itinerary_generated_at, itinerary_summary FROM trip_plans WHERE id='merge-plan'"
+    ).fetchone()
+    assert route[0] is None
+    route_summary = json.loads(route[1])
+    assert route_summary["stale"] is True
+    assert route_summary["reason"] == "customer_merged"
+    merged_leg = conn.execute(
+        "SELECT archived_at, mode_locked FROM trip_plan_legs WHERE id = ?", (leg_id,)
+    ).fetchone()
+    assert merged_leg[0] is not None and merged_leg[1] == 0
+    assert conn.execute(
+        "SELECT COUNT(*) FROM trip_plan_legs WHERE plan_id='merge-plan' AND archived_at IS NULL"
+    ).fetchone()[0] == 0
+
     audit = conn.execute("SELECT before_json, after_json FROM audit_logs WHERE id = ?", (result["audit_id"],)).fetchone()
     before, after = json.loads(audit[0]), json.loads(audit[1])
     assert before["source_relations"]["trip_plan_stops"][0]["id"] == stop_id
@@ -228,6 +272,8 @@ def test_audit_failure_rolls_back(path: Path) -> None:
         "owner_id": ids["sales"], "sales_stage": "New",
     }, ids["sales"])
     conn = leads.conn
+    stop_id = _insert_trip_stop(conn, ids, lead_id)
+    leg_id = _seed_generated_trip_route(conn, ids, stop_id)
     conn.execute(
         """CREATE TRIGGER fail_merge_audit BEFORE INSERT ON audit_logs
            WHEN NEW.event_type = 'merge_customer'
@@ -247,6 +293,17 @@ def test_audit_failure_rolls_back(path: Path) -> None:
         raise AssertionError("Expected audit insertion to abort the merge")
     assert LeadRepository().get_by_id(lead_id)["customer_id"] == ids["source"]
     assert CustomerRepository().get_by_id(ids["source"])["archived_at"] is None
+    assert conn.execute(
+        "SELECT customer_id FROM trip_plan_stops WHERE id = ?", (stop_id,)
+    ).fetchone()[0] == ids["source"]
+    route = conn.execute(
+        "SELECT itinerary_generated_at, itinerary_summary FROM trip_plans WHERE id='merge-plan'"
+    ).fetchone()
+    assert route[0] is not None and json.loads(route[1]) == {"valid": True}
+    rolled_back_leg = conn.execute(
+        "SELECT archived_at, mode_locked FROM trip_plan_legs WHERE id = ?", (leg_id,)
+    ).fetchone()
+    assert rolled_back_leg[0] is None and rolled_back_leg[1] == 1
 
 
 def main() -> None:

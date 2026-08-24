@@ -5,10 +5,19 @@ from __future__ import annotations
 from ...coordinate_validation import validated_coordinate_payload
 from ...repositories.base import generate_uuid, now_iso
 from ..customer_service import normalize_name
+from ..trip_plan_invalidation import (
+    ROUTE_LOCATION_FIELDS,
+    invalidate_customer_route_dependencies,
+)
 from .bindings import bind, binding_id
 from .customer_matching import CREATE
 from .persistence_common import (
-    CLEAR_TOKEN, action_for, apply_archive_action, selected_fields, upsert,
+    CLEAR,
+    CLEAR_TOKEN,
+    action_for,
+    apply_archive_action,
+    selected_fields,
+    upsert,
 )
 from .persistence_json import merged_json
 from .write_aliases import write_aliases
@@ -69,7 +78,20 @@ def _upsert_customer(conn, customer_id: str, item: dict, actor_id: str) -> None:
         values["row_version"] = current["row_version"] + 1
     else:
         values.update({"created_at": now, "created_by": actor_id, "row_version": 1})
+    route_location_changed = bool(current) and any(
+        key in values
+        and current[key] != (None if values[key] is CLEAR else values[key])
+        for key in ROUTE_LOCATION_FIELDS
+    )
     upsert(conn, "customers", customer_id, values)
+    if route_location_changed:
+        invalidate_customer_route_dependencies(
+            conn,
+            [customer_id],
+            actor_id,
+            "customer_location_changed",
+            timestamp=now,
+        )
 
 
 def _exists(conn, table, row_id):

@@ -25,9 +25,12 @@
                 stopId,
                 readStopPayload(stopId)
             );
+            window.TripVisitDraft?.markClean?.(stopId);
             notify(I18n.t('Visit saved'));
-            TripPlannerModule.renderVisitExecution(State.currentTripPlan);
-            renderCurrentTripPlan();
+            // Replace only the committed card. Re-rendering the whole day would
+            // discard unsaved text and file selections on every other visit.
+            TripPlannerModule.refreshVisitCard(State.currentTripPlan, stopId);
+            window.refreshTripStopCard?.(State.currentTripPlan, stopId);
             renderTripMap();
         } catch (err) {
             console.error('Save visit execution error:', err);
@@ -74,6 +77,8 @@
             alert(I18n.t('Select a trip plan first'));
             return;
         }
+        if (window.TripBriefingDraft?.guard?.()) return;
+        if (window.TripVisitDraft?.guard?.()) return;
         try {
             const result = await ApiClient.exportTripExecution(
                 State.currentTripPlan.id,

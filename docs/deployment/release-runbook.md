@@ -1,6 +1,6 @@
 # 桌面安装包发布手册
 
-当前团队测试 / Pre-release 候选：`v0.11.9-internal`。本次只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包。源码和两项原生 CI 门禁完成前，GitHub Release 保持 Draft；门禁通过后可转为非 Draft 的 Pre-release 供团队下载。覆盖升级以 `v0.11.8-internal` 为直接基线；团队实测通过前，本候选不得标记为 Stable / Latest。
+当前团队测试候选：`v0.12.0-internal`。本次只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包，并保持为 `UNSIGNED-INTERNAL` Draft Pre-release。覆盖升级以 `v0.11.9-internal` 为直接基线；团队实测通过前，本候选不得标记为 Stable / Latest。
 
 ## 构建入口
 
@@ -24,16 +24,17 @@ GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
 1. `bash scripts/validate_v08.sh` 全部通过。
 2. 每个冻结程序通过版本一致性、`/api/health`、首次 Leader 初始化、登录、`.jptreq` 生成和经认证退出烟测。
 3. CI 必须通过 Windows 静默安装后启动/卸载烟测，以及 macOS DMG 校验、挂载后启动烟测；产物中不得出现旧用户配置、浏览器回归页面、XLSX、`.jptauth`、`.jptreq` 或业务数据库。
-4. 用实际 Windows 10/11 x64 与 Apple Silicon Mac 各完成一次安装、`Exit JPT`、重启和从 `v0.11.8-internal` 覆盖升级。
+4. 用实际 Windows 10/11 x64 与 Apple Silicon Mac 各完成一次安装、`Exit JPT`、重启和从 `v0.11.9-internal` schema 3 覆盖升级到 schema 6。
 5. 验证数据库、附件、授权密钥和签发密钥在升级后不变。
 6. 验证卸载不删除用户数据。
 7. 安装通过后再独立验证 XLSX 预检、提交、幂等更新和回滚；不得用预装数据掩盖安装问题。
 8. 独立验证来源人员映射、三角色权限边界，以及 JSON 数据包分发同步；验证 `.jptauth` 未进入 GitHub Artifact 或 Release。
    Leader 向 Sales 导出时必须选择明确接收成员，文件只含该 Sales 负责的 Lead；导入端必须拒绝写给其他成员的定向包。旧版未携带接收成员信息的 JSON 仍按记录权限逐条过滤。
 9. 使用真实或等价数据验证五类负责人业务地区、组合筛选、计划到期与长期未跟进的独立口径、客户模糊候选/预览/合并，以及地图精确/近似/缺失和离线提示。
-10. 检查 `docs/guides/` 四份 HTML 可离线打开、互相跳转、版本一致，且不包含真实客户、账号、密钥或本机路径。
+10. 检查 `docs/guides/` 五份 HTML 可离线打开、互相跳转、版本一致，且不包含真实客户、账号、密钥或本机路径。
 11. 在处理、跟进、售前/样品、成交、履约和售后页核对固定业务排序；缺失/无效日期应落在有效日期之后，同值排序在刷新后保持稳定。Tech 还须确认左侧售前/售后数字按本人 `Open / In Progress`、未归档任务对应的去重 Lead 计数；“全部任务”含已完成/已取消任务时，任务总数可大于导航数字。
-12. 正式版必须补齐 Windows 代码签名和 macOS Developer ID、Hardened Runtime、notarization、stapling；在此之前产物只能标记 `UNSIGNED-INTERNAL`。
+12. 用“上海出发并返回上海、2026-09-15 至 09-30、德国—法国—意大利”隔离场景检查 Trip Planner v2：硬日期窗、自动/手工顺序、逐段交通、人工锁定、无 Token 交通建议、自由停靠、半天日程、拜访准备、多地点路线和五种导出均一致；未保存修改或过期路线不能进入正式导出。
+13. 正式版必须补齐 Windows 代码签名和 macOS Developer ID、Hardened Runtime、notarization、stapling；在此之前产物只能标记 `UNSIGNED-INTERNAL`。
 
 ## 覆盖升级的数据保护门
 
@@ -47,7 +48,7 @@ GitHub Actions 工作流：`.github/workflows/build-installers.yml`。
 6. 任一步失败，自动从刚生成的备份恢复原数据库并停止启动；不得带病进入业务页面。
 7. 同一版本第二次启动不得重复迁移、重复创建升级备份或改写业务数据库。
 
-发布 Gate 必须同时跑 `test_safe_upgrade.py`，并保留 Windows 0.11.3、macOS 0.11.4 与 v0.11.7 schema 1 历史夹具作为旧版本兼容回归。本次 Windows x64、macOS Apple Silicon arm64 还必须执行实际 `v0.11.8 schema 3 → v0.11.9 schema 3` 原位覆盖升级：先做完整备份，再核对核心表数量、Tech 任务包表、附件哈希、授权配置、设备授权、完整性、外键及二次启动数据库哈希。由于 schema 版本不变，此直接升级不应伪造新的 `pre_upgrade` 迁移包；Windows 卸载后数据目录仍必须存在。
+发布 Gate 必须同时跑 `test_safe_upgrade.py`，并保留 Windows 0.11.3、macOS 0.11.4、v0.11.7 schema 1 与 v0.11.8 schema 3 历史夹具作为旧版本兼容回归。本次 Windows x64、macOS Apple Silicon arm64 还必须执行实际 `v0.11.9 schema 3 → v0.12.0 schema 6` 原位覆盖升级：在任何 schema 写入前自动生成并验证 `pre_upgrade_schema3_to_schema6_...zip`，再核对核心表数量、客户、Lead、任务、Tech 任务包表、附件哈希、授权配置、设备授权、完整性、外键及二次启动数据库哈希。第二次启动不得重复迁移或重复创建升级备份；Windows 卸载后数据目录仍必须存在。
 
 自动升级失败时，先保留弹窗或 `launcher.log` 证据，不要删除数据目录。完全退出 JPT 后，管理员可直接使用已安装程序的离线恢复入口，不依赖源码环境：
 

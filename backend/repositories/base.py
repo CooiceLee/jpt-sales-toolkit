@@ -22,19 +22,27 @@ from .tech_task_exchange_schema import (
     apply_tech_task_exchange_result_snapshot_schema,
     apply_tech_task_exchange_schema,
 )
+from .trip_planning_schema import (
+    apply_trip_planning_schema_v4,
+    apply_trip_planning_schema_v5,
+    apply_trip_planning_schema_v6,
+)
 
 # Database connection singleton
 _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
 _connection_init_lock = threading.RLock()
 _SQLITE_BUSY_TIMEOUT_MS = 5000
-APP_SCHEMA_VERSION = 3
+APP_SCHEMA_VERSION = 6
 APP_SCHEMA_MIGRATIONS = (
     # Historical migration numbers are immutable. Future schema versions must
     # append a new explicit tuple instead of rebinding the v1 record.
     (1, "runtime_schema_v1"),
     (2, "tech_task_exchange_v1"),
     (3, "tech_task_exchange_result_snapshot_v1"),
+    (4, "trip_plan_legs_v1"),
+    (5, "trip_plan_free_stops_v1"),
+    (6, "trip_plan_half_day_schedule_v1"),
 )
 _APP_SCHEMA_LEDGER_DDL = """
 CREATE TABLE IF NOT EXISTS app_schema_migrations (
@@ -57,6 +65,9 @@ _RUNTIME_REQUIRED_TABLES = {
     "customer_aliases",
     "trip_plans",
     "trip_plan_stops",
+    "trip_plan_legs",
+    "trip_plan_free_stops",
+    "trip_visit_briefings",
     "tech_task_exchange_batches",
     "tech_task_exchange_bindings",
 }
@@ -75,6 +86,32 @@ _RUNTIME_REQUIRED_COLUMNS = {
     "after_sales_tasks": {"customer_satisfaction", "lessons_learned", "remarks"},
     "customer_domains": {"updated_at", "updated_by", "archived_at"},
     "customer_aliases": {"updated_at", "updated_by", "archived_at"},
+    "trip_plans": {
+        "route_order_mode",
+        "transport_mode_priority",
+        "departure_window_start",
+        "departure_window_end",
+        "return_window_start",
+        "return_window_end",
+    },
+    "trip_plan_stops": {
+        "duration_half_days", "preferred_period", "planned_start_period",
+        "planned_end_period", "schedule_locked", "confirmation_status",
+    },
+    "trip_plan_free_stops": {
+        "duration_half_days", "preferred_period", "planned_start_period",
+        "planned_end_period", "schedule_locked", "confirmation_status",
+    },
+    "trip_plan_legs": {
+        "from_free_stop_id", "to_free_stop_id", "travel_half_days",
+        "manual_travel_half_days", "planned_start_date", "planned_start_period",
+        "planned_end_date", "planned_end_period",
+    },
+    "trip_visit_briefings": {
+        "stop_id", "timezone", "location_json", "customer_team_json",
+        "contacts_json", "participants_json", "channel_partner_companions_json",
+        "equipment_json", "agenda_items_json", "row_version",
+    },
 }
 _RUNTIME_REQUIRED_INDEXES = {
     "idx_pre_sales_client_request",
@@ -83,6 +120,10 @@ _RUNTIME_REQUIRED_INDEXES = {
     "idx_data_quality_issues_batch",
     "idx_tech_exchange_batches_recipient",
     "idx_tech_exchange_bindings_local",
+    "idx_trip_legs_active_key",
+    "idx_trip_legs_plan_sequence",
+    "idx_trip_free_stops_plan",
+    "idx_trip_visit_briefings_stop",
 }
 
 
@@ -248,11 +289,29 @@ def _apply_runtime_schema_v3(conn: sqlite3.Connection) -> None:
     apply_tech_task_exchange_result_snapshot_schema(conn)
 
 
+def _apply_runtime_schema_v4(conn: sqlite3.Connection) -> None:
+    """Add first-class itinerary legs and route-planning preferences."""
+    apply_trip_planning_schema_v4(conn)
+
+
+def _apply_runtime_schema_v5(conn: sqlite3.Connection) -> None:
+    """Add route stops that do not depend on customer or Lead records."""
+    apply_trip_planning_schema_v5(conn)
+
+
+def _apply_runtime_schema_v6(conn: sqlite3.Connection) -> None:
+    """Add half-day scheduling and visit-briefing contracts."""
+    apply_trip_planning_schema_v6(conn)
+
+
 def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     """Reapply every idempotent runtime step when drift is detected."""
     _apply_runtime_schema_v1(conn)
     _apply_runtime_schema_v2(conn)
     _apply_runtime_schema_v3(conn)
+    _apply_runtime_schema_v4(conn)
+    _apply_runtime_schema_v5(conn)
+    _apply_runtime_schema_v6(conn)
 
 
 def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> None:
@@ -266,6 +325,9 @@ def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> Non
             1: _apply_runtime_schema_v1,
             2: _apply_runtime_schema_v2,
             3: _apply_runtime_schema_v3,
+            4: _apply_runtime_schema_v4,
+            5: _apply_runtime_schema_v5,
+            6: _apply_runtime_schema_v6,
         }
         for version, name in APP_SCHEMA_MIGRATIONS:
             if version <= current:

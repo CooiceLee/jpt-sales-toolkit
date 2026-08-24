@@ -18,6 +18,7 @@ from backend.services.admin_service import AdminService
 from backend.repositories import APP_SCHEMA_VERSION, read_app_schema_version
 from scripts.smoke_frozen import free_port, wait_for_health
 from test_safe_upgrade import (
+    _assert_migrated_trip_state,
     _assert_integrity,
     _authorization_state,
     _counts,
@@ -25,6 +26,7 @@ from test_safe_upgrade import (
     _seed_fixture,
     _sha256,
     _tech_exchange_state,
+    _trip_planner_state,
 )
 
 
@@ -90,6 +92,7 @@ def main() -> None:
             "0.11.4-internal",
             "0.11.7-internal",
             "0.11.8-internal",
+            "0.11.9-internal",
         ),
         required=True,
     )
@@ -126,6 +129,15 @@ def main() -> None:
     assert _sha256(data_dir / "attachments" / "fixture.txt") == expected["attachment_sha"]
     assert _sha256(data_dir / "config" / "authorization_issuer.pem") == expected["config_sha"]
     assert _authorization_state(data_dir / "database.sqlite") == expected["authorization_state"]
+    if expected["tech_exchange_state"] is not None:
+        assert _tech_exchange_state(data_dir / "database.sqlite") == expected[
+            "tech_exchange_state"
+        ]
+    if expected["trip_planner_state"] is not None:
+        _assert_migrated_trip_state(
+            data_dir / "database.sqlite",
+            expected["trip_planner_state"],
+        )
     _assert_integrity(data_dir / "database.sqlite")
     backups = list((data_dir / "backups").glob("pre_upgrade_*.zip"))
     if is_current_schema:
@@ -151,6 +163,15 @@ def main() -> None:
     assert _sha256(data_dir / "database.sqlite") == first_hash
     expected_backup_count = 0 if is_current_schema else 1
     assert len(list((data_dir / "backups").glob("pre_upgrade_*.zip"))) == expected_backup_count
+    if expected["tech_exchange_state"] is not None:
+        assert _tech_exchange_state(data_dir / "database.sqlite") == expected[
+            "tech_exchange_state"
+        ]
+    if expected["trip_planner_state"] is not None:
+        _assert_migrated_trip_state(
+            data_dir / "database.sqlite",
+            expected["trip_planner_state"],
+        )
     if is_current_schema:
         assert _schema_ledger(data_dir / "database.sqlite") == expected["schema_ledger"]
         assert _tech_exchange_state(data_dir / "database.sqlite") == expected[
@@ -186,6 +207,14 @@ def main() -> None:
         "source_schema_version"
     ]
     assert _authorization_state(data_dir / "database.sqlite") == expected["authorization_state"]
+    if expected["tech_exchange_state"] is not None:
+        assert _tech_exchange_state(data_dir / "database.sqlite") == expected[
+            "tech_exchange_state"
+        ]
+    if expected["trip_planner_state"] is not None:
+        assert _trip_planner_state(data_dir / "database.sqlite") == expected[
+            "trip_planner_state"
+        ]
     _assert_integrity(data_dir / "database.sqlite")
     safety_databases = list((data_dir / "backups").glob("pre_recovery_current_*.sqlite"))
     assert len(safety_databases) == 1

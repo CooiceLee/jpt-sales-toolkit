@@ -1,6 +1,6 @@
 # 团队试运行检查表
 
-适用版本：`v0.11.9-internal`（`UNSIGNED-INTERNAL` 团队测试 / Pre-release；本次只分发 Windows 10/11 x64 与 macOS Apple Silicon arm64，覆盖升级以 `v0.11.8-internal` 为直接基线；两平台门禁和团队实测通过前不得标记为 Stable / Latest）。
+适用版本：`v0.12.0-internal`（`UNSIGNED-INTERNAL` Draft Pre-release；本次只分发 Windows 10/11 x64 与 macOS Apple Silicon arm64，覆盖升级以 `v0.11.9-internal` 为直接基线；两平台门禁和团队实测通过前不得标记为 Stable / Latest）。
 
 每个平台至少安排一名真实成员，并按顺序完成四个独立验收门。上一门未通过时，不把后续测试结果用于证明上一门可用。
 
@@ -11,8 +11,13 @@
 - [ ] Leader 首次初始化并保存签发器口令和完整备份。
 - [ ] 创建 Sales、Tech，完成 `.jptreq → .jptauth → 验证码 → 登录`。
 - [ ] 创建测试记录，执行 `Exit JPT`、重启和覆盖升级，数据仍存在。
-- [ ] 覆盖升级前已人工创建完整备份；只有 schema 迁移时才自动生成并验证 `pre_upgrade` 备份。v0.11.8 schema 3 直升 v0.11.9 schema 3 不应新增迁移包，第二次启动不改写业务数据库。
+- [ ] 覆盖升级前已人工创建完整备份；v0.11.9 schema 3 升级到 v0.12.0 schema 6 前已自动生成并验证 `pre_upgrade_schema3_to_schema6_...zip`，第二次启动不重复迁移或重复生成升级备份。
 - [ ] 卸载默认保留数据目录；备份恢复后数据库、附件和授权配置一致。
+- [ ] Trip Planner 可设置硬日期窗、中国起返地点、自动/手工顺序和交通优先级；路线超期时不能保存。
+- [ ] 每段交通可人工选择、锁定和恢复自动；无账号/Token 的近似建议与外部查询链接可查看并人工确认。
+- [ ] 客户拜访与酒店、休息、机场、中转等自由停靠可混合排序，修改停留时长后下游日期正确刷新。
+- [ ] 上午/下午日程、多地点拜访和拜访准备可保存并在重启后保留。
+- [ ] XLSX、离线 HTML、ICS、Markdown、CSV 与当前已保存路线一致；未保存修改或过期路线不能进入正式导出。
 
 ## Gate B：外部 XLSX 导入与更新
 

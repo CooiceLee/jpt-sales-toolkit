@@ -39,7 +39,7 @@
         bindOnce('review-date-to', 'change', loadDataReview);
         bindOnce('review-region', 'change', loadDataReview);
         bindOnce('review-stage', 'change', loadDataReview);
-        bindOnce('trip-region', 'change', window.resetTripPlannerFilters);
+        bindOnce('trip-candidate-region', 'change', window.resetTripPlannerFilters);
         bindOnce('trip-stage', 'change', window.resetTripPlannerFilters);
         window.FollowupFilterControls?.init();
 

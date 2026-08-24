@@ -177,6 +177,7 @@ def test_packaging_sources() -> None:
     assert "smoke_upgrade_frozen.py" in workflow
     assert "--fixture-version 0.11.7-internal" in workflow
     assert "--fixture-version 0.11.8-internal" in workflow
+    assert "--fixture-version 0.11.9-internal" in workflow
     assert "--launch-with-default-data-dir" in workflow
     assert '$env:LOCALAPPDATA = "$pwd\\isolated-localappdata"' in workflow
     assert "Uninstall removed the default user data directory" in workflow

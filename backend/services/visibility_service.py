@@ -96,4 +96,7 @@ class VisibilityService:
         return row is not None
 
     def can_access_plan(self, plan: dict, actor_id: str, actor_role: str) -> bool:
-        return actor_role == "leader" or plan.get("owner_id") == actor_id or plan.get("created_by") == actor_id
+        # Ownership is authoritative after a Leader reassigns a plan.  Treating
+        # the original creator as a permanent collaborator would make direct-ID
+        # reads/exports broader than the plan list shown to Sales users.
+        return actor_role == "leader" or plan.get("owner_id") == actor_id

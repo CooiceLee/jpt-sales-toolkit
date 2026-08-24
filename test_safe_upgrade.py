@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import tempfile
 import zipfile
@@ -28,9 +29,44 @@ CORE_TABLES = (
     "after_sales_tasks",
     "attachments",
     "device_authorizations",
+    "trip_plans",
+    "trip_plan_stops",
 )
 NOW = "2026-07-01T00:00:00"
 V0118_SCHEMA_VERSION = 3
+DEVELOPMENT_CURRENT_SCHEMA_FIXTURE = "development-current-schema"
+SCHEMA3_RELEASE_VERSIONS = {"0.11.8-internal", "0.11.9-internal"}
+
+
+def _remove_post_schema3_trip_schema(conn: sqlite3.Connection) -> None:
+    """Turn the canonical schema into the exact released schema-3 Trip shape."""
+    conn.execute("DROP TABLE IF EXISTS trip_visit_briefings")
+    conn.execute("DROP TABLE IF EXISTS trip_plan_legs")
+    conn.execute("DROP TABLE IF EXISTS trip_plan_free_stops")
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(trip_plans)")}
+    for column in (
+        "route_order_mode",
+        "transport_mode_priority",
+        "departure_window_start",
+        "departure_window_end",
+        "return_window_start",
+        "return_window_end",
+    ):
+        if column in existing:
+            conn.execute(f"ALTER TABLE trip_plans DROP COLUMN {column}")
+    stop_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(trip_plan_stops)")
+    }
+    for column in (
+        "duration_half_days",
+        "preferred_period",
+        "planned_start_period",
+        "planned_end_period",
+        "schedule_locked",
+        "confirmation_status",
+    ):
+        if column in stop_columns:
+            conn.execute(f"ALTER TABLE trip_plan_stops DROP COLUMN {column}")
 
 
 def _sha256(path: Path) -> str:
@@ -89,7 +125,7 @@ def _schema_ledger(db_path: Path) -> list[tuple]:
 
 
 def _tech_exchange_state(db_path: Path) -> dict[str, list[tuple]]:
-    """Capture v0.11.8 task-package state that a no-migration start must retain."""
+    """Capture released task-package state that an upgrade must retain."""
     conn = sqlite3.connect(str(db_path))
     try:
         return {
@@ -113,22 +149,87 @@ def _tech_exchange_state(db_path: Path) -> dict[str, list[tuple]]:
         conn.close()
 
 
+def _trip_planner_state(db_path: Path) -> dict[str, list[tuple]]:
+    """Capture route rows that existed in the v0.11.9 schema-3 release."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return {
+            "plans": conn.execute(
+                "SELECT id, title, description, owner_id, region, start_date, end_date, "
+                "origin_name, destination_name, travel_mode, avoid_weekends, status, "
+                "row_version FROM trip_plans ORDER BY id"
+            ).fetchall(),
+            "stops": conn.execute(
+                "SELECT id, plan_id, lead_id, customer_id, sequence_no, planned_date, "
+                "planned_end_date, stay_days, travel_mode, travel_distance_km, "
+                "travel_time_hours, travel_days, result_status, row_version "
+                "FROM trip_plan_stops ORDER BY id"
+            ).fetchall(),
+        }
+    finally:
+        conn.close()
+
+
+def _assert_migrated_trip_state(
+    db_path: Path,
+    expected_legacy_state: dict[str, list[tuple]],
+) -> None:
+    """Verify schema-3 route rows and their schema-6 backfill values."""
+    assert _trip_planner_state(db_path) == expected_legacy_state
+    conn = sqlite3.connect(str(db_path))
+    try:
+        plan = conn.execute(
+            "SELECT route_order_mode, transport_mode_priority, "
+            "departure_window_start, departure_window_end, "
+            "return_window_start, return_window_end "
+            "FROM trip_plans WHERE id = 'trip-plan-1'"
+        ).fetchone()
+        assert plan is not None
+        assert plan[0] == "auto"
+        assert json.loads(plan[1]) == ["drive"]
+        assert plan[2:] == (None, None, None, None)
+
+        stop = conn.execute(
+            "SELECT duration_half_days, preferred_period, planned_start_period, "
+            "planned_end_period, schedule_locked, confirmation_status "
+            "FROM trip_plan_stops WHERE id = 'trip-stop-1'"
+        ).fetchone()
+        assert stop == (4, "auto", "AM", "PM", 0, "unconfirmed")
+        assert conn.execute("SELECT COUNT(*) FROM trip_plan_legs").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM trip_plan_free_stops").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM trip_visit_briefings").fetchone()[0] == 0
+        briefing_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(trip_visit_briefings)")
+        }
+        assert "channel_partner_companions_json" in briefing_columns
+    finally:
+        conn.close()
+
+
 def _seed_fixture(data_dir: Path, source_version: str) -> dict:
     data_dir.mkdir(parents=True, exist_ok=True)
     db_path = data_dir / "database.sqlite"
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executescript((ROOT / "backend" / "schema.sql").read_text(encoding="utf-8"))
-        is_current_schema = source_version == "0.11.8-internal"
+        is_schema3_release = source_version in SCHEMA3_RELEASE_VERSIONS
+        is_v0119_schema = source_version == "0.11.9-internal"
+        is_current_schema = source_version == DEVELOPMENT_CURRENT_SCHEMA_FIXTURE
+        has_tech_exchange = is_schema3_release or is_current_schema
         # Legacy source fixtures predate the v2 task-exchange tables even
-        # though the current canonical schema contains them. The v0.11.8
-        # fixture deliberately retains the real schema-v3 tables and ledger.
-        if not is_current_schema:
+        # though the current canonical schema contains them. Released schema-3
+        # fixtures deliberately retain the real task-exchange tables and ledger.
+        if not has_tech_exchange:
             conn.execute("DROP TABLE IF EXISTS tech_task_exchange_bindings")
             conn.execute("DROP TABLE IF EXISTS tech_task_exchange_batches")
+        if is_schema3_release:
+            _remove_post_schema3_trip_schema(conn)
         source_schema_version = (
-            V0118_SCHEMA_VERSION
+            APP_SCHEMA_VERSION
             if is_current_schema
+            else V0118_SCHEMA_VERSION
+            if is_schema3_release
             else (1 if source_version == "0.11.7-internal" else 0)
         )
         if source_schema_version == 1:
@@ -138,11 +239,14 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
                 ("runtime_schema_v1", source_version, NOW),
             )
             conn.execute("PRAGMA user_version = 1")
-        elif is_current_schema:
+        elif has_tech_exchange:
             ledger_app_versions = {
                 1: "0.11.7-internal",
-                2: source_version,
-                3: source_version,
+                2: "0.11.8-internal",
+                3: "0.11.8-internal",
+                4: APP_VERSION,
+                5: APP_VERSION,
+                6: APP_VERSION,
             }
             conn.executemany(
                 "INSERT INTO app_schema_migrations "
@@ -150,10 +254,10 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
                 [
                     (version, name, ledger_app_versions[version], NOW)
                     for version, name in APP_SCHEMA_MIGRATIONS
-                    if version <= V0118_SCHEMA_VERSION
+                    if version <= source_schema_version
                 ],
             )
-            conn.execute(f"PRAGMA user_version = {V0118_SCHEMA_VERSION}")
+            conn.execute(f"PRAGMA user_version = {source_schema_version}")
         if source_version == "0.11.3-internal":
             conn.execute("DROP INDEX IF EXISTS idx_pre_sales_client_request")
             conn.execute("ALTER TABLE pre_sales_tasks DROP COLUMN client_request_id")
@@ -161,7 +265,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL)",
             ("user-1", "fixture.leader", "hash", "Fixture Leader", "leader", "GLOBAL", NOW),
         )
-        if is_current_schema:
+        if has_tech_exchange:
             conn.execute(
                 "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL)",
                 ("user-2", "fixture.tech", "tech-hash", "Fixture Tech", "tech", "GLOBAL", NOW),
@@ -173,7 +277,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "VALUES ('credential-1', ?, 'user-1', 'hash', 'legacy_sha256', 0, 1, ?, ?)",
             ("00000000-0000-0000-0000-000000000001", NOW, NOW),
         )
-        if is_current_schema:
+        if has_tech_exchange:
             conn.execute(
                 "INSERT INTO user_credentials "
                 "(id, organization_id, user_id, password_hash, password_scheme, "
@@ -213,7 +317,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "'preserve me', ?)",
             (NOW,),
         )
-        task_assignee = "user-2" if is_current_schema else "user-1"
+        task_assignee = "user-2" if has_tech_exchange else "user-1"
         conn.execute(
             "INSERT INTO pre_sales_tasks "
             "(id, lead_id, assignee_id, status, request_json, created_at, created_by, "
@@ -251,7 +355,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
             "'2027-07-01T00:00:00', 1, 'user-1', ?)",
             ("00000000-0000-0000-0000-000000000001", NOW, NOW, NOW),
         )
-        if is_current_schema:
+        if has_tech_exchange:
             conn.execute(
                 "INSERT INTO device_authorizations "
                 "(id, organization_id, user_id, device_fingerprint_hash, role, "
@@ -291,6 +395,34 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
                 "'{\"status\":\"Completed\"}', 1, ?, ?)",
                 ("00000000-0000-0000-0000-000000000001", NOW, NOW),
             )
+        if is_v0119_schema:
+            conn.execute(
+                "INSERT INTO trip_plans "
+                "(id, title, description, owner_id, region, start_date, end_date, "
+                "origin_name, origin_lat, origin_lng, destination_name, destination_lat, "
+                "destination_lng, travel_mode, avoid_weekends, holiday_dates, "
+                "itinerary_generated_at, itinerary_summary, status, created_at, "
+                "created_by, updated_at, updated_by, row_version) VALUES "
+                "('trip-plan-1', 'Existing Europe trip', 'Preserve this route', "
+                "'user-1', 'Europe', '2026-09-15', '2026-09-30', 'Shanghai Pudong', "
+                "31.1443, 121.8083, 'Shanghai Pudong', 31.1443, 121.8083, 'drive', 1, "
+                "'[]', '2026-08-18T00:00:00', 'Existing itinerary', 'Draft', ?, "
+                "'user-1', ?, 'user-1', 7)",
+                (NOW, NOW),
+            )
+            conn.execute(
+                "INSERT INTO trip_plan_stops "
+                "(id, plan_id, lead_id, customer_id, sequence_no, planned_date, "
+                "planned_end_date, stay_days, travel_from_label, "
+                "travel_mode, travel_distance_km, travel_time_hours, travel_days, "
+                "result_status, created_at, created_by, updated_at, updated_by, "
+                "row_version) VALUES "
+                "('trip-stop-1', 'trip-plan-1', 'lead-1', 'customer-1', 1, "
+                "'2026-09-18', '2026-09-19', 2, "
+                "'Shanghai Pudong', 'drive', 545.0, 6.0, 1, 'Planned', ?, "
+                "'user-1', ?, 'user-1', 5)",
+                (NOW, NOW),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -309,7 +441,8 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
         "counts": _counts(db_path),
         "authorization_state": _authorization_state(db_path),
         "schema_ledger": _schema_ledger(db_path),
-        "tech_exchange_state": _tech_exchange_state(db_path) if is_current_schema else None,
+        "tech_exchange_state": _tech_exchange_state(db_path) if has_tech_exchange else None,
+        "trip_planner_state": _trip_planner_state(db_path) if is_v0119_schema else None,
         "source_schema_version": source_schema_version,
         "attachment_sha": _sha256(attachment_path),
         "config_sha": _sha256(config_path),
@@ -317,12 +450,12 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
 
 
 def test_current_schema_fixture() -> None:
-    """A v0.11.8 schema-v3 profile starts unchanged and without a backup."""
-    assert APP_SCHEMA_VERSION == V0118_SCHEMA_VERSION
+    """A current development profile starts unchanged and without a backup."""
+    assert APP_SCHEMA_VERSION == 6
     close_db()
-    with tempfile.TemporaryDirectory(prefix="jpt_0.11.8-internal_") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="jpt_schema6_current_") as temp_dir:
         data_dir = Path(temp_dir) / "data"
-        expected = _seed_fixture(data_dir, "0.11.8-internal")
+        expected = _seed_fixture(data_dir, DEVELOPMENT_CURRENT_SCHEMA_FIXTURE)
         settings = init_settings(Path(temp_dir) / "app")
         settings.data_dir = data_dir
         settings.db_path = data_dir / "database.sqlite"
@@ -392,6 +525,11 @@ def test_upgrade_fixture(source_version: str) -> None:
         assert _sha256(data_dir / "attachments" / "fixture.txt") == expected["attachment_sha"]
         assert _sha256(data_dir / "config" / "authorization_issuer.pem") == expected["config_sha"]
         assert _authorization_state(settings.db_path) == expected["authorization_state"]
+        if expected["trip_planner_state"] is not None:
+            _assert_migrated_trip_state(
+                settings.db_path,
+                expected["trip_planner_state"],
+            )
         _assert_integrity(settings.db_path)
         conn = sqlite3.connect(str(settings.db_path))
         try:
@@ -404,12 +542,15 @@ def test_upgrade_fixture(source_version: str) -> None:
             assert exchange_tables == {
                 "tech_task_exchange_batches", "tech_task_exchange_bindings"
             }
-            assert conn.execute(
-                "SELECT COUNT(*) FROM tech_task_exchange_batches"
-            ).fetchone()[0] == 0
-            assert conn.execute(
-                "SELECT COUNT(*) FROM tech_task_exchange_bindings"
-            ).fetchone()[0] == 0
+            if expected["tech_exchange_state"] is None:
+                assert conn.execute(
+                    "SELECT COUNT(*) FROM tech_task_exchange_batches"
+                ).fetchone()[0] == 0
+                assert conn.execute(
+                    "SELECT COUNT(*) FROM tech_task_exchange_bindings"
+                ).fetchone()[0] == 0
+            else:
+                assert _tech_exchange_state(settings.db_path) == expected["tech_exchange_state"]
             binding_columns = {
                 row[1] for row in conn.execute(
                     "PRAGMA table_info(tech_task_exchange_bindings)"
@@ -443,6 +584,11 @@ def test_upgrade_fixture(source_version: str) -> None:
         assert second.migrated is False and second.backup_path is None
         assert first_hash == second_hash
         assert len(list(settings.backup_dir.glob("pre_upgrade_*.zip"))) == backup_count
+        if expected["trip_planner_state"] is not None:
+            _assert_migrated_trip_state(
+                settings.db_path,
+                expected["trip_planner_state"],
+            )
 
         # A current ledger with missing required schema is treated as a repair
         # migration and still receives a pre-write backup.
@@ -450,7 +596,9 @@ def test_upgrade_fixture(source_version: str) -> None:
         try:
             conn.executescript(
                 "DROP TABLE data_quality_issues; "
-                "DROP TABLE import_bindings; DROP TABLE import_batches;"
+                "DROP TABLE import_bindings; DROP TABLE import_batches; "
+                "ALTER TABLE trip_visit_briefings "
+                "DROP COLUMN channel_partner_companions_json;"
             )
         finally:
             conn.close()
@@ -472,7 +620,34 @@ def test_upgrade_fixture(source_version: str) -> None:
         finally:
             conn.close()
         assert {"import_batches", "import_bindings", "data_quality_issues"} <= names
+        conn = sqlite3.connect(str(settings.db_path))
+        try:
+            briefing_columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(trip_visit_briefings)")
+            }
+        finally:
+            conn.close()
+        assert "channel_partner_companions_json" in briefing_columns
         assert _counts(settings.db_path) == expected["counts"]
+        if expected["trip_planner_state"] is not None:
+            close_db()
+            service = AdminService(data_dir=data_dir)
+            recovered = service.restore_database_from_backup(
+                result.backup_path,
+                preserve_current=True,
+            )
+            safety_db = Path(recovered["safety_database"])
+            assert safety_db.is_file()
+            _assert_integrity(safety_db)
+            assert read_app_schema_version(settings.db_path) == V0118_SCHEMA_VERSION
+            assert _counts(settings.db_path) == expected["counts"]
+            assert _authorization_state(settings.db_path) == expected["authorization_state"]
+            assert _tech_exchange_state(settings.db_path) == expected["tech_exchange_state"]
+            assert _trip_planner_state(settings.db_path) == expected["trip_planner_state"]
+            assert _sha256(data_dir / "attachments" / "fixture.txt") == expected["attachment_sha"]
+            assert _sha256(data_dir / "config" / "authorization_issuer.pem") == expected["config_sha"]
+            _assert_integrity(settings.db_path)
 
 
 def test_failed_migration_restores_original() -> None:
@@ -735,11 +910,12 @@ def test_full_restore_aborts_when_pre_restore_backup_fails() -> None:
 def main() -> None:
     for source_version in (
         "0.11.3-internal", "0.11.4-internal", "0.11.7-internal",
+        "0.11.8-internal", "0.11.9-internal",
     ):
         test_upgrade_fixture(source_version)
         print(f"PASS: {source_version} upgrade fixture")
     test_current_schema_fixture()
-    print("PASS: 0.11.8 schema-v3 no-migration fixture")
+    print("PASS: schema-v6 no-migration fixture")
     test_failed_migration_restores_original()
     print("PASS: failed migration restores validated original database")
     test_manual_recovery_is_scoped_and_preserves_current_database()

@@ -521,6 +521,14 @@ CREATE TABLE IF NOT EXISTS trip_plans (
     destination_lat REAL,
     destination_lng REAL,
     travel_mode TEXT NOT NULL DEFAULT 'auto',
+    route_order_mode TEXT NOT NULL DEFAULT 'auto' CHECK (
+        route_order_mode IN ('auto', 'manual')
+    ),
+    transport_mode_priority TEXT NOT NULL DEFAULT '["flight","drive","ground_public"]',
+    departure_window_start TEXT,
+    departure_window_end TEXT,
+    return_window_start TEXT,
+    return_window_end TEXT,
     avoid_weekends INTEGER NOT NULL DEFAULT 1,
     holiday_dates TEXT,
     itinerary_generated_at TEXT,
@@ -546,6 +554,21 @@ CREATE TABLE IF NOT EXISTS trip_plan_stops (
     planned_date TEXT,
     planned_end_date TEXT,
     stay_days INTEGER NOT NULL DEFAULT 1,
+    duration_half_days INTEGER NOT NULL DEFAULT 2 CHECK (
+        duration_half_days BETWEEN 1 AND 60
+    ),
+    preferred_period TEXT NOT NULL DEFAULT 'auto' CHECK (
+        preferred_period IN ('auto', 'AM', 'PM')
+    ),
+    planned_start_period TEXT CHECK (planned_start_period IN ('AM', 'PM')),
+    planned_end_period TEXT CHECK (planned_end_period IN ('AM', 'PM')),
+    schedule_locked INTEGER NOT NULL DEFAULT 0 CHECK (schedule_locked IN (0, 1)),
+    confirmation_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
+        confirmation_status IN (
+            'unconfirmed', 'tentative', 'confirmed',
+            'needs_reconfirmation', 'cancelled'
+        )
+    ),
     travel_from_label TEXT,
     travel_mode TEXT,
     travel_distance_km REAL,
@@ -572,6 +595,112 @@ CREATE TABLE IF NOT EXISTS trip_plan_stops (
     followup_activity_id TEXT REFERENCES lead_activities(id),
     result_activity_id TEXT REFERENCES lead_activities(id),
     archived_at TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    row_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS trip_plan_free_stops (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    category TEXT NOT NULL CHECK (
+        category IN ('rest', 'hotel', 'airport', 'transit', 'meal', 'other')
+    ),
+    location_name TEXT NOT NULL,
+    address TEXT,
+    city TEXT,
+    country TEXT,
+    lat REAL NOT NULL CHECK (lat >= -90 AND lat <= 90),
+    lng REAL NOT NULL CHECK (lng >= -180 AND lng <= 180),
+    sequence_no INTEGER NOT NULL DEFAULT 1,
+    planned_date TEXT,
+    planned_end_date TEXT,
+    stay_days INTEGER NOT NULL DEFAULT 1 CHECK (stay_days >= 1 AND stay_days <= 30),
+    duration_half_days INTEGER NOT NULL DEFAULT 2 CHECK (
+        duration_half_days BETWEEN 1 AND 60
+    ),
+    preferred_period TEXT NOT NULL DEFAULT 'auto' CHECK (
+        preferred_period IN ('auto', 'AM', 'PM')
+    ),
+    planned_start_period TEXT CHECK (planned_start_period IN ('AM', 'PM')),
+    planned_end_period TEXT CHECK (planned_end_period IN ('AM', 'PM')),
+    schedule_locked INTEGER NOT NULL DEFAULT 0 CHECK (schedule_locked IN (0, 1)),
+    confirmation_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
+        confirmation_status IN (
+            'unconfirmed', 'tentative', 'confirmed',
+            'needs_reconfirmation', 'cancelled'
+        )
+    ),
+    travel_from_label TEXT,
+    travel_mode TEXT,
+    travel_distance_km REAL,
+    travel_time_hours REAL,
+    travel_days INTEGER,
+    visit_purpose TEXT,
+    notes TEXT,
+    archived_at TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    row_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS trip_plan_legs (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    leg_key TEXT NOT NULL,
+    sequence_no INTEGER NOT NULL,
+    from_kind TEXT NOT NULL CHECK (from_kind IN ('origin', 'stop')),
+    from_stop_id TEXT REFERENCES trip_plan_stops(id),
+    from_free_stop_id TEXT REFERENCES trip_plan_free_stops(id),
+    from_label TEXT,
+    to_kind TEXT NOT NULL CHECK (to_kind IN ('stop', 'destination')),
+    to_stop_id TEXT REFERENCES trip_plan_stops(id),
+    to_free_stop_id TEXT REFERENCES trip_plan_free_stops(id),
+    to_label TEXT,
+    selected_mode TEXT NOT NULL CHECK (
+        selected_mode IN ('flight', 'drive', 'ground_public', 'other')
+    ),
+    mode_locked INTEGER NOT NULL DEFAULT 0 CHECK (mode_locked IN (0, 1)),
+    distance_km REAL NOT NULL DEFAULT 0 CHECK (distance_km >= 0),
+    time_hours REAL NOT NULL DEFAULT 0 CHECK (time_hours >= 0),
+    travel_days INTEGER NOT NULL DEFAULT 0 CHECK (travel_days >= 0),
+    travel_half_days INTEGER NOT NULL DEFAULT 0 CHECK (
+        travel_half_days BETWEEN 0 AND 60
+    ),
+    manual_distance_km REAL CHECK (manual_distance_km >= 0),
+    manual_time_hours REAL CHECK (manual_time_hours >= 0),
+    manual_travel_days INTEGER CHECK (manual_travel_days >= 0),
+    manual_travel_half_days INTEGER CHECK (
+        manual_travel_half_days BETWEEN 0 AND 60
+    ),
+    planned_start_date TEXT,
+    planned_start_period TEXT CHECK (planned_start_period IN ('AM', 'PM')),
+    planned_end_date TEXT,
+    planned_end_period TEXT CHECK (planned_end_period IN ('AM', 'PM')),
+    notes TEXT,
+    archived_at TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    row_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS trip_visit_briefings (
+    id TEXT PRIMARY KEY,
+    stop_id TEXT NOT NULL UNIQUE REFERENCES trip_plan_stops(id),
+    timezone TEXT,
+    location_json TEXT NOT NULL DEFAULT '{}',
+    customer_team_json TEXT NOT NULL DEFAULT '[]',
+    contacts_json TEXT NOT NULL DEFAULT '[]',
+    participants_json TEXT NOT NULL DEFAULT '[]',
+    channel_partner_companions_json TEXT NOT NULL DEFAULT '[]',
+    equipment_json TEXT NOT NULL DEFAULT '[]',
+    agenda_items_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     created_by TEXT REFERENCES users(id),
     updated_at TEXT NOT NULL,
@@ -650,3 +779,11 @@ CREATE INDEX IF NOT EXISTS idx_trip_plans_owner ON trip_plans(owner_id, status);
 CREATE INDEX IF NOT EXISTS idx_trip_stops_plan ON trip_plan_stops(plan_id, sequence_no);
 CREATE INDEX IF NOT EXISTS idx_trip_stops_customer ON trip_plan_stops(customer_id);
 CREATE INDEX IF NOT EXISTS idx_trip_stops_lead ON trip_plan_stops(lead_id);
+CREATE INDEX IF NOT EXISTS idx_trip_free_stops_plan
+    ON trip_plan_free_stops(plan_id, archived_at, sequence_no);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_legs_active_key
+    ON trip_plan_legs(plan_id, leg_key) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_trip_legs_plan_sequence
+    ON trip_plan_legs(plan_id, archived_at, sequence_no);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_visit_briefings_stop
+    ON trip_visit_briefings(stop_id);

@@ -16,6 +16,12 @@ from .customer_merge_verification import (
     guard_source_identity,
     write_audit,
 )
+from .trip_plan_invalidation import (
+    ROUTE_LOCATION_FIELDS,
+    clear_locked_overrides_for_stops,
+    invalidate_trip_plan_ids,
+    route_dependencies_for_customers,
+)
 
 
 class CustomerMergeService:
@@ -39,6 +45,17 @@ class CustomerMergeService:
             preview = self.previewer.build(source_id, target_id, source_version, target_version)
             guard_source_identity(self.conn, preview)
             now = now_iso()
+            source_dependencies = route_dependencies_for_customers(
+                self.conn, [source_id]
+            )
+            target_location_changes = ROUTE_LOCATION_FIELDS.intersection(
+                preview["field_updates"]
+            )
+            target_dependencies = (
+                route_dependencies_for_customers(self.conn, [target_id])
+                if target_location_changes
+                else {"stop_ids": [], "plan_ids": []}
+            )
             leads = self._move_leads(source_id, target_id, actor_id, now)
             stops = self._move_stops(source_id, target_id, actor_id, now)
             contacts = merge_contacts(self.conn, source_id, target_id, now)
@@ -47,6 +64,24 @@ class CustomerMergeService:
                 self.conn, preview["source_customer"], preview["target_customer"], now, actor_id,
             )
             self._update_customers(preview, actor_id, now, source_version, target_version)
+            affected_stop_ids = {
+                *source_dependencies["stop_ids"],
+                *target_dependencies["stop_ids"],
+            }
+            affected_plan_ids = {
+                *source_dependencies["plan_ids"],
+                *target_dependencies["plan_ids"],
+            }
+            clear_locked_overrides_for_stops(
+                self.conn, affected_stop_ids, actor_id, now
+            )
+            invalidate_trip_plan_ids(
+                self.conn,
+                affected_plan_ids,
+                actor_id,
+                "customer_merged",
+                timestamp=now,
+            )
             assert_postconditions(self.conn, source_id, target_id, preview)
             result = build_result(preview, leads, stops, contacts, domains, aliases)
             audit_id = write_audit(self.conn, target_id, actor_id, preview, result, now)

@@ -8,7 +8,7 @@ async function handleTripError(err, action) {
     }
     alert(I18n.t('Error {action}: {error}', {
         action: I18n.t(action),
-        error: I18n.t(err.message || 'Unknown error')
+        error: TripCandidateState.friendlyError(err)
     }));
 }
 
@@ -18,20 +18,20 @@ function renderTripCandidates() {
     const pagination = State.tripCandidatePagination || {};
     if (!container) return;
     if (!candidates.length) {
-        container.innerHTML = '<div class="empty-state compact">No candidates match current filters</div>';
+        container.innerHTML = `<div class="empty-state compact">${escapeHtml(I18n.t('No candidates match current filters'))}</div>`;
         return;
     }
     container.innerHTML = `
         <table class="data-table compact-table">
             <thead>
                 <tr>
-                    <th>Customer</th>
-                    <th>Location</th>
-                    <th>Score</th>
-                    <th>Open</th>
-                    <th>Value</th>
-                    <th>Reasons</th>
-                    <th>Actions</th>
+                    <th>${escapeHtml(I18n.t('Customer'))}</th>
+                    <th>${escapeHtml(I18n.t('Location'))}</th>
+                    <th>${escapeHtml(I18n.t('Score'))}</th>
+                    <th>${escapeHtml(I18n.t('Open'))}</th>
+                    <th>${escapeHtml(I18n.t('Value'))}</th>
+                    <th>${escapeHtml(I18n.t('Reasons'))}</th>
+                    <th>${escapeHtml(I18n.t('Actions'))}</th>
                 </tr>
             </thead>
             <tbody>
@@ -45,19 +45,27 @@ function renderTripCandidates() {
                         <td><span class="score-pill">${escapeHtml(item.score)}</span></td>
                         <td>${item.open_count || 0}</td>
                         <td>${escapeHtml(formatMoney(item.pipeline_value || item.won_value || 0))}</td>
-                        <td>${escapeHtml((item.reasons || []).join(', ') || '-')}</td>
-                        <td>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="focusTripCandidate(${index})">Map</button>
-                            <button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">Add</button>
+                        <td>${escapeHtml((item.reasons || []).map(reason => I18n.t(reason)).join(', ') || '-')}</td>
+                        <td class="trip-candidate-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="focusTripCandidate(${index})">${escapeHtml(I18n.t('Map'))}</button>
+                            ${TripCandidateState.hasExactCoordinates(item) ? `
+                                <button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add'))}</button>
+                            ` : `
+                                <button type="button" class="btn btn-primary btn-sm" disabled title="${escapeHtml(I18n.t('Add precise coordinates before adding this customer.'))}">${escapeHtml(I18n.t('Add'))}</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="openTripCandidateCoordinateReview(${index})">${escapeHtml(I18n.t('Coordinate Review'))}</button>
+                            `}
                         </td>
                     </tr>
                 `).join('')}
             </tbody>
         </table>
         <div class="trip-pagination">
-            <span>Showing ${candidates.length} of ${pagination.total || candidates.length}</span>
+            <span>${escapeHtml(I18n.t('Showing {shown} of {total}', {
+                shown: candidates.length,
+                total: pagination.total || candidates.length
+            }))}</span>
             <button type="button" class="btn btn-secondary btn-sm" onclick="loadMoreTripCandidates()" ${pagination.has_more ? '' : 'disabled'}>
-                Load more
+                ${escapeHtml(I18n.t('Load more'))}
             </button>
         </div>
     `;

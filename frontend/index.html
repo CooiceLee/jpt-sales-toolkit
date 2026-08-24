@@ -670,7 +670,7 @@
                 <div id="module-trip-planner" class="module">
                     <h1 class="module-title">Trip Planner</h1>
                     <div class="filters-bar">
-                        <select class="filter-select" id="trip-region" title="Customer geographic region" aria-label="Customer geographic region">
+                        <select class="filter-select" id="trip-candidate-region" title="Candidate customer region" aria-label="Candidate customer region">
                             <option value="">All regions</option>
                             <option value="EU">Europe</option>
                             <option value="AM">North America / Canada / Australia</option>
@@ -705,7 +705,34 @@
                                         <input type="date" class="form-input" id="trip-start-date">
                                         <input type="date" class="form-input" id="trip-end-date">
                                     </div>
+                                    <select class="form-input" id="trip-plan-region" title="Plan region" aria-label="Plan region">
+                                        <option value="">Plan region (optional)</option>
+                                        <option value="EU">Europe</option>
+                                        <option value="AM">North America / Canada / Australia</option>
+                                        <option value="RIMEA">Russia / Turkey / Middle East</option>
+                                        <option value="SEA">Southeast Asia</option>
+                                    </select>
                                     <div class="trip-route-grid">
+                                        <label class="trip-field-label">
+                                            <span>China departure location</span>
+                                            <select class="form-input" id="trip-origin-preset" onchange="TripTransportActions.hubChanged('origin', this.value)">
+                                                <option value="custom">Custom location</option>
+                                                <option value="PVG">Shanghai Pudong (PVG)</option>
+                                                <option value="PEK">Beijing Capital (PEK)</option>
+                                                <option value="CAN">Guangzhou Baiyun (CAN)</option>
+                                                <option value="SZX">Shenzhen Bao'an (SZX)</option>
+                                            </select>
+                                        </label>
+                                        <label class="trip-field-label">
+                                            <span>Return to China location</span>
+                                            <select class="form-input" id="trip-destination-preset" onchange="TripTransportActions.hubChanged('destination', this.value)">
+                                                <option value="custom">Custom location</option>
+                                                <option value="PVG">Shanghai Pudong (PVG)</option>
+                                                <option value="PEK">Beijing Capital (PEK)</option>
+                                                <option value="CAN">Guangzhou Baiyun (CAN)</option>
+                                                <option value="SZX">Shenzhen Bao'an (SZX)</option>
+                                            </select>
+                                        </label>
                                         <input type="text" class="form-input" id="trip-origin-name" placeholder="Origin">
                                         <input type="text" class="form-input" id="trip-destination-name" placeholder="Destination">
                                         <input type="number" step="0.000001" class="form-input" id="trip-origin-lat" placeholder="Origin lat">
@@ -714,19 +741,38 @@
                                         <input type="number" step="0.000001" class="form-input" id="trip-destination-lng" placeholder="Destination lng">
                                     </div>
                                     <div class="trip-date-row">
-                                        <select class="form-input" id="trip-travel-mode">
-                                            <option value="auto">Auto transport</option>
-                                            <option value="drive">Drive</option>
-                                            <option value="ground_public">Ground public</option>
-                                            <option value="flight">Flight</option>
+                                        <select class="form-input" id="trip-route-order-mode" onchange="TripTransportActions.routeModeChanged(this.value)">
+                                            <option value="auto">Automatic stop order</option>
+                                            <option value="manual">Keep manual stop order</option>
                                         </select>
                                         <label class="trip-check">
                                             <input type="checkbox" id="trip-avoid-weekends" checked>
                                             <span>Skip weekends</span>
                                         </label>
                                     </div>
+                                    <input type="hidden" id="trip-travel-mode" value="auto">
+                                    <div class="trip-subsection">
+                                        <div class="trip-subsection-title">Allowed transport and priority</div>
+                                        <div id="trip-transport-priority"></div>
+                                        <small class="trip-form-help">Search current travel options, then review a result before adding it to the route.</small>
+                                    </div>
+                                    <div class="trip-subsection">
+                                        <div class="trip-subsection-title">China departure window</div>
+                                        <div class="trip-date-row">
+                                            <label class="trip-field-label"><span>From</span><input type="datetime-local" class="form-input" id="trip-departure-window-start" onchange="TripTransportActions.headerChanged()"></label>
+                                            <label class="trip-field-label"><span>To</span><input type="datetime-local" class="form-input" id="trip-departure-window-end" onchange="TripTransportActions.headerChanged()"></label>
+                                        </div>
+                                    </div>
+                                    <div class="trip-subsection">
+                                        <div class="trip-subsection-title">Return to China window</div>
+                                        <div class="trip-date-row">
+                                            <label class="trip-field-label"><span>From</span><input type="datetime-local" class="form-input" id="trip-return-window-start" onchange="TripTransportActions.headerChanged()"></label>
+                                            <label class="trip-field-label"><span>To</span><input type="datetime-local" class="form-input" id="trip-return-window-end" onchange="TripTransportActions.headerChanged()"></label>
+                                        </div>
+                                    </div>
                                     <input type="text" class="form-input" id="trip-holidays" placeholder="Holidays: 2026-05-01, 2026-10-01">
                                     <textarea class="form-input" id="trip-description" rows="3" placeholder="Planning notes"></textarea>
+                                    <div id="trip-draft-status" class="trip-draft-status" role="status" aria-live="polite"></div>
                                     <div class="trip-action-row">
                                         <button type="button" class="btn btn-secondary" onclick="previewCurrentTripItinerary()">Preview route</button>
                                         <button type="button" class="btn btn-primary" onclick="generateCurrentTripItinerary()">Save route</button>
@@ -736,11 +782,114 @@
                             </div>
                             <div class="review-panel">
                                 <div class="card-title">Selected Stops</div>
-                                <div id="trip-current-plan"></div>
-                                <div class="trip-export-actions">
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="exportCurrentTripPlan('md')">Markdown</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="exportCurrentTripPlan('csv')">CSV</button>
+                                <div class="trip-free-stop-tools">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="trip-add-free-stop"
+                                        aria-controls="trip-free-stop-editor" aria-expanded="false" onclick="TripFreeStopForm.open()">+ Add personal stop</button>
+                                    <small>Rest, hotel, airport, transit, meal, or another non-customer stop.</small>
                                 </div>
+                                <section id="trip-free-stop-editor" class="trip-free-stop-editor" hidden aria-labelledby="trip-free-stop-editor-title">
+                                    <div class="trip-free-stop-editor-head">
+                                        <strong id="trip-free-stop-editor-title">Add personal stop</strong>
+                                        <button type="button" class="trip-free-stop-close" onclick="TripFreeStopForm.close()" aria-label="Close">&times;</button>
+                                    </div>
+                                    <input type="hidden" id="trip-free-stop-id">
+                                    <input type="hidden" id="trip-free-stop-row-version">
+                                    <div class="trip-free-stop-grid">
+                                        <label class="trip-field-label"><span>Stop type</span><select class="form-input" id="trip-free-stop-category">
+                                            <option value="rest">Rest</option><option value="hotel">Hotel</option>
+                                            <option value="airport">Airport</option><option value="transit">Transit</option>
+                                            <option value="meal">Meal</option><option value="other">Other</option>
+                                        </select></label>
+                                        <label class="trip-field-label"><span>Stop duration (days)</span><input type="number" min="0.5" max="30" step="0.5" value="1" class="form-input" id="trip-free-stop-stay" data-stop-duration-half-days></label>
+                                    </div>
+                                    <small class="trip-form-help">Enter 0.5, 1, 1.5 days, and so on.</small>
+                                    <label class="trip-field-label"><span>Location name</span><input type="text" class="form-input" id="trip-free-stop-name" maxlength="200" placeholder="Hotel, airport, rest day..."></label>
+                                    <label class="trip-field-label"><span>Address</span><input type="text" class="form-input" id="trip-free-stop-address" maxlength="500" placeholder="Street, building, or station"></label>
+                                    <div class="trip-free-stop-grid">
+                                        <label class="trip-field-label"><span>City</span><input type="text" class="form-input" id="trip-free-stop-city" maxlength="120"></label>
+                                        <label class="trip-field-label"><span>Country</span><input type="text" class="form-input" id="trip-free-stop-country" maxlength="120"></label>
+                                    </div>
+                                    <div class="trip-free-stop-locate-row">
+                                        <input type="text" class="form-input" id="trip-free-stop-postal" maxlength="40" placeholder="Postal Code">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="trip-free-stop-geocode" onclick="TripFreeStopActions.searchPosition()">Find location</button>
+                                    </div>
+                                    <small class="trip-form-help">Location fields are sent to configured external geocoding services only when you click Find location. Use this only for data approved for external processing.</small>
+                                    <div id="trip-free-stop-geocode-status" class="trip-free-stop-status" role="status" aria-live="polite"></div>
+                                    <div id="trip-free-stop-geocode-candidates" class="trip-free-stop-candidates" role="listbox" aria-label="Location candidates"></div>
+                                    <div class="trip-free-stop-grid">
+                                        <label class="trip-field-label"><span>Latitude</span><input type="number" min="-90" max="90" step="0.000001" class="form-input" id="trip-free-stop-lat"></label>
+                                        <label class="trip-field-label"><span>Longitude</span><input type="number" min="-180" max="180" step="0.000001" class="form-input" id="trip-free-stop-lng"></label>
+                                    </div>
+                                    <small class="trip-form-help">Choose a search result or enter exact coordinates. Route calculation requires a confirmed location.</small>
+                                    <label class="trip-field-label"><span>Purpose</span><input type="text" class="form-input" id="trip-free-stop-purpose" maxlength="500" placeholder="Rest, transfer, meal, preparation..."></label>
+                                    <div class="trip-free-stop-grid">
+                                        <label class="trip-field-label"><span>Preferred period</span><select class="form-input" id="trip-free-stop-period">
+                                            <option value="auto">Automatic</option><option value="AM">Morning (AM)</option><option value="PM">Afternoon (PM)</option>
+                                        </select></label>
+                                        <label class="trip-field-label"><span>Confirmation status</span><select class="form-input" id="trip-free-stop-confirmation">
+                                            <option value="unconfirmed">Unconfirmed</option><option value="tentative">Tentative</option>
+                                            <option value="confirmed">Confirmed</option><option value="needs_reconfirmation">Needs reconfirmation</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select></label>
+                                    </div>
+                                    <label class="trip-field-label"><span>Notes</span><textarea class="form-input" rows="2" id="trip-free-stop-notes" maxlength="2000"></textarea></label>
+                                    <div id="trip-free-stop-draft-status" class="trip-free-stop-draft-status" role="status" aria-live="polite"></div>
+                                    <div class="trip-action-row">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="TripFreeStopForm.close()">Cancel</button>
+                                        <button type="button" class="btn btn-primary btn-sm" id="trip-free-stop-save" onclick="TripFreeStopActions.save()">Save stop</button>
+                                    </div>
+                                </section>
+                                <details class="trip-leg-panel" open>
+                                    <summary><span>Route legs</span><span id="trip-leg-count"></span></summary>
+                                    <div class="trip-suggestion-toolbar">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="trip-suggest-route" onclick="TripSuggestionActions.searchRoute()">Search travel options</button>
+                                        <span id="trip-suggestion-status" role="status" aria-live="polite"></span>
+                                    </div>
+                                    <div id="trip-leg-list"></div>
+                                </details>
+                                <div id="trip-current-plan"></div>
+                                <section class="trip-export-panel" aria-labelledby="trip-export-title">
+                                    <div class="trip-export-heading">
+                                        <div>
+                                            <div class="trip-export-kicker">Trip files</div>
+                                            <h3 id="trip-export-title">Share your itinerary</h3>
+                                            <p>Choose the file that fits how your team will use the trip plan.</p>
+                                        </div>
+                                        <span class="trip-export-check" aria-hidden="true">&#10003;</span>
+                                    </div>
+                                    <div class="trip-export-grid">
+                                        <button type="button" class="trip-export-option" data-trip-export-format="xlsx"
+                                            onclick="exportCurrentTripPlan('xlsx')">
+                                            <span class="trip-export-filetype">XLSX</span>
+                                            <span><strong>Excel itinerary</strong><small>Share, review and add notes with your team.</small></span>
+                                            <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                        </button>
+                                        <button type="button" class="trip-export-option" data-trip-export-format="html"
+                                            onclick="exportCurrentTripPlan('html')">
+                                            <span class="trip-export-filetype">HTML</span>
+                                            <span><strong>Web itinerary</strong><small>Open offline in a browser or print a clean copy.</small></span>
+                                            <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                        </button>
+                                        <button type="button" class="trip-export-option" data-trip-export-format="ics"
+                                            onclick="exportCurrentTripPlan('ics')">
+                                            <span class="trip-export-filetype">ICS</span>
+                                            <span><strong>Add to calendar</strong><small>Import each day and half-day arrangement into your calendar.</small></span>
+                                            <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                        </button>
+                                    </div>
+                                    <div id="trip-export-status" class="trip-export-status" role="status" aria-live="polite">
+                                        Select a saved itinerary to download.
+                                    </div>
+                                    <details class="trip-export-other">
+                                        <summary>Other formats</summary>
+                                        <div class="trip-export-actions">
+                                            <button type="button" class="btn btn-secondary btn-sm" data-trip-export-format="md"
+                                                onclick="exportCurrentTripPlan('md')">Markdown</button>
+                                            <button type="button" class="btn btn-secondary btn-sm" data-trip-export-format="csv"
+                                                onclick="exportCurrentTripPlan('csv')">CSV</button>
+                                        </div>
+                                    </details>
+                                </section>
                             </div>
                             <div class="review-panel">
                                 <div class="card-title">Visit Execution</div>
@@ -748,6 +897,19 @@
                             </div>
                         </aside>
                     </div>
+                    <section id="trip-schedule-panel" class="review-panel trip-schedule-panel" aria-labelledby="trip-schedule-title">
+                        <div class="trip-schedule-heading">
+                            <div>
+                                <div class="card-title" id="trip-schedule-title">Daily Schedule</div>
+                                <small>Review customer visits, personal stops and travel legs by morning or afternoon.</small>
+                            </div>
+                            <span id="trip-schedule-status" class="trip-schedule-status" role="status" aria-live="polite"></span>
+                        </div>
+                        <div class="trip-schedule-workspace">
+                            <div id="trip-schedule-list" class="trip-schedule-list"></div>
+                            <aside id="trip-briefing-editor" class="trip-briefing-editor" hidden aria-label="Customer visit preparation"></aside>
+                        </div>
+                    </section>
                 </div>
 
                 <!-- Coordinate Review Module -->
@@ -1107,13 +1269,38 @@
     <script src="/static/js/modules/data-review.js?v=1.0"></script>
 
     <!-- Trip planning -->
+    <script src="/static/js/modules/trip-china-hubs.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-duration.js?v=1.0"></script>
     <script src="/static/js/modules/trip-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-form-compat.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-suggestion-state.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-planning-draft.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-suggestion-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-suggestion-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-transport-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-leg-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-transport-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-route-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-candidate-state.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidates-list.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidates-map.js?v=1.0"></script>
     <script src="/static/js/modules/trip-plans.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-schedule-controls.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-draft.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-rows.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-schedule-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-schedule-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-export-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-removal-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-free-stop-draft.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-free-stop-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-free-stop-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-loader.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-visit-draft.js?v=1.0"></script>
     <script src="/static/js/modules/trip-visit-state.js?v=1.0"></script>
     <script src="/static/js/modules/trip-planner.js?v=1.1"></script>
     <script src="/static/js/modules/trip-visit-actions.js?v=1.0"></script>

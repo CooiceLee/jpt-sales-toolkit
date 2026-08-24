@@ -24,6 +24,14 @@ from .country_service import CountryService
 from .review_analysis_service import ReviewAnalysisService
 from .review_map_service import ReviewMapService
 from .review_utils import clean_stay_days, csv_cell, finite_float, md_cell, num, parse_date, parse_holiday_dates
+from .trip_leg_contract import (
+    normalize_overrides,
+    normalize_priority,
+    validate_route_order_mode,
+    validate_stop_order,
+    validate_time_windows,
+)
+from .trip_leg_engine import build_leg, select_mode
 from .trip_plan_service import TripPlanService
 from .visibility_service import VisibilityService
 
@@ -44,7 +52,7 @@ TRIP_SCORE_WEIGHTS = {
     "coordinate_review_penalty": 8,
 }
 
-TRIP_TRAVEL_MODES = {"auto", "drive", "ground_public", "flight"}
+TRIP_TRAVEL_MODES = {"auto", "drive", "ground_public", "flight", "other"}
 
 
 class ReviewService:
@@ -129,6 +137,25 @@ class ReviewService:
     def update_trip_plan(self, plan_id: str, data: dict, actor_id: str, actor_role: str) -> Optional[dict]:
         return self.trip_plan_service.update_trip_plan(plan_id, data, actor_id, actor_role)
 
+    def get_trip_visit_briefing(
+        self, plan_id: str, stop_id: str, actor_id: str, actor_role: str
+    ) -> Optional[dict]:
+        return self.trip_plan_service.get_trip_visit_briefing(
+            plan_id, stop_id, actor_id, actor_role
+        )
+
+    def put_trip_visit_briefing(
+        self,
+        plan_id: str,
+        stop_id: str,
+        data: dict,
+        actor_id: str,
+        actor_role: str,
+    ) -> Optional[dict]:
+        return self.trip_plan_service.put_trip_visit_briefing(
+            plan_id, stop_id, data, actor_id, actor_role
+        )
+
     def archive_trip_plan(
         self,
         plan_id: str,
@@ -179,6 +206,23 @@ class ReviewService:
     ) -> Optional[dict]:
         return self.trip_plan_service.preview_trip_itinerary(plan_id, data, actor_id, actor_role)
 
+    def get_trip_transport_suggestions(
+        self,
+        plan_id: str,
+        data: dict,
+        actor_id: str,
+        actor_role: str,
+        *,
+        force_refresh: bool = False,
+    ) -> Optional[dict]:
+        return self.trip_plan_service.get_trip_transport_suggestions(
+            plan_id,
+            data,
+            actor_id,
+            actor_role,
+            force_refresh=force_refresh,
+        )
+
     def archive_trip_stop(
         self,
         plan_id: str,
@@ -189,11 +233,51 @@ class ReviewService:
     ) -> Optional[dict]:
         return self.trip_plan_service.archive_trip_stop(plan_id, stop_id, actor_id, actor_role, row_version)
 
+    def add_trip_free_stop(
+        self, plan_id: str, data: dict, actor_id: str, actor_role: str
+    ) -> Optional[dict]:
+        return self.trip_plan_service.add_trip_free_stop(
+            plan_id, data, actor_id, actor_role
+        )
+
+    def update_trip_free_stop(
+        self,
+        plan_id: str,
+        free_stop_id: str,
+        data: dict,
+        actor_id: str,
+        actor_role: str,
+    ) -> Optional[dict]:
+        return self.trip_plan_service.update_trip_free_stop(
+            plan_id, free_stop_id, data, actor_id, actor_role
+        )
+
+    def archive_trip_free_stop(
+        self,
+        plan_id: str,
+        free_stop_id: str,
+        actor_id: str,
+        actor_role: str,
+        row_version: Optional[int] = None,
+    ) -> Optional[dict]:
+        return self.trip_plan_service.archive_trip_free_stop(
+            plan_id, free_stop_id, actor_id, actor_role, row_version
+        )
+
     def export_trip_plan_markdown(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[str]:
         return self.trip_plan_service.export_trip_plan_markdown(plan_id, actor_id, actor_role)
 
     def export_trip_plan_csv(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[str]:
         return self.trip_plan_service.export_trip_plan_csv(plan_id, actor_id, actor_role)
+
+    def export_trip_plan_xlsx(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+        return self.trip_plan_service.export_trip_plan_xlsx(plan_id, actor_id, actor_role)
+
+    def export_trip_plan_html(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+        return self.trip_plan_service.export_trip_plan_html(plan_id, actor_id, actor_role)
+
+    def export_trip_plan_ics(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+        return self.trip_plan_service.export_trip_plan_ics(plan_id, actor_id, actor_role)
 
     def get_trip_execution(
         self,
@@ -455,13 +539,61 @@ class ReviewService:
         if not stops:
             raise ValueError("Add at least one stop before generating an itinerary")
 
-        start = self._parse_date(data.get("start_date") or plan.get("start_date"))
+        window_keys = (
+            "departure_window_start",
+            "departure_window_end",
+            "return_window_start",
+            "return_window_end",
+        )
+        windows = {
+            key: data[key] if key in data else plan.get(key)
+            for key in window_keys
+        }
+        validate_time_windows(windows)
+        start_value = (
+            data.get("start_date")
+            or plan.get("start_date")
+            or windows.get("departure_window_start")
+        )
+        start = self._parse_date(start_value)
         if not start:
             raise ValueError("start_date is required before generating an itinerary")
+
+        requested_end_value = (
+            data.get("end_date") if "end_date" in data else plan.get("end_date")
+        )
+        if not requested_end_value:
+            requested_end_value = windows.get("return_window_end")
+        requested_end = self._parse_date(requested_end_value)
+        if requested_end_value and not requested_end:
+            raise ValueError("end_date must be a valid ISO date")
+        if requested_end and requested_end < start:
+            raise ValueError("end_date cannot be before start_date")
+        departure_start_slot = self._window_slot(
+            windows.get("departure_window_start"), default_period="AM"
+        )
+        departure_end_slot = self._window_slot(
+            windows.get("departure_window_end"), default_period="PM"
+        )
+        return_start_slot = self._window_slot(
+            windows.get("return_window_start"), default_period="AM"
+        )
+        return_end_slot = self._window_slot(
+            windows.get("return_window_end"), default_period="PM"
+        )
 
         travel_mode = data.get("travel_mode") or plan.get("travel_mode") or "auto"
         if travel_mode not in TRIP_TRAVEL_MODES:
             raise ValueError("Unsupported travel mode")
+        if "transport_mode_priority" in data:
+            priority = normalize_priority(data.get("transport_mode_priority"), travel_mode)
+        elif "travel_mode" in data:
+            priority = normalize_priority(None, travel_mode)
+        else:
+            priority = normalize_priority(plan.get("transport_mode_priority"), travel_mode)
+        route_order_mode = validate_route_order_mode(
+            data.get("route_order_mode") or plan.get("route_order_mode")
+        )
         avoid_weekends = data.get("avoid_weekends")
         if avoid_weekends is None:
             avoid_weekends = bool(plan.get("avoid_weekends", True))
@@ -478,96 +610,414 @@ class ReviewService:
         for stop in stops:
             point = self._route_point_from_stop(stop)
             if not point:
-                missing_locations.append(stop.get("customer_name") or stop.get("customer_id"))
+                missing_locations.append(
+                    stop.get("location_name")
+                    or stop.get("customer_name")
+                    or stop.get("customer_id")
+                    or stop.get("id")
+                )
                 continue
-            routable_stops.append((stop, point))
+            routable_stops.append(
+                (
+                    stop,
+                    {
+                        **point,
+                        "kind": "stop",
+                        "stop_id": stop["id"],
+                        "stop_kind": stop.get("stop_kind") or "customer",
+                    },
+                )
+            )
         if missing_locations:
             raise ValueError("Stops need latitude and longitude: " + ", ".join(missing_locations[:5]))
 
-        stop_stays = self._clean_stop_stays(data.get("stop_stays") or {})
-        origin = self._route_endpoint("origin", data, plan) or routable_stops[0][1]
-        destination = self._route_endpoint("destination", data, plan) or routable_stops[-1][1]
-        ordered_stops = self._order_route_stops(origin, destination, routable_stops, travel_mode)
+        stop_durations = self._clean_stop_durations(
+            data, {str(stop["id"]) for stop in stops}
+        )
+        origin_data = self._route_endpoint("origin", data, plan) or routable_stops[0][1]
+        destination_data = self._route_endpoint("destination", data, plan) or routable_stops[-1][1]
+        origin = {**origin_data, "kind": "origin", "stop_id": None}
+        destination = {**destination_data, "kind": "destination", "stop_id": None}
+        explicit_order = validate_stop_order(
+            data.get("stop_order") if "stop_order" in data else None,
+            [stop["id"] for stop in stops],
+        )
+        if explicit_order:
+            by_id = {stop["id"]: (stop, point) for stop, point in routable_stops}
+            ordered_stops = [by_id[stop_id] for stop_id in explicit_order]
+            route_order_mode = "manual"
+        elif route_order_mode == "manual":
+            ordered_stops = routable_stops
+        else:
+            ordered_stops = self._order_route_stops(
+                origin, destination, routable_stops, priority
+            )
+
+        route_points = [origin, *[point for _, point in ordered_stops], destination]
+        leg_keys = {
+            f"{left.get('stop_id') or 'origin'}>{right.get('stop_id') or 'destination'}"
+            for left, right in zip(route_points, route_points[1:])
+        }
+        incoming_overrides = (
+            data.get("leg_overrides") if "leg_overrides" in data else None
+        )
+        if route_order_mode == "auto" and isinstance(incoming_overrides, dict):
+            obsolete_keys = sorted(set(incoming_overrides) - leg_keys)
+            if obsolete_keys:
+                incoming_overrides = {
+                    key: value
+                    for key, value in incoming_overrides.items()
+                    if key in leg_keys
+                }
+                warnings.append(
+                    "Ignored obsolete leg overrides after automatic route reorder: "
+                    + ", ".join(obsolete_keys)
+                )
+        overrides = normalize_overrides(
+            incoming_overrides,
+            leg_keys,
+            self.trip_plan_service.leg_repo.locked_overrides(plan["id"]),
+        )
 
         current_point = origin
-        cursor = start
+        initial_slot = departure_start_slot or (start, "AM")
+        cursor = self._next_work_slot(initial_slot, bool(avoid_weekends), holidays)
         total_distance = 0.0
         total_hours = 0.0
-        total_travel_days = 0
+        total_travel_half_days = 0
         stop_updates = []
-        last_visit_end = start
+        legs = []
+        schedule_items = []
+        last_occupied_slot = cursor
+
+        def append_schedule_items(
+            slots: list[tuple[date, str]],
+            *,
+            item_type: str,
+            source_id: str,
+            sequence_no: int,
+            title: str,
+            confirmation_status: str | None,
+            details: Optional[dict] = None,
+        ) -> None:
+            for half_index, slot in enumerate(slots, start=1):
+                schedule_items.append(
+                    {
+                        "slot_key": f"{slot[0].isoformat()}:{slot[1]}",
+                        "date": slot[0].isoformat(),
+                        "period": slot[1],
+                        "item_type": item_type,
+                        "source_id": source_id,
+                        "sequence_no": sequence_no,
+                        "title": title,
+                        "half_day_index": half_index,
+                        "half_day_count": len(slots),
+                        "confirmation_status": confirmation_status,
+                        **(details or {}),
+                    }
+                )
 
         for sequence_no, (stop, point) in enumerate(ordered_stops, start=1):
-            leg = self._estimate_travel_leg(current_point, point, travel_mode)
-            travel_days = int(leg["travel_days"])
-            if travel_days > 0:
-                travel_end = self._add_workdays_inclusive(cursor, travel_days, avoid_weekends, holidays)
-                visit_start = self._next_workday(travel_end + timedelta(days=1), avoid_weekends, holidays)
-            else:
-                visit_start = self._next_workday(cursor, avoid_weekends, holidays)
+            key = f"{current_point.get('stop_id') or 'origin'}>{point['stop_id']}"
+            leg = build_leg(
+                self, sequence_no, current_point, point, priority, overrides.get(key)
+            )
+            leg["plan_id"] = plan["id"]
+            travel_half_days = int(leg["travel_half_days"])
+            leg_slots, cursor = self._allocate_work_slots(
+                cursor, travel_half_days, bool(avoid_weekends), holidays
+            )
+            leg["planned_start_date"] = (
+                leg_slots[0][0].isoformat() if leg_slots else None
+            )
+            leg["planned_start_period"] = leg_slots[0][1] if leg_slots else None
+            leg["planned_end_date"] = (
+                leg_slots[-1][0].isoformat() if leg_slots else None
+            )
+            leg["planned_end_period"] = leg_slots[-1][1] if leg_slots else None
+            legs.append(leg)
+            append_schedule_items(
+                leg_slots,
+                item_type="leg",
+                source_id=leg["leg_key"],
+                sequence_no=sequence_no,
+                title=f"{leg.get('from_label') or '-'} → {leg.get('to_label') or '-'}",
+                confirmation_status=None,
+                details={
+                    "selected_mode": leg.get("selected_mode"),
+                    "distance_km": leg.get("distance_km"),
+                    "time_hours": leg.get("time_hours"),
+                },
+            )
+            if leg_slots:
+                last_occupied_slot = leg_slots[-1]
+            if (
+                sequence_no == 1
+                and departure_end_slot
+                and leg_slots
+                and self._slot_key(leg_slots[-1])
+                > self._slot_key(departure_end_slot)
+            ):
+                warnings.append(
+                    "The outbound leg exceeds the selected departure window."
+                )
 
-            stay_days = stop_stays.get(stop["id"], self._clean_stay_days(stop.get("stay_days")))
-            visit_end = self._add_workdays_inclusive(visit_start, stay_days, avoid_weekends, holidays)
+            override = stop_durations.get(stop["id"], {})
+            duration_half_days = self._clean_half_days(
+                override.get(
+                    "half_days",
+                    stop.get("duration_half_days")
+                    or self._clean_stay_days(stop.get("stay_days")) * 2,
+                ),
+                f"duration_half_days[{stop['id']}]",
+            )
+            preferred_period = override.get(
+                "preferred_period", stop.get("preferred_period") or "auto"
+            )
+            if preferred_period not in {"auto", "AM", "PM"}:
+                raise ValueError("Visit time preference must be Automatic, AM, or PM")
+            schedule_locked = bool(
+                override.get("locked", bool(stop.get("schedule_locked")))
+            )
+            if schedule_locked and route_order_mode != "manual":
+                raise ValueError(
+                    "Set the route order to manual before locking a visit time"
+                )
+
+            visit_start_slot = self._seek_preferred_period(
+                cursor, preferred_period, bool(avoid_weekends), holidays
+            )
+            if schedule_locked:
+                locked_date = self._parse_date(stop.get("planned_date"))
+                locked_period = stop.get("planned_start_period")
+                if not locked_date or locked_period not in {"AM", "PM"}:
+                    raise ValueError(
+                        "Save a visit date and AM/PM period before locking this visit"
+                    )
+                if not self._is_workday(
+                    locked_date, bool(avoid_weekends), holidays
+                ):
+                    raise ValueError("A locked stop cannot use a skipped day")
+                locked_slot = (locked_date, locked_period)
+                if preferred_period != "auto" and preferred_period != locked_period:
+                    raise ValueError(
+                        "The locked visit time conflicts with its AM/PM preference"
+                    )
+                if self._slot_key(locked_slot) < self._slot_key(visit_start_slot):
+                    raise ValueError(
+                        "The route cannot reach this visit before its locked time"
+                    )
+                visit_start_slot = locked_slot
+
+            visit_slots, cursor = self._allocate_work_slots(
+                visit_start_slot,
+                duration_half_days,
+                bool(avoid_weekends),
+                holidays,
+            )
+            visit_start = visit_slots[0]
+            visit_end = visit_slots[-1]
+            stay_days = math.ceil(duration_half_days / 2)
+            confirmation_status = stop.get("confirmation_status") or "unconfirmed"
+            schedule_semantic_changed = any(
+                (
+                    stop.get("sequence_no") != sequence_no,
+                    stop.get("planned_date") != visit_start[0].isoformat(),
+                    stop.get("planned_end_date") != visit_end[0].isoformat(),
+                    stop.get("planned_start_period") != visit_start[1],
+                    stop.get("planned_end_period") != visit_end[1],
+                    int(stop.get("duration_half_days") or 0) != duration_half_days,
+                    (stop.get("preferred_period") or "auto") != preferred_period,
+                    bool(stop.get("schedule_locked")) != schedule_locked,
+                )
+            )
+            if confirmation_status == "confirmed" and schedule_semantic_changed:
+                confirmation_status = "needs_reconfirmation"
             stop_updates.append(
                 {
                     "id": stop["id"],
+                    "stop_kind": stop.get("stop_kind") or "customer",
                     "sequence_no": sequence_no,
-                    "planned_date": visit_start.isoformat(),
-                    "planned_end_date": visit_end.isoformat(),
+                    "planned_date": visit_start[0].isoformat(),
+                    "planned_end_date": visit_end[0].isoformat(),
+                    "planned_start_period": visit_start[1],
+                    "planned_end_period": visit_end[1],
+                    "duration_half_days": duration_half_days,
                     "stay_days": stay_days,
-                    "travel_from_label": current_point.get("label"),
-                    "travel_mode": leg["mode"],
+                    "preferred_period": preferred_period,
+                    "schedule_locked": schedule_locked,
+                    "confirmation_status": confirmation_status,
+                    "travel_from_label": leg["from_label"],
+                    "travel_mode": leg["selected_mode"],
                     "travel_distance_km": leg["distance_km"],
                     "travel_time_hours": leg["time_hours"],
-                    "travel_days": travel_days,
+                    "travel_days": int(leg["travel_days"]),
                 }
+            )
+            append_schedule_items(
+                visit_slots,
+                item_type=(stop.get("stop_kind") or "customer"),
+                source_id=stop["id"],
+                sequence_no=sequence_no,
+                title=(
+                    stop.get("location_name")
+                    or stop.get("customer_name")
+                    or "Stop"
+                ),
+                confirmation_status=confirmation_status,
             )
 
             total_distance += leg["distance_km"]
             total_hours += leg["time_hours"]
-            total_travel_days += travel_days
+            total_travel_half_days += travel_half_days
             current_point = point
-            cursor = visit_end + timedelta(days=1)
-            last_visit_end = visit_end
+            last_occupied_slot = visit_end
 
-        final_leg = self._estimate_travel_leg(current_point, destination, travel_mode) if destination else None
-        calculated_end = last_visit_end
-        if final_leg:
-            final_days = int(final_leg["travel_days"])
-            total_distance += final_leg["distance_km"]
-            total_hours += final_leg["time_hours"]
-            total_travel_days += final_days
-            if final_days > 0:
-                calculated_end = self._add_workdays_inclusive(
-                    last_visit_end + timedelta(days=1),
-                    final_days,
-                    avoid_weekends,
-                    holidays,
-                )
+        final_key = f"{current_point.get('stop_id') or 'origin'}>destination"
+        final_leg = build_leg(
+            self,
+            len(ordered_stops) + 1,
+            current_point,
+            destination,
+            priority,
+            overrides.get(final_key),
+        )
+        final_leg["plan_id"] = plan["id"]
+        final_half_days = int(final_leg["travel_half_days"])
+        if (
+            return_start_slot
+            and self._slot_key(return_start_slot) > self._slot_key(cursor)
+        ):
+            cursor = self._next_work_slot(
+                return_start_slot, bool(avoid_weekends), holidays
+            )
+        final_slots, cursor = self._allocate_work_slots(
+            cursor, final_half_days, bool(avoid_weekends), holidays
+        )
+        final_leg["planned_start_date"] = (
+            final_slots[0][0].isoformat() if final_slots else None
+        )
+        final_leg["planned_start_period"] = final_slots[0][1] if final_slots else None
+        final_leg["planned_end_date"] = (
+            final_slots[-1][0].isoformat() if final_slots else None
+        )
+        final_leg["planned_end_period"] = final_slots[-1][1] if final_slots else None
+        legs.append(final_leg)
+        append_schedule_items(
+            final_slots,
+            item_type="leg",
+            source_id=final_leg["leg_key"],
+            sequence_no=len(ordered_stops) + 1,
+            title=(
+                f"{final_leg.get('from_label') or '-'} → "
+                f"{final_leg.get('to_label') or '-'}"
+            ),
+                confirmation_status=None,
+                details={
+                    "selected_mode": final_leg.get("selected_mode"),
+                    "distance_km": final_leg.get("distance_km"),
+                    "time_hours": final_leg.get("time_hours"),
+                },
+        )
+        if final_slots:
+            last_occupied_slot = final_slots[-1]
+        calculated_end = last_occupied_slot[0]
+        calculated_end_period = last_occupied_slot[1]
+        total_distance += final_leg["distance_km"]
+        total_hours += final_leg["time_hours"]
+        total_travel_half_days += final_half_days
+
+        boundary_candidates = []
+        if requested_end:
+            boundary_candidates.append((requested_end, "PM"))
+        if return_end_slot:
+            boundary_candidates.append(return_end_slot)
+        requested_boundary = (
+            min(boundary_candidates, key=self._slot_key)
+            if boundary_candidates else None
+        )
+        overrun_half_days = (
+            self._work_slots_after(
+                requested_boundary,
+                last_occupied_slot,
+                bool(avoid_weekends),
+                holidays,
+            )
+            if requested_boundary
+            else 0
+        )
+        overrun_days = overrun_half_days / 2
+        within_date_window = requested_boundary is None or overrun_half_days == 0
+        if not within_date_window:
+            warnings.append(
+                "Itinerary exceeds requested end date "
+                f"{requested_boundary[0].isoformat()} {requested_boundary[1]} "
+                f"by {overrun_half_days} half-day slot(s)."
+            )
+
+        schedule_items.sort(
+            key=lambda item: (
+                item["date"],
+                0 if item["period"] == "AM" else 1,
+                item["sequence_no"],
+                0 if item["item_type"] == "leg" else 1,
+            )
+        )
+        for schedule_index, item in enumerate(schedule_items, start=1):
+            item["schedule_index"] = schedule_index
 
         summary = {
             "generated_at": now_iso(),
             "start_date": start.isoformat(),
             "calculated_end_date": calculated_end.isoformat(),
+            "calculated_end_period": calculated_end_period,
+            "requested_end_date": (
+                requested_boundary[0].isoformat() if requested_boundary else None
+            ),
+            "requested_end_period": (
+                requested_boundary[1] if requested_boundary else None
+            ),
+            "overrun_days": overrun_days,
+            "overrun_half_days": overrun_half_days,
+            "within_date_window": within_date_window,
             "stop_count": len(ordered_stops),
-            "total_stay_days": sum(item["stay_days"] for item in stop_updates),
-            "total_travel_days": total_travel_days,
+            "leg_count": len(legs),
+            "total_stay_half_days": sum(
+                item["duration_half_days"] for item in stop_updates
+            ),
+            "total_stay_days": sum(
+                item["duration_half_days"] for item in stop_updates
+            ) / 2,
+            "total_travel_half_days": total_travel_half_days,
+            "total_travel_days": total_travel_half_days / 2,
+            "total_schedule_half_days": len(schedule_items),
             "total_business_days": self._business_days_between(start, calculated_end, avoid_weekends, holidays),
             "total_calendar_days": (calculated_end - start).days + 1,
             "total_distance_km": round(total_distance, 1),
             "total_travel_hours": round(total_hours, 1),
             "travel_mode": travel_mode,
+            "route_order_mode": route_order_mode,
+            "transport_mode_priority": priority,
+            **windows,
             "avoid_weekends": bool(avoid_weekends),
             "holiday_dates": holidays,
             "warnings": warnings,
             "final_leg": final_leg,
+            "schedule_items": schedule_items,
         }
         plan_updates = self._prepare_trip_plan_data(
             {
                 **data,
                 "start_date": start.isoformat(),
-                "end_date": calculated_end.isoformat(),
+                "end_date": (
+                    requested_end.isoformat()
+                    if requested_end
+                    else calculated_end.isoformat()
+                ),
                 "travel_mode": travel_mode,
+                "route_order_mode": route_order_mode,
+                "transport_mode_priority": priority,
+                **windows,
                 "avoid_weekends": bool(avoid_weekends),
                 "holiday_dates": holidays,
                 "itinerary_generated_at": summary["generated_at"],
@@ -578,6 +1028,7 @@ class ReviewService:
         return {
             "summary": summary,
             "stop_updates": stop_updates,
+            "legs": legs,
             "plan_updates": plan_updates,
         }
 
@@ -587,10 +1038,19 @@ class ReviewService:
         preview.update(
             {
                 "start_date": summary["start_date"],
-                "end_date": summary["calculated_end_date"],
+                "end_date": summary.get("requested_end_date") or summary["calculated_end_date"],
+                "requested_end_date": summary.get("requested_end_date"),
+                "overrun_days": summary.get("overrun_days", 0),
+                "within_date_window": summary.get("within_date_window", True),
                 "travel_mode": summary["travel_mode"],
+                "route_order_mode": summary["route_order_mode"],
+                "transport_mode_priority": summary["transport_mode_priority"],
                 "avoid_weekends": summary["avoid_weekends"],
                 "holiday_dates": summary["holiday_dates"],
+                "departure_window_start": summary.get("departure_window_start"),
+                "departure_window_end": summary.get("departure_window_end"),
+                "return_window_start": summary.get("return_window_start"),
+                "return_window_end": summary.get("return_window_end"),
                 "itinerary_generated_at": summary["generated_at"],
                 "itinerary_summary": {**summary, "preview": True},
                 "itinerary_preview": True,
@@ -604,11 +1064,27 @@ class ReviewService:
             ],
             key=lambda item: (item.get("sequence_no") or 0, item.get("created_at") or ""),
         )
+        preview["legs"] = calculation["legs"]
+        preview["schedule_items"] = list(summary.get("schedule_items") or [])
         return preview
 
     def _normalize_trip_plan_row(self, row: dict) -> dict:
         row["avoid_weekends"] = bool(row.get("avoid_weekends", 1))
         row["holiday_dates"] = self._clean_holiday_dates(row.get("holiday_dates"))
+        try:
+            row["transport_mode_priority"] = normalize_priority(
+                row.get("transport_mode_priority"), row.get("travel_mode")
+            )
+        except ValueError:
+            row["transport_mode_priority"] = normalize_priority(
+                None, row.get("travel_mode")
+            )
+        try:
+            row["route_order_mode"] = validate_route_order_mode(
+                row.get("route_order_mode")
+            )
+        except ValueError:
+            row["route_order_mode"] = "auto"
         summary = row.get("itinerary_summary")
         if isinstance(summary, str) and summary:
             try:
@@ -633,6 +1109,12 @@ class ReviewService:
             "destination_lat",
             "destination_lng",
             "travel_mode",
+            "route_order_mode",
+            "transport_mode_priority",
+            "departure_window_start",
+            "departure_window_end",
+            "return_window_start",
+            "return_window_end",
             "avoid_weekends",
             "holiday_dates",
         }
@@ -649,6 +1131,20 @@ class ReviewService:
             if mode not in TRIP_TRAVEL_MODES:
                 raise ValueError("Unsupported travel mode")
             prepared["travel_mode"] = mode
+            if "transport_mode_priority" not in prepared:
+                prepared["transport_mode_priority"] = json.dumps(
+                    normalize_priority(None, mode)
+                )
+        if "route_order_mode" in prepared:
+            prepared["route_order_mode"] = validate_route_order_mode(
+                prepared["route_order_mode"]
+            )
+        if "transport_mode_priority" in prepared:
+            priority = normalize_priority(
+                prepared["transport_mode_priority"], prepared.get("travel_mode")
+            )
+            prepared["transport_mode_priority"] = json.dumps(priority)
+        validate_time_windows(prepared)
         if "avoid_weekends" in prepared:
             prepared["avoid_weekends"] = 1 if prepared["avoid_weekends"] else 0
         if "holiday_dates" in prepared:
@@ -674,6 +1170,159 @@ class ReviewService:
             result[str(stop_id)] = self._clean_stay_days(days)
         return result
 
+    def _clean_half_days(self, value, field: str = "half_days") -> int:
+        if isinstance(value, bool):
+            raise ValueError("Visit duration must be 0.5 to 30 days in half-day steps")
+        try:
+            result = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Visit duration must be 0.5 to 30 days in half-day steps"
+            ) from exc
+        if result < 1 or result > 60:
+            raise ValueError("Visit duration must be 0.5 to 30 days in half-day steps")
+        return result
+
+    def _clean_stop_durations(
+        self, data: dict, active_ids: set[str]
+    ) -> dict[str, dict]:
+        if "stop_durations" in data and "stop_stays" in data:
+            raise ValueError(
+                "Choose either half-day visit durations or legacy full-day stays, not both"
+            )
+        if "stop_stays" in data:
+            legacy = self._clean_stop_stays(data.get("stop_stays") or {})
+            unknown = set(legacy) - active_ids
+            if unknown:
+                raise ValueError("Unknown stop duration: " + ", ".join(sorted(unknown)))
+            return {
+                stop_id: {"half_days": days * 2}
+                for stop_id, days in legacy.items()
+            }
+        raw = data.get("stop_durations")
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict):
+            raise ValueError("stop_durations must be keyed by stop ID")
+        unknown = set(str(value) for value in raw) - active_ids
+        if unknown:
+            raise ValueError("Unknown stop duration: " + ", ".join(sorted(unknown)))
+        result = {}
+        for raw_stop_id, value in raw.items():
+            stop_id = str(raw_stop_id)
+            if not isinstance(value, dict):
+                raise ValueError(f"stop_durations[{stop_id}] must be an object")
+            unknown_fields = set(value) - {"half_days", "preferred_period", "locked"}
+            if unknown_fields:
+                raise ValueError(f"Unknown fields in stop_durations[{stop_id}]")
+            item = {}
+            if "half_days" in value:
+                item["half_days"] = self._clean_half_days(
+                    value["half_days"], f"stop_durations[{stop_id}].half_days"
+                )
+            if "preferred_period" in value:
+                period = value["preferred_period"] or "auto"
+                if period not in {"auto", "AM", "PM"}:
+                    raise ValueError(
+                        f"stop_durations[{stop_id}].preferred_period must be auto, AM or PM"
+                    )
+                item["preferred_period"] = period
+            if "locked" in value:
+                item["locked"] = bool(value["locked"])
+            result[stop_id] = item
+        return result
+
+    def _next_work_slot(
+        self,
+        slot: tuple[date, str],
+        avoid_weekends: bool,
+        holidays: list[str],
+    ) -> tuple[date, str]:
+        day, period = slot
+        if self._is_workday(day, avoid_weekends, holidays):
+            return day, period
+        return self._next_workday(day, avoid_weekends, holidays), "AM"
+
+    def _window_slot(
+        self, value, *, default_period: str
+    ) -> Optional[tuple[date, str]]:
+        if not value:
+            return None
+        text = str(value).strip()
+        day = self._parse_date(text)
+        if not day:
+            raise ValueError("Trip time window must be a valid ISO date/time")
+        has_explicit_time = "T" in text or (
+            " " in text and ":" in text.split(" ", 1)[1]
+        )
+        if not has_explicit_time:
+            return day, default_period
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("Trip time window must be a valid ISO date/time") from exc
+        return day, "AM" if parsed.hour < 12 else "PM"
+
+    def _after_work_slot(
+        self,
+        slot: tuple[date, str],
+        avoid_weekends: bool,
+        holidays: list[str],
+    ) -> tuple[date, str]:
+        day, period = slot
+        if period == "AM":
+            return self._next_work_slot((day, "PM"), avoid_weekends, holidays)
+        return self._next_work_slot(
+            (day + timedelta(days=1), "AM"), avoid_weekends, holidays
+        )
+
+    def _allocate_work_slots(
+        self,
+        start_slot: tuple[date, str],
+        count: int,
+        avoid_weekends: bool,
+        holidays: list[str],
+    ) -> tuple[list[tuple[date, str]], tuple[date, str]]:
+        cursor = self._next_work_slot(start_slot, avoid_weekends, holidays)
+        slots = []
+        for _ in range(max(0, int(count))):
+            slots.append(cursor)
+            cursor = self._after_work_slot(cursor, avoid_weekends, holidays)
+        return slots, cursor
+
+    @staticmethod
+    def _slot_key(slot: tuple[date, str]) -> tuple[str, int]:
+        return slot[0].isoformat(), 0 if slot[1] == "AM" else 1
+
+    def _seek_preferred_period(
+        self,
+        cursor: tuple[date, str],
+        preferred: str,
+        avoid_weekends: bool,
+        holidays: list[str],
+    ) -> tuple[date, str]:
+        if preferred == "auto" or cursor[1] == preferred:
+            return cursor
+        if preferred == "PM" and cursor[1] == "AM":
+            return cursor[0], "PM"
+        return self._after_work_slot(cursor, avoid_weekends, holidays)
+
+    def _work_slots_after(
+        self,
+        boundary: tuple[date, str],
+        actual: tuple[date, str],
+        avoid_weekends: bool,
+        holidays: list[str],
+    ) -> int:
+        if self._slot_key(actual) <= self._slot_key(boundary):
+            return 0
+        count = 0
+        cursor = self._after_work_slot(boundary, avoid_weekends, holidays)
+        while self._slot_key(cursor) <= self._slot_key(actual):
+            count += 1
+            cursor = self._after_work_slot(cursor, avoid_weekends, holidays)
+        return count
+
     def _route_endpoint(self, prefix: str, data: dict, plan: dict) -> Optional[dict]:
         lat = data.get(f"{prefix}_lat", plan.get(f"{prefix}_lat"))
         lng = data.get(f"{prefix}_lng", plan.get(f"{prefix}_lng"))
@@ -685,12 +1334,26 @@ class ReviewService:
         return {"label": label, "lat": lat, "lng": lng}
 
     def _route_point_from_stop(self, stop: dict) -> Optional[dict]:
-        lat = self._finite_float(stop.get("lat"))
-        lng = self._finite_float(stop.get("lng"))
+        visit_location = stop.get("visit_location") or {}
+        lat = self._finite_float(visit_location.get("lat", stop.get("lat")))
+        lng = self._finite_float(visit_location.get("lng", stop.get("lng")))
         if lat is None or lng is None:
             return None
-        label = stop.get("customer_name") or stop.get("customer_id") or "Stop"
-        location = ", ".join(x for x in [stop.get("city"), stop.get("country")] if x)
+        label = (
+            visit_location.get("label")
+            or visit_location.get("name")
+            or
+            stop.get("location_name")
+            or stop.get("customer_name")
+            or stop.get("customer_id")
+            or "Stop"
+        )
+        location = ", ".join(
+            x for x in [
+                visit_location.get("city", stop.get("city")),
+                visit_location.get("country", stop.get("country")),
+            ] if x
+        )
         if location:
             label = f"{label} ({location})"
         return {"label": label, "lat": lat, "lng": lng}
@@ -700,7 +1363,7 @@ class ReviewService:
         origin: dict,
         destination: Optional[dict],
         stops: list[tuple[dict, dict]],
-        travel_mode: str,
+        priority: list[str],
     ) -> list[tuple[dict, dict]]:
         remaining = list(stops)
         ordered = []
@@ -709,9 +1372,9 @@ class ReviewService:
             next_item = min(
                 remaining,
                 key=lambda item: (
-                    self._route_distance_score(current, item[1], travel_mode)
+                    self._route_distance_score(current, item[1], priority)
                     + (
-                        self._route_distance_score(item[1], destination, travel_mode) * 0.15
+                        self._route_distance_score(item[1], destination, priority) * 0.15
                         if destination else 0
                     )
                 ),
@@ -721,10 +1384,18 @@ class ReviewService:
             current = next_item[1]
         return ordered
 
-    def _route_distance_score(self, start: Optional[dict], end: Optional[dict], travel_mode: str) -> float:
+    def _route_distance_score(
+        self,
+        start: Optional[dict],
+        end: Optional[dict],
+        priority: list[str],
+    ) -> float:
         if not start or not end:
             return 0
-        return self._estimate_travel_leg(start, end, travel_mode)["time_hours"]
+        distance_km = self._haversine_km(start["lat"], start["lng"], end["lat"], end["lng"])
+        selected_mode = select_mode(distance_km, priority)
+        estimate_mode = selected_mode if selected_mode != "other" else "drive"
+        return self._estimate_travel_leg(start, end, estimate_mode)["time_hours"]
 
     def _estimate_travel_leg(self, start: dict, end: dict, requested_mode: str) -> dict:
         km = self._haversine_km(start["lat"], start["lng"], end["lat"], end["lng"])
@@ -847,25 +1518,9 @@ class ReviewService:
         return dict(row) if row else None
 
     def _normalize_trip_stop_sequences(self, plan_id: str, actor_id: str, timestamp: str) -> None:
-        rows = self.lead_repo.conn.execute(
-            """
-            SELECT id
-            FROM trip_plan_stops
-            WHERE plan_id = ? AND archived_at IS NULL
-            ORDER BY sequence_no ASC, created_at ASC
-            """,
-            (plan_id,),
-        ).fetchall()
-        for sequence_no, row in enumerate(rows, start=1):
-            self.lead_repo.conn.execute(
-                """
-                UPDATE trip_plan_stops
-                SET sequence_no = ?, updated_at = ?, updated_by = ?,
-                    row_version = row_version + 1
-                WHERE id = ?
-                """,
-                (sequence_no, timestamp, actor_id, row["id"]),
-            )
+        self.trip_plan_service.free_stop_repo.normalize_sequences(
+            plan_id, actor_id, timestamp
+        )
 
     def _can_access_plan(self, plan: dict, actor_id: str, actor_role: str) -> bool:
         return self.visibility_service.can_access_plan(plan, actor_id, actor_role)
@@ -928,82 +1583,161 @@ class ReviewService:
             (activity_id, now_iso(), actor_id, stop["id"]),
         )
 
-    def _sync_trip_followup_activity(self, stop: dict, actor_id: str) -> None:
-        if not stop.get("lead_id") or stop.get("result_status") != "Follow-up Needed":
-            return
+    def _sync_trip_lead_next_followup_date(self, lead_id: str, actor_id: str) -> None:
+        """Derive the Lead due date from every active formal follow-up."""
+        conn = self.lead_repo.conn
+        rows = conn.execute(
+            """
+            SELECT payload_json
+            FROM lead_activities
+            WHERE lead_id = ? AND action_type = 'follow_up'
+              AND is_formal_follow_up = 1 AND archived_at IS NULL
+            """,
+            (lead_id,),
+        ).fetchall()
+        dates = []
+        for row in rows:
+            try:
+                payload = json.loads(row["payload_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
+            value = payload.get("next_action_date")
+            if isinstance(value, str) and value.strip():
+                dates.append(value.strip())
+        next_due = min(dates) if dates else None
+        lead = conn.execute(
+            "SELECT next_followup_date FROM leads WHERE id = ? AND archived_at IS NULL",
+            (lead_id,),
+        ).fetchone()
+        if lead and lead["next_followup_date"] != next_due:
+            conn.execute(
+                """
+                UPDATE leads
+                SET next_followup_date = ?, updated_at = ?, updated_by = ?,
+                    row_version = row_version + 1
+                WHERE id = ? AND archived_at IS NULL
+                """,
+                (next_due, now_iso(), actor_id, lead_id),
+            )
 
-        next_action = (stop.get("visit_next_action") or stop.get("result_notes") or "").strip()
-        if not next_action:
-            return
+    def _sync_trip_followup_activity(
+        self,
+        stop: dict,
+        actor_id: str,
+        previous_lead_id: Optional[str] = None,
+    ) -> None:
+        """Create, update or archive the formal follow-up owned by a Trip stop."""
+        conn = self.lead_repo.conn
+        lead_id = stop.get("lead_id")
+        affected_leads = {value for value in (previous_lead_id, lead_id) if value}
+        activity_id = stop.get("followup_activity_id")
+        activity = None
+        if activity_id:
+            row = conn.execute(
+                "SELECT * FROM lead_activities WHERE id = ?",
+                (activity_id,),
+            ).fetchone()
+            activity = dict(row) if row else None
+            if activity and activity.get("lead_id"):
+                affected_leads.add(activity["lead_id"])
 
-        due_date = stop.get("visit_followup_due_date") or stop.get("planned_end_date") or stop.get("planned_date")
-        payload = json.dumps(
-            {
+        next_action = str(stop.get("visit_next_action") or "").strip()
+        should_have_followup = bool(
+            lead_id
+            and stop.get("result_status") == "Follow-up Needed"
+            and next_action
+        )
+        linked_is_active = bool(
+            activity
+            and activity.get("archived_at") is None
+            and activity.get("action_type") == "follow_up"
+            and bool(activity.get("is_formal_follow_up"))
+            and activity.get("lead_id") == lead_id
+        )
+
+        if activity_id and (not should_have_followup or not linked_is_active):
+            if (
+                activity
+                and activity.get("archived_at") is None
+                and activity.get("action_type") == "follow_up"
+                and bool(activity.get("is_formal_follow_up"))
+            ):
+                conn.execute(
+                    "UPDATE lead_activities SET archived_at = ? WHERE id = ? AND archived_at IS NULL",
+                    (now_iso(), activity_id),
+                )
+            conn.execute(
+                """
+                UPDATE trip_plan_stops
+                SET followup_activity_id = NULL, updated_at = ?, updated_by = ?,
+                    row_version = row_version + 1
+                WHERE id = ? AND followup_activity_id = ?
+                """,
+                (now_iso(), actor_id, stop["id"], activity_id),
+            )
+            activity_id = None
+            linked_is_active = False
+
+        if should_have_followup:
+            due_date = str(stop.get("visit_followup_due_date") or "").strip() or None
+            payload_data = {
                 "method": "Trip Visit",
                 "content": next_action,
                 "status": "pending",
                 "next_action": next_action,
-                "next_action_date": due_date,
                 "source": "trip_visit_execution",
                 "trip_plan_id": stop.get("plan_id"),
                 "trip_stop_id": stop.get("id"),
-            },
-            ensure_ascii=False,
-        )
-        summary = f"Trip follow-up: {next_action}"[:200]
-
-        if stop.get("followup_activity_id"):
-            self.lead_repo.conn.execute(
-                """
-                UPDATE lead_activities
-                SET summary = ?, payload_json = ?
-                WHERE id = ? AND archived_at IS NULL
-                """,
-                (summary, payload, stop["followup_activity_id"]),
-            )
-            return
-
-        activity_id = generate_uuid()
-        self.lead_repo.conn.execute(
-            """
-            INSERT INTO lead_activities (
-                id, lead_id, actor_id, action_type, visibility,
-                is_formal_follow_up, summary, payload_json,
-                changed_field, before_value, after_value, created_at
-            ) VALUES (?, ?, ?, 'follow_up', 'all', 1, ?, ?, NULL, NULL, NULL, ?)
-            """,
-            (activity_id, stop["lead_id"], actor_id, summary, payload, now_iso()),
-        )
-        self.lead_repo.conn.execute(
-            """
-            UPDATE trip_plan_stops
-            SET followup_activity_id = ?, updated_at = ?, updated_by = ?,
-                row_version = row_version + 1
-            WHERE id = ?
-            """,
-            (activity_id, now_iso(), actor_id, stop["id"]),
-        )
-
-        lead = self.lead_repo.get_by_id(stop["lead_id"])
-        if lead:
-            updates = {}
-            if lead.get("sales_stage") in {"New", "Assigned"}:
-                updates["sales_stage"] = "Following"
+            }
             if due_date:
-                current_due = lead.get("next_followup_date")
-                if not current_due or str(due_date) < str(current_due):
-                    updates["next_followup_date"] = due_date
-            if updates:
-                assignments = ", ".join(f"{key} = ?" for key in updates)
-                self.lead_repo.conn.execute(
-                    f"""
-                    UPDATE leads
-                    SET {assignments}, updated_at = ?, updated_by = ?,
-                        row_version = row_version + 1
+                payload_data["next_action_date"] = due_date
+            payload = json.dumps(payload_data, ensure_ascii=False)
+            summary = f"Trip follow-up: {next_action}"[:200]
+
+            if linked_is_active and activity_id:
+                conn.execute(
+                    """
+                    UPDATE lead_activities
+                    SET summary = ?, payload_json = ?
                     WHERE id = ? AND archived_at IS NULL
                     """,
-                    (*updates.values(), now_iso(), actor_id, stop["lead_id"]),
+                    (summary, payload, activity_id),
                 )
+            else:
+                activity_id = generate_uuid()
+                conn.execute(
+                    """
+                    INSERT INTO lead_activities (
+                        id, lead_id, actor_id, action_type, visibility,
+                        is_formal_follow_up, summary, payload_json,
+                        changed_field, before_value, after_value, created_at
+                    ) VALUES (?, ?, ?, 'follow_up', 'all', 1, ?, ?, NULL, NULL, NULL, ?)
+                    """,
+                    (activity_id, lead_id, actor_id, summary, payload, now_iso()),
+                )
+                conn.execute(
+                    """
+                    UPDATE trip_plan_stops
+                    SET followup_activity_id = ?, updated_at = ?, updated_by = ?,
+                        row_version = row_version + 1
+                    WHERE id = ?
+                    """,
+                    (activity_id, now_iso(), actor_id, stop["id"]),
+                )
+
+            conn.execute(
+                """
+                UPDATE leads
+                SET sales_stage = 'Following', updated_at = ?, updated_by = ?,
+                    row_version = row_version + 1
+                WHERE id = ? AND archived_at IS NULL
+                  AND sales_stage IN ('New', 'Assigned')
+                """,
+                (now_iso(), actor_id, lead_id),
+            )
+
+        for affected_lead_id in affected_leads:
+            self._sync_trip_lead_next_followup_date(affected_lead_id, actor_id)
 
     def _num(self, value) -> float:
         return num(value)

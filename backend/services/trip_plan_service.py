@@ -2,16 +2,108 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from datetime import timedelta
 from typing import Optional
 
 from ..repositories.base import generate_uuid, now_iso
+from .trip_leg_contract import normalize_priority, validate_time_windows
+from .trip_leg_repository import TripLegRepository
+from .trip_free_stop_repository import FREE_STOP_CATEGORIES, TripFreeStopRepository
+from .trip_plan_invalidation import (
+    clear_locked_overrides_for_stops,
+    clear_locked_overrides_for_free_stops,
+    invalidate_trip_plan_ids,
+    stale_itinerary_summary,
+)
+from .trip_visit_briefing_repository import (
+    TripVisitBriefingRepository,
+    location_route_signature,
+    normalize_payload as normalize_briefing_payload,
+)
+from .trip_transport_suggestions import get_transport_suggestion_service
+from .trip_transport_suggestions.route_adapter import requests_from_preview
+from .trip_export_html import render_trip_html
+from .trip_export_ics import render_trip_ics
+from .trip_export_model import build_trip_export_model
+from .trip_export_visit import (
+    CHANNEL_PARTNER_COMPANIONS_HEADER,
+    CUSTOMER_PERSONNEL_HEADER,
+    formal_visit_row,
+)
+from .trip_export_xlsx import render_trip_xlsx
 
 class TripPlanService:
     """Extracted ReviewService component."""
 
     def __init__(self, core):
         self.core = core
+        self.leg_repo = TripLegRepository(core.lead_repo.conn)
+        self.free_stop_repo = TripFreeStopRepository(core.lead_repo.conn)
+        self.briefing_repo = TripVisitBriefingRepository(core.lead_repo.conn)
+        self.transport_suggestions = get_transport_suggestion_service()
+
+    @staticmethod
+    def _stale_itinerary_summary(reason: str, timestamp: str) -> str:
+        return stale_itinerary_summary(reason, timestamp)
+
+    def _invalidate_trip_itinerary(
+        self,
+        plan_id: str,
+        actor_id: str,
+        reason: str,
+        timestamp: str,
+    ) -> None:
+        self.leg_repo.archive_active(plan_id, actor_id, timestamp)
+        for table in ("trip_plan_stops", "trip_plan_free_stops"):
+            self.core.lead_repo.conn.execute(
+                f"""
+                UPDATE {table}
+                SET confirmation_status = 'needs_reconfirmation',
+                    updated_at = ?, updated_by = ?, row_version = row_version + 1
+                WHERE plan_id = ? AND archived_at IS NULL
+                  AND confirmation_status = 'confirmed'
+                """,
+                (timestamp, actor_id, plan_id),
+            )
+        self.core.lead_repo.conn.execute(
+            """
+            UPDATE trip_plans
+            SET itinerary_generated_at = NULL,
+                itinerary_summary = CASE
+                    WHEN itinerary_summary IS NOT NULL OR itinerary_generated_at IS NOT NULL
+                    THEN ? ELSE NULL
+                END,
+                updated_at = ?, updated_by = ?, row_version = row_version + 1
+            WHERE id = ?
+            """,
+            (self._stale_itinerary_summary(reason, timestamp), timestamp, actor_id, plan_id),
+        )
+
+    @staticmethod
+    def _assert_itinerary_exportable(plan: dict) -> None:
+        summary = plan.get("itinerary_summary") or {}
+        if summary.get("stale") is True or summary.get("valid") is False:
+            raise ValueError(
+                "This itinerary is out of date; preview and save the route again before exporting"
+            )
+
+    @staticmethod
+    def _trip_leg_confirmation(leg: dict) -> str:
+        manual_values = any(
+            leg.get(key) is not None
+            for key in (
+                "manual_distance_km",
+                "manual_time_hours",
+                "manual_travel_days",
+                "manual_travel_half_days",
+            )
+        )
+        if manual_values and leg.get("mode_locked"):
+            return "manual_values_locked"
+        if leg.get("mode_locked"):
+            return "mode_locked_metrics_estimated"
+        return "heuristic_estimate_confirm_manually"
 
     def get_trip_candidates(
         self,
@@ -77,18 +169,22 @@ class TripPlanService:
         conn = self.core.lead_repo.conn
         sql = """
             SELECT p.*, u.display_name AS owner_name,
-                   COUNT(s.id) AS stop_count
+                   (
+                       SELECT COUNT(*) FROM trip_plan_stops s
+                       WHERE s.plan_id = p.id AND s.archived_at IS NULL
+                   ) + (
+                       SELECT COUNT(*) FROM trip_plan_free_stops fs
+                       WHERE fs.plan_id = p.id AND fs.archived_at IS NULL
+                   ) AS stop_count
             FROM trip_plans p
             LEFT JOIN users u ON p.owner_id = u.id
-            LEFT JOIN trip_plan_stops s
-                ON p.id = s.plan_id AND s.archived_at IS NULL
             WHERE p.archived_at IS NULL
         """
         params: list = []
         if actor_role != "leader":
             sql += " AND p.owner_id = ?"
             params.append(actor_id)
-        sql += " GROUP BY p.id ORDER BY p.updated_at DESC"
+        sql += " ORDER BY p.updated_at DESC"
         return [self.core._normalize_trip_plan_row(dict(row)) for row in conn.execute(sql, params).fetchall()]
 
     def create_trip_plan(self, data: dict, actor_id: str) -> dict:
@@ -103,10 +199,16 @@ class TripPlanService:
             INSERT INTO trip_plans (
                 id, title, owner_id, start_date, end_date, region,
                 origin_name, origin_lat, origin_lng, destination_name,
-                destination_lat, destination_lng, travel_mode, avoid_weekends,
-                holiday_dates, description, status, created_at, created_by,
-                updated_at, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                destination_lat, destination_lng, travel_mode,
+                route_order_mode, transport_mode_priority,
+                departure_window_start, departure_window_end,
+                return_window_start, return_window_end,
+                avoid_weekends, holiday_dates, description, status,
+                created_at, created_by, updated_at, updated_by
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?
+            )
             """,
             (
                 plan_id,
@@ -122,6 +224,13 @@ class TripPlanService:
                 prepared.get("destination_lat"),
                 prepared.get("destination_lng"),
                 prepared.get("travel_mode") or "auto",
+                prepared.get("route_order_mode") or "auto",
+                prepared.get("transport_mode_priority")
+                or json.dumps(normalize_priority(None, prepared.get("travel_mode"))),
+                prepared.get("departure_window_start"),
+                prepared.get("departure_window_end"),
+                prepared.get("return_window_start"),
+                prepared.get("return_window_end"),
                 prepared.get("avoid_weekends", 1),
                 prepared.get("holiday_dates"),
                 prepared.get("description"),
@@ -156,7 +265,7 @@ class TripPlanService:
         stops = conn.execute(
             """
             SELECT s.*, c.display_name AS customer_name, c.country, c.city,
-                   c.address, c.region, c.lat, c.lng, c.geocode_source,
+                   c.postal_code, c.address, c.region, c.lat, c.lng, c.geocode_source,
                    c.geocode_confidence, c.geocode_locked,
                    (
                        SELECT cc.name FROM customer_contacts cc
@@ -190,6 +299,9 @@ class TripPlanService:
                    ) AS contact_whatsapp,
                    l.display_id AS lead_display_id, l.title AS lead_title,
                    l.sales_stage, l.estimated_value, l.deal_amount,
+                   l.product_category, l.product_series, l.power_range,
+                   l.wavelength, l.application, l.material, l.quantity_text,
+                   l.quotation_id, l.po_number,
                    lu.display_name AS lead_owner_name
             FROM trip_plan_stops s
             JOIN customers c ON s.customer_id = c.id
@@ -200,7 +312,32 @@ class TripPlanService:
             """,
             (plan_id,),
         ).fetchall()
-        plan_data["stops"] = [dict(row) for row in stops]
+        customer_stops = []
+        for row in stops:
+            item = dict(row)
+            item["stop_kind"] = "customer"
+            briefing = self.briefing_repo.decode(
+                self.briefing_repo.get_row(item["id"])
+            )
+            item["briefing"] = briefing
+            item["visit_location"] = self.briefing_repo.effective_location(
+                item, briefing
+            )
+            customer_stops.append(item)
+        plan_data["stops"] = sorted(
+            [*customer_stops, *self.free_stop_repo.list_active(plan_id)],
+            key=lambda item: (
+                item.get("sequence_no") or 0,
+                item.get("created_at") or "",
+                item.get("id") or "",
+            ),
+        )
+        summary = plan_data.get("itinerary_summary") or {}
+        is_stale = summary.get("stale") is True or summary.get("valid") is False
+        plan_data["legs"] = [] if is_stale else self.leg_repo.list_active(plan_id)
+        plan_data["schedule_items"] = (
+            [] if is_stale else list(summary.get("schedule_items") or [])
+        )
         return plan_data
 
     def update_trip_plan(self, plan_id: str, data: dict, actor_id: str, actor_role: str) -> Optional[dict]:
@@ -210,6 +347,27 @@ class TripPlanService:
             return None
         expected_version = data.pop("row_version", None)
         self.core._assert_row_version(plan, expected_version)
+
+        for required_key in (
+            "title",
+            "owner_id",
+            "status",
+            "avoid_weekends",
+            "route_order_mode",
+            "transport_mode_priority",
+        ):
+            if required_key in data and data[required_key] is None:
+                raise ValueError(f"{required_key} cannot be null")
+
+        window_keys = (
+            "departure_window_start",
+            "departure_window_end",
+            "return_window_start",
+            "return_window_end",
+        )
+        validate_time_windows(
+            {key: data[key] if key in data else plan.get(key) for key in window_keys}
+        )
 
         allowed = {
             "title",
@@ -226,6 +384,12 @@ class TripPlanService:
             "destination_lat",
             "destination_lng",
             "travel_mode",
+            "route_order_mode",
+            "transport_mode_priority",
+            "departure_window_start",
+            "departure_window_end",
+            "return_window_start",
+            "return_window_end",
             "avoid_weekends",
             "holiday_dates",
         }
@@ -236,7 +400,37 @@ class TripPlanService:
         if actor_role != "leader":
             update_data.pop("owner_id", None)
 
-        update_data["updated_at"] = now_iso()
+        now = now_iso()
+        route_fields = {
+            "start_date",
+            "end_date",
+            "origin_name",
+            "origin_lat",
+            "origin_lng",
+            "destination_name",
+            "destination_lat",
+            "destination_lng",
+            "travel_mode",
+            "route_order_mode",
+            "transport_mode_priority",
+            "departure_window_start",
+            "departure_window_end",
+            "return_window_start",
+            "return_window_end",
+            "avoid_weekends",
+            "holiday_dates",
+        }
+        route_stale = bool(route_fields.intersection(update_data))
+        if route_stale and (
+            plan.get("itinerary_summary") is not None
+            or plan.get("itinerary_generated_at")
+        ):
+            update_data["itinerary_generated_at"] = None
+            update_data["itinerary_summary"] = self._stale_itinerary_summary(
+                "route_settings_changed", now
+            )
+
+        update_data["updated_at"] = now
         update_data["updated_by"] = actor_id
         update_data["row_version"] = int(plan.get("row_version") or 1) + 1
         assignments = ", ".join(f"{key} = ?" for key in update_data)
@@ -245,16 +439,238 @@ class TripPlanService:
         if expected_version is not None:
             where += " AND row_version = ?"
             params.append(expected_version)
-        cursor = self.core.lead_repo.conn.execute(
-            f"UPDATE trip_plans SET {assignments} WHERE {where}",
-            tuple(params),
-        )
-        if cursor.rowcount == 0:
-            current = self.core.get_trip_plan(plan_id, actor_id, actor_role)
-            if current:
-                self.core._assert_row_version(current, expected_version)
-        self.core.lead_repo.conn.commit()
+        conn = self.core.lead_repo.conn
+        try:
+            cursor = conn.execute(
+                f"UPDATE trip_plans SET {assignments} WHERE {where}",
+                tuple(params),
+            )
+            if cursor.rowcount == 0:
+                current = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+                if current:
+                    self.core._assert_row_version(current, expected_version)
+            elif route_stale:
+                self.leg_repo.archive_active(plan_id, actor_id, now)
+                for table in ("trip_plan_stops", "trip_plan_free_stops"):
+                    conn.execute(
+                        f"""
+                        UPDATE {table}
+                        SET confirmation_status = 'needs_reconfirmation',
+                            updated_at = ?, updated_by = ?, row_version = row_version + 1
+                        WHERE plan_id = ? AND archived_at IS NULL
+                          AND confirmation_status = 'confirmed'
+                        """,
+                        (now, actor_id, plan_id),
+                    )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
+    def _briefing_suggestions(self, stop: dict) -> dict:
+        equipment = []
+        demo_text = " / ".join(
+            str(value) for value in (
+                stop.get("product_series"), stop.get("power_range"),
+                stop.get("wavelength"), stop.get("application"),
+            ) if value
+        )
+        if demo_text:
+            equipment.append(
+                {
+                    "kind": "demo",
+                    "model": stop.get("product_series"),
+                    "specification": demo_text,
+                    "quantity": stop.get("quantity_text"),
+                    "owner_team": None,
+                    "notes": None,
+                    "sequence_no": 1,
+                }
+            )
+        if stop.get("po_number"):
+            equipment.append(
+                {
+                    "kind": "po",
+                    "model": stop.get("product_series"),
+                    "specification": stop.get("po_number"),
+                    "quantity": stop.get("quantity_text"),
+                    "owner_team": None,
+                    "notes": None,
+                    "sequence_no": len(equipment) + 1,
+                }
+            )
+        agenda = []
+        for topic in (
+            stop.get("visit_purpose"),
+            stop.get("lead_title"),
+            stop.get("application"),
+        ):
+            if topic and topic not in {item["topic"] for item in agenda}:
+                agenda.append(
+                    {
+                        "topic": topic,
+                        "owner": None,
+                        "preparation": None,
+                        "expected_outcome": None,
+                        "sequence_no": len(agenda) + 1,
+                    }
+                )
+        return {
+            "equipment": equipment,
+            "agenda_items": agenda,
+            "lead": {
+                key: stop.get(key)
+                for key in (
+                    "lead_id", "lead_display_id", "lead_title", "product_category",
+                    "product_series", "power_range", "wavelength", "application",
+                    "material", "quantity_text", "quotation_id", "po_number",
+                )
+            },
+        }
+
+    def _briefing_response(
+        self, stop: dict, briefing: dict, actor_id: str
+    ) -> dict:
+        return {
+            **briefing,
+            "stop_id": stop["id"],
+            "stop_row_version": int(stop.get("row_version") or 1),
+            "confirmation_status": stop.get("confirmation_status") or "unconfirmed",
+            "available_contacts": self.briefing_repo.available_contacts(
+                stop["customer_id"]
+            ),
+            "available_participants": self.briefing_repo.available_participants(
+                actor_id
+            ),
+            "suggestions": self._briefing_suggestions(stop),
+            "effective_location": self.briefing_repo.effective_location(stop, briefing),
+        }
+
+    def get_trip_visit_briefing(
+        self,
+        plan_id: str,
+        stop_id: str,
+        actor_id: str,
+        actor_role: str,
+    ) -> Optional[dict]:
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None
+        stop = next(
+            (
+                item for item in plan.get("stops", [])
+                if item.get("id") == stop_id and item.get("stop_kind") == "customer"
+            ),
+            None,
+        )
+        if not stop:
+            return None
+        briefing = self.briefing_repo.decode(self.briefing_repo.get_row(stop_id))
+        return self._briefing_response(stop, briefing, actor_id)
+
+    def put_trip_visit_briefing(
+        self,
+        plan_id: str,
+        stop_id: str,
+        data: dict,
+        actor_id: str,
+        actor_role: str,
+    ) -> Optional[dict]:
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None
+        current = self.core._get_trip_stop(stop_id)
+        if not current or current.get("plan_id") != plan_id:
+            return None
+        if "stop_row_version" not in data:
+            raise ValueError("stop_row_version is required")
+        expected_stop_version = int(data["stop_row_version"])
+        self.core._assert_row_version(current, expected_stop_version)
+
+        payload = normalize_briefing_payload(data)
+        self.briefing_repo.validate_snapshots(
+            current["customer_id"], payload["contacts"], payload["participants"],
+            actor_id,
+        )
+        existing_row = self.briefing_repo.get_row(stop_id)
+        existing = self.briefing_repo.decode(existing_row)
+        location_changed = location_route_signature(
+            existing["location"]
+        ) != location_route_signature(payload["location"])
+        next_status = payload["confirmation_status"]
+        if location_changed and next_status == "confirmed":
+            next_status = "needs_reconfirmation"
+
+        conn = self.core.lead_repo.conn
+        timestamp = now_iso()
+        savepoint = "trip_visit_briefing_put"
+        owns_transaction = not conn.in_transaction
+        try:
+            if owns_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn.execute(f"SAVEPOINT {savepoint}")
+            cursor = conn.execute(
+                """
+                UPDATE trip_plan_stops
+                SET confirmation_status = ?, updated_at = ?, updated_by = ?,
+                    row_version = row_version + 1
+                WHERE id = ? AND plan_id = ? AND archived_at IS NULL
+                  AND row_version = ?
+                """,
+                (
+                    next_status,
+                    timestamp,
+                    actor_id,
+                    stop_id,
+                    plan_id,
+                    expected_stop_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                latest = self.core._get_trip_stop(stop_id) or {}
+                raise ConflictError(
+                    int(latest.get("row_version") or 0),
+                    expected_stop_version,
+                    {"id": stop_id, "updated_at": latest.get("updated_at")},
+                )
+            self.briefing_repo.replace(
+                stop_id,
+                payload,
+                actor_id,
+                timestamp,
+                data.get("row_version"),
+            )
+            if location_changed:
+                clear_locked_overrides_for_stops(
+                    conn, [stop_id], actor_id, timestamp
+                )
+                invalidate_trip_plan_ids(
+                    conn,
+                    [plan_id],
+                    actor_id,
+                    "visit_location_changed",
+                    timestamp=timestamp,
+                )
+            if owns_transaction:
+                conn.commit()
+            else:
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except Exception:
+            if owns_transaction:
+                conn.rollback()
+            else:
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+            raise
+
+        updated = self.core._get_trip_stop(stop_id)
+        briefing = self.briefing_repo.decode(self.briefing_repo.get_row(stop_id))
+        return (
+            self._briefing_response(updated, briefing, actor_id)
+            if updated else None
+        )
 
     def archive_trip_plan(
         self,
@@ -296,6 +712,7 @@ class TripPlanService:
         if not plan:
             return None
 
+        allow_duplicate = bool(data.pop("allow_duplicate", False))
         lead_id = data.get("lead_id")
         customer_id = data.get("customer_id")
         if lead_id:
@@ -309,50 +726,357 @@ class TripPlanService:
             raise ValueError("customer_id or lead_id is required")
 
         conn = self.core.lead_repo.conn
-        next_sequence = conn.execute(
+        customer = conn.execute(
             """
-            SELECT COALESCE(MAX(sequence_no), 0) + 1
-            FROM trip_plan_stops
-            WHERE plan_id = ? AND archived_at IS NULL
+            SELECT id, lat, lng
+            FROM customers
+            WHERE id = ? AND archived_at IS NULL
             """,
-            (plan_id,),
-        ).fetchone()[0]
+            (customer_id,),
+        ).fetchone()
+        if (
+            not customer
+            or self.core._finite_float(customer["lat"]) is None
+            or self.core._finite_float(customer["lng"]) is None
+        ):
+            raise ValueError(
+                "Customer needs saved latitude and longitude before it can be added to a trip plan"
+            )
+
+        if not allow_duplicate:
+            duplicate = conn.execute(
+                """
+                SELECT id
+                FROM trip_plan_stops
+                WHERE plan_id = ? AND archived_at IS NULL
+                  AND (customer_id = ? OR (? IS NOT NULL AND lead_id = ?))
+                LIMIT 1
+                """,
+                (plan_id, customer_id, lead_id, lead_id),
+            ).fetchone()
+            if duplicate:
+                raise ValueError(
+                    "This customer or lead is already in the trip plan; set allow_duplicate=true to add another visit"
+                )
+
+        next_sequence = self.free_stop_repo.next_sequence(plan_id)
+        desired_sequence = int(data.get("sequence_no") or next_sequence)
+        if desired_sequence < 1 or desired_sequence > next_sequence:
+            raise ValueError(
+                f"sequence_no must be between 1 and {next_sequence}"
+            )
         now = now_iso()
         stop_id = generate_uuid()
-        conn.execute(
-            """
-            INSERT INTO trip_plan_stops (
-                id, plan_id, customer_id, lead_id, sequence_no, planned_date,
-                planned_end_date, stay_days, visit_purpose, notes, result_status,
-                created_at, created_by, updated_at, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Planned', ?, ?, ?, ?)
-            """,
-            (
-                stop_id,
-                plan_id,
-                customer_id,
-                lead_id,
-                data.get("sequence_no") or next_sequence,
-                data.get("planned_date"),
-                data.get("planned_end_date"),
-                self.core._clean_stay_days(data.get("stay_days")),
-                data.get("visit_purpose"),
-                data.get("notes"),
-                now,
-                actor_id,
-                now,
-                actor_id,
-            ),
+        if data.get("duration_half_days") is not None and data.get("stay_days") is not None:
+            raise ValueError(
+                "Choose either a half-day visit duration or a full-day stay, not both"
+            )
+        duration_half_days = int(
+            data.get("duration_half_days")
+            or self.core._clean_stay_days(data.get("stay_days")) * 2
         )
-        conn.execute(
-            """
-            UPDATE trip_plans
-            SET updated_at = ?, updated_by = ?, row_version = row_version + 1
-            WHERE id = ?
-            """,
-            (now, actor_id, plan_id),
+        stay_days = (duration_half_days + 1) // 2
+        try:
+            conn.execute(
+                """
+                INSERT INTO trip_plan_stops (
+                    id, plan_id, customer_id, lead_id, sequence_no, planned_date,
+                    planned_end_date, planned_start_period, planned_end_period,
+                    duration_half_days, stay_days, preferred_period, schedule_locked,
+                    confirmation_status, visit_purpose, notes, result_status,
+                    created_at, created_by, updated_at, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          'Planned', ?, ?, ?, ?)
+                """,
+                (
+                    stop_id,
+                    plan_id,
+                    customer_id,
+                    lead_id,
+                    next_sequence,
+                    data.get("planned_date"),
+                    data.get("planned_end_date"),
+                    data.get("planned_start_period"),
+                    data.get("planned_end_period"),
+                    duration_half_days,
+                    stay_days,
+                    data.get("preferred_period") or "auto",
+                    1 if data.get("schedule_locked") else 0,
+                    data.get("confirmation_status") or "unconfirmed",
+                    data.get("visit_purpose"),
+                    data.get("notes"),
+                    now,
+                    actor_id,
+                    now,
+                    actor_id,
+                ),
+            )
+            if desired_sequence != next_sequence:
+                ordered_ids = [
+                    row["id"] for row in self.free_stop_repo.active_references(plan_id)
+                    if row["id"] != stop_id
+                ]
+                ordered_ids.insert(desired_sequence - 1, stop_id)
+                self.free_stop_repo.set_order(plan_id, ordered_ids, actor_id, now)
+            self._invalidate_trip_itinerary(plan_id, actor_id, "stop_added", now)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
+    def add_trip_free_stop(
+        self,
+        plan_id: str,
+        data: dict,
+        actor_id: str,
+        actor_role: str,
+    ) -> Optional[dict]:
+        """Add a route stop without creating a customer or Lead."""
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None
+        category = str(data.get("category") or "").strip().lower()
+        location_name = str(data.get("location_name") or "").strip()
+        if category not in FREE_STOP_CATEGORIES:
+            raise ValueError("Unsupported free stop category")
+        if not location_name:
+            raise ValueError("location_name is required")
+        lat = self.core._finite_float(data.get("lat"))
+        lng = self.core._finite_float(data.get("lng"))
+        if lat is None or not -90 <= lat <= 90:
+            raise ValueError("lat must be between -90 and 90")
+        if lng is None or not -180 <= lng <= 180:
+            raise ValueError("lng must be between -180 and 180")
+
+        conn = self.core.lead_repo.conn
+        next_sequence = self.free_stop_repo.next_sequence(plan_id)
+        desired_sequence = int(data.get("sequence_no") or next_sequence)
+        if desired_sequence < 1 or desired_sequence > next_sequence:
+            raise ValueError(
+                f"sequence_no must be between 1 and {next_sequence}"
+            )
+        now = now_iso()
+        free_stop_id = generate_uuid()
+        if data.get("duration_half_days") is not None and data.get("stay_days") is not None:
+            raise ValueError(
+                "Choose either a half-day stop duration or a full-day stay, not both"
+            )
+        duration_half_days = int(
+            data.get("duration_half_days")
+            or self.core._clean_stay_days(data.get("stay_days")) * 2
         )
-        conn.commit()
+        stay_days = (duration_half_days + 1) // 2
+        try:
+            conn.execute(
+                """
+                INSERT INTO trip_plan_free_stops (
+                    id, plan_id, category, location_name, address, city, country,
+                    lat, lng, sequence_no, planned_date, planned_end_date,
+                    planned_start_period, planned_end_period,
+                    duration_half_days, stay_days, preferred_period, schedule_locked,
+                    confirmation_status, visit_purpose, notes,
+                    created_at, created_by, updated_at, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    free_stop_id,
+                    plan_id,
+                    category,
+                    location_name,
+                    data.get("address"),
+                    data.get("city"),
+                    data.get("country"),
+                    lat,
+                    lng,
+                    next_sequence,
+                    data.get("planned_date"),
+                    data.get("planned_end_date"),
+                    data.get("planned_start_period"),
+                    data.get("planned_end_period"),
+                    duration_half_days,
+                    stay_days,
+                    data.get("preferred_period") or "auto",
+                    1 if data.get("schedule_locked") else 0,
+                    data.get("confirmation_status") or "unconfirmed",
+                    data.get("visit_purpose"),
+                    data.get("notes"),
+                    now,
+                    actor_id,
+                    now,
+                    actor_id,
+                ),
+            )
+            if desired_sequence != next_sequence:
+                ordered_ids = [
+                    row["id"] for row in self.free_stop_repo.active_references(plan_id)
+                    if row["id"] != free_stop_id
+                ]
+                ordered_ids.insert(desired_sequence - 1, free_stop_id)
+                self.free_stop_repo.set_order(
+                    plan_id, ordered_ids, actor_id, now
+                )
+            self._invalidate_trip_itinerary(plan_id, actor_id, "stop_added", now)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
+    def update_trip_free_stop(
+        self,
+        plan_id: str,
+        free_stop_id: str,
+        data: dict,
+        actor_id: str,
+        actor_role: str,
+    ) -> Optional[dict]:
+        """Update an independent route stop without Lead-side effects."""
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None
+        current = self.free_stop_repo.get_active(free_stop_id)
+        if not current or current["plan_id"] != plan_id:
+            return None
+        expected_version = data.pop("row_version", None)
+        self.core._assert_row_version(current, expected_version)
+
+        allowed = {
+            "category", "location_name", "address", "city", "country",
+            "lat", "lng", "planned_date", "planned_end_date",
+            "planned_start_period", "planned_end_period",
+            "stay_days", "duration_half_days", "preferred_period",
+            "schedule_locked", "confirmation_status", "visit_purpose", "notes",
+        }
+        update_data = {key: value for key, value in data.items() if key in allowed}
+        for required_key in (
+            "category", "location_name", "lat", "lng", "stay_days",
+            "duration_half_days", "preferred_period", "schedule_locked",
+            "confirmation_status",
+        ):
+            if required_key in update_data and update_data[required_key] is None:
+                raise ValueError(f"{required_key} cannot be null")
+        if "category" in update_data:
+            update_data["category"] = str(update_data["category"]).strip().lower()
+            if update_data["category"] not in FREE_STOP_CATEGORIES:
+                raise ValueError("Unsupported free stop category")
+        if "location_name" in update_data:
+            update_data["location_name"] = str(update_data["location_name"]).strip()
+            if not update_data["location_name"]:
+                raise ValueError("location_name is required")
+        for coordinate, lower, upper in (("lat", -90, 90), ("lng", -180, 180)):
+            if coordinate in update_data:
+                update_data[coordinate] = self.core._finite_float(update_data[coordinate])
+                if (
+                    update_data[coordinate] is None
+                    or not lower <= update_data[coordinate] <= upper
+                ):
+                    raise ValueError(f"{coordinate} must be between {lower} and {upper}")
+        if "stay_days" in update_data and "duration_half_days" in update_data:
+            raise ValueError(
+                "Choose either a half-day stop duration or a full-day stay, not both"
+            )
+        if "duration_half_days" in update_data:
+            update_data["duration_half_days"] = int(update_data["duration_half_days"])
+            update_data["stay_days"] = (update_data["duration_half_days"] + 1) // 2
+        elif "stay_days" in update_data:
+            update_data["stay_days"] = self.core._clean_stay_days(
+                update_data["stay_days"]
+            )
+            update_data["duration_half_days"] = update_data["stay_days"] * 2
+        for bool_key in ("schedule_locked",):
+            if bool_key in update_data:
+                update_data[bool_key] = 1 if update_data[bool_key] else 0
+
+        requested_sequence = data.get("sequence_no")
+        ordered_refs = self.free_stop_repo.active_references(plan_id)
+        if requested_sequence is not None:
+            requested_sequence = int(requested_sequence)
+            if requested_sequence < 1 or requested_sequence > len(ordered_refs):
+                raise ValueError(
+                    f"sequence_no must be between 1 and {len(ordered_refs)}"
+                )
+        route_fields = {
+                "location_name", "address", "city", "country", "lat", "lng",
+                "planned_date", "planned_end_date", "planned_start_period",
+                "planned_end_period", "stay_days", "duration_half_days",
+                "preferred_period", "schedule_locked",
+        }
+        route_changed = requested_sequence is not None or any(
+            key in update_data and update_data[key] != current.get(key)
+            for key in route_fields
+        )
+        endpoint_identity_changed = any(
+            key in update_data and update_data[key] != current.get(key)
+            for key in (
+                "category",
+                "location_name",
+                "address",
+                "city",
+                "country",
+                "lat",
+                "lng",
+            )
+        )
+        if not update_data and requested_sequence is None:
+            return plan
+
+        conn = self.core.lead_repo.conn
+        now = now_iso()
+        try:
+            if update_data:
+                update_data["updated_at"] = now
+                update_data["updated_by"] = actor_id
+                update_data["row_version"] = int(current.get("row_version") or 1) + 1
+                assignments = ", ".join(f"{key} = ?" for key in update_data)
+                params = [*update_data.values(), free_stop_id, plan_id]
+                where = "id = ? AND plan_id = ? AND archived_at IS NULL"
+                if expected_version is not None:
+                    where += " AND row_version = ?"
+                    params.append(expected_version)
+                cursor = conn.execute(
+                    f"UPDATE trip_plan_free_stops SET {assignments} WHERE {where}",
+                    tuple(params),
+                )
+                if cursor.rowcount == 0:
+                    latest = self.free_stop_repo.get_active(free_stop_id)
+                    if latest:
+                        self.core._assert_row_version(latest, expected_version)
+            if requested_sequence is not None:
+                ordered_ids = [
+                    row["id"] for row in ordered_refs if row["id"] != free_stop_id
+                ]
+                ordered_ids.insert(requested_sequence - 1, free_stop_id)
+                self.free_stop_repo.set_order(plan_id, ordered_ids, actor_id, now)
+                conn.execute(
+                    "UPDATE trip_plans SET route_order_mode = 'manual' WHERE id = ?",
+                    (plan_id,),
+                )
+            if endpoint_identity_changed:
+                clear_locked_overrides_for_free_stops(
+                    conn,
+                    [free_stop_id],
+                    actor_id,
+                    now,
+                )
+            if route_changed:
+                self._invalidate_trip_itinerary(
+                    plan_id, actor_id, "stop_schedule_changed", now
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE trip_plans
+                    SET updated_at = ?, updated_by = ?, row_version = row_version + 1
+                    WHERE id = ?
+                    """,
+                    (now, actor_id, plan_id),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         return self.core.get_trip_plan(plan_id, actor_id, actor_role)
 
     def update_trip_stop(
@@ -373,11 +1097,25 @@ class TripPlanService:
         expected_version = data.pop("row_version", None)
         self.core._assert_row_version(current, expected_version)
 
+        requested_sequence = data.pop("sequence_no", None)
+        ordered_refs = self.free_stop_repo.active_references(plan_id)
+        if requested_sequence is not None:
+            requested_sequence = int(requested_sequence)
+            if requested_sequence < 1 or requested_sequence > len(ordered_refs):
+                raise ValueError(
+                    f"sequence_no must be between 1 and {len(ordered_refs)}"
+                )
+
         allowed = {
-            "sequence_no",
             "planned_date",
             "planned_end_date",
+            "planned_start_period",
+            "planned_end_period",
             "stay_days",
+            "duration_half_days",
+            "preferred_period",
+            "schedule_locked",
+            "confirmation_status",
             "visit_purpose",
             "notes",
             "result_status",
@@ -393,8 +1131,21 @@ class TripPlanService:
             "lead_id",
         }
         update_data = {key: value for key, value in data.items() if key in allowed}
-        if "stay_days" in update_data:
+        for required_key in ("result_status",):
+            if required_key in update_data and update_data[required_key] is None:
+                raise ValueError(f"{required_key} cannot be null")
+        if "stay_days" in update_data and "duration_half_days" in update_data:
+            raise ValueError(
+                "Choose either a half-day visit duration or a full-day stay, not both"
+            )
+        if "duration_half_days" in update_data:
+            update_data["duration_half_days"] = int(update_data["duration_half_days"])
+            update_data["stay_days"] = (update_data["duration_half_days"] + 1) // 2
+        elif "stay_days" in update_data:
             update_data["stay_days"] = self.core._clean_stay_days(update_data["stay_days"])
+            update_data["duration_half_days"] = update_data["stay_days"] * 2
+        if "schedule_locked" in update_data:
+            update_data["schedule_locked"] = 1 if update_data["schedule_locked"] else 0
         for bool_key in ("visit_sample_needed", "visit_quote_needed"):
             if bool_key in update_data:
                 update_data[bool_key] = 1 if update_data[bool_key] else 0
@@ -403,10 +1154,11 @@ class TripPlanService:
             if not lead or lead["customer_id"] != current["customer_id"]:
                 raise ValueError("Lead is not visible or does not belong to this customer")
 
-        should_sync_activity = (
-            data.get("result_status") in {"Visited", "Follow-up Needed", "Skipped"}
-            or data.get("result_notes")
-            or any(key in data for key in (
+        should_sync_activity = any(
+            key in data
+            for key in (
+                "result_status",
+                "result_notes",
                 "visit_customer_needs",
                 "visit_competitor",
                 "visit_budget",
@@ -414,13 +1166,22 @@ class TripPlanService:
                 "visit_next_action",
                 "visit_sample_needed",
                 "visit_quote_needed",
-            ))
+            )
         )
-        if update_data or should_sync_activity:
+        schedule_changed = requested_sequence is not None or any(
+            key in update_data and update_data[key] != current.get(key)
+            for key in (
+                "sequence_no", "planned_date", "planned_end_date",
+                "planned_start_period", "planned_end_period", "stay_days",
+                "duration_half_days", "preferred_period", "schedule_locked",
+            )
+        )
+        if update_data or should_sync_activity or requested_sequence is not None:
             conn = self.core.lead_repo.conn
             try:
+                plan_updated_at = now_iso()
                 if update_data:
-                    update_data["updated_at"] = now_iso()
+                    update_data["updated_at"] = plan_updated_at
                     update_data["updated_by"] = actor_id
                     update_data["row_version"] = int(current.get("row_version") or 1) + 1
                     assignments = ", ".join(f"{key} = ?" for key in update_data)
@@ -437,19 +1198,52 @@ class TripPlanService:
                         latest = self.core._get_trip_stop(stop_id)
                         if latest:
                             self.core._assert_row_version(latest, expected_version)
-                    conn.execute(
-                        """
-                        UPDATE trip_plans
-                        SET updated_at = ?, updated_by = ?, row_version = row_version + 1
-                        WHERE id = ?
-                        """,
-                        (now_iso(), actor_id, plan_id),
+                    if schedule_changed:
+                        self._invalidate_trip_itinerary(
+                            plan_id,
+                            actor_id,
+                            "stop_schedule_changed",
+                            plan_updated_at,
+                        )
+                    else:
+                        conn.execute(
+                            """
+                            UPDATE trip_plans
+                            SET updated_at = ?, updated_by = ?, row_version = row_version + 1
+                            WHERE id = ?
+                            """,
+                            (plan_updated_at, actor_id, plan_id),
+                        )
+
+                if requested_sequence is not None:
+                    ordered_ids = [
+                        row["id"] for row in ordered_refs if row["id"] != stop_id
+                    ]
+                    ordered_ids.insert(requested_sequence - 1, stop_id)
+                    self.free_stop_repo.set_order(
+                        plan_id, ordered_ids, actor_id, plan_updated_at
                     )
+                    conn.execute(
+                        "UPDATE trip_plans SET route_order_mode = 'manual' WHERE id = ?",
+                        (plan_id,),
+                    )
+                    if not update_data:
+                        self._invalidate_trip_itinerary(
+                            plan_id,
+                            actor_id,
+                            "stop_schedule_changed",
+                            plan_updated_at,
+                        )
 
                 updated_stop = self.core._get_trip_stop(stop_id)
                 if updated_stop and should_sync_activity:
                     self.core._sync_trip_result_activity(updated_stop, actor_id)
-                    self.core._sync_trip_followup_activity(updated_stop, actor_id)
+                if updated_stop:
+                    self.core._sync_trip_followup_activity(
+                        updated_stop,
+                        actor_id,
+                        previous_lead_id=current.get("lead_id"),
+                    )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -479,23 +1273,16 @@ class TripPlanService:
         conn = self.core.lead_repo.conn
         now = now_iso()
         try:
-            for sequence_no, stop_id in enumerate(stop_ids, start=1):
-                conn.execute(
-                    """
-                    UPDATE trip_plan_stops
-                    SET sequence_no = ?, updated_at = ?, updated_by = ?,
-                        row_version = row_version + 1
-                    WHERE id = ? AND plan_id = ? AND archived_at IS NULL
-                    """,
-                    (sequence_no, now, actor_id, stop_id, plan_id),
-                )
+            self.free_stop_repo.set_order(plan_id, stop_ids, actor_id, now)
             conn.execute(
-                """
-                UPDATE trip_plans
-                SET updated_at = ?, updated_by = ?, row_version = row_version + 1
-                WHERE id = ?
-                """,
-                (now, actor_id, plan_id),
+                "UPDATE trip_plans SET route_order_mode = 'manual' WHERE id = ?",
+                (plan_id,),
+            )
+            self._invalidate_trip_itinerary(
+                plan_id,
+                actor_id,
+                "stop_order_changed",
+                now,
             )
             conn.commit()
         except Exception:
@@ -516,19 +1303,43 @@ class TripPlanService:
             return None
         expected_version = data.pop("row_version", None)
         self.core._assert_row_version(plan, expected_version)
+        if "title" in data:
+            title = str(data.get("title") or "").strip()
+            if not title:
+                raise ValueError("title cannot be empty")
+            data["title"] = title
         calculation = self.core._calculate_trip_itinerary(plan, data)
+        summary = calculation["summary"]
+        if not summary["within_date_window"]:
+            raise ValueError(
+                "The itinerary exceeds the selected end date "
+                f"{summary['requested_end_date']} "
+                f"{summary.get('requested_end_period') or ''} by "
+                f"{summary['overrun_half_days']} half-day slot(s). "
+                "Adjust the route, dates, or visit durations before saving."
+            )
         stop_updates = calculation["stop_updates"]
+        legs = calculation["legs"]
         plan_updates = calculation["plan_updates"]
 
         conn = self.core.lead_repo.conn
         now = now_iso()
         try:
             for item in stop_updates:
+                table = (
+                    "trip_plan_free_stops"
+                    if item.get("stop_kind") == "free"
+                    else "trip_plan_stops"
+                )
                 conn.execute(
-                    """
-                    UPDATE trip_plan_stops
+                    f"""
+                    UPDATE {table}
                     SET sequence_no = ?, planned_date = ?, planned_end_date = ?,
-                        stay_days = ?, travel_from_label = ?, travel_mode = ?,
+                        planned_start_period = ?, planned_end_period = ?,
+                        duration_half_days = ?, stay_days = ?,
+                        preferred_period = ?, schedule_locked = ?,
+                        confirmation_status = ?,
+                        travel_from_label = ?, travel_mode = ?,
                         travel_distance_km = ?, travel_time_hours = ?, travel_days = ?,
                         updated_at = ?, updated_by = ?, row_version = row_version + 1
                     WHERE id = ? AND plan_id = ? AND archived_at IS NULL
@@ -537,7 +1348,13 @@ class TripPlanService:
                         item["sequence_no"],
                         item["planned_date"],
                         item["planned_end_date"],
+                        item["planned_start_period"],
+                        item["planned_end_period"],
+                        item["duration_half_days"],
                         item["stay_days"],
+                        item["preferred_period"],
+                        1 if item["schedule_locked"] else 0,
+                        item["confirmation_status"],
                         item["travel_from_label"],
                         item["travel_mode"],
                         item["travel_distance_km"],
@@ -549,6 +1366,8 @@ class TripPlanService:
                         plan_id,
                     ),
                 )
+
+            self.leg_repo.replace_active(plan_id, legs, actor_id, now)
 
             plan_updates["updated_at"] = now
             plan_updates["updated_by"] = actor_id
@@ -588,6 +1407,42 @@ class TripPlanService:
         calculation = self.core._calculate_trip_itinerary(plan, data)
         return self.core._trip_itinerary_preview_plan(plan, calculation)
 
+    def get_trip_transport_suggestions(
+        self,
+        plan_id: str,
+        data: dict,
+        actor_id: str,
+        actor_role: str,
+        *,
+        force_refresh: bool = False,
+    ) -> Optional[dict]:
+        """Suggest per-leg metrics from the zero-write itinerary preview."""
+        preview = self.preview_trip_itinerary(plan_id, data, actor_id, actor_role)
+        if preview is None:
+            return None
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if plan is None:
+            return None
+        requests = requests_from_preview(self.core, plan, data, preview)
+        suggestions = [
+            self.transport_suggestions.suggest(item, force_refresh=force_refresh).as_dict()
+            for item in requests
+        ]
+        summary = preview.get("itinerary_summary") or {}
+        warnings = [str(item) for item in summary.get("warnings") or []]
+        warnings.append(
+            "Transport suggestions are approximate and require manual confirmation before saving."
+        )
+        return {
+            "generated_at": now_iso(),
+            "privacy_notice": (
+                "No account, token, customer name or address is sent automatically. "
+                "Allowlisted search links disclose route coordinates only after the user opens them."
+            ),
+            "warnings": warnings,
+            "suggestions": suggestions,
+        }
+
     def archive_trip_stop(
         self,
         plan_id: str,
@@ -611,31 +1466,75 @@ class TripPlanService:
         if row_version is not None:
             where += " AND row_version = ?"
             params.append(row_version)
-        cursor = self.core.lead_repo.conn.execute(
-            f"""
-            UPDATE trip_plan_stops
-            SET archived_at = ?, updated_at = ?, updated_by = ?,
-                row_version = row_version + 1
-            WHERE {where}
-            """,
-            tuple(params),
-        )
-        if cursor.rowcount == 0:
-            latest = self.core._get_trip_stop(stop_id)
-            if latest:
-                self.core._assert_row_version(latest, row_version)
+        try:
+            cursor = conn.execute(
+                f"""
+                UPDATE trip_plan_stops
+                SET archived_at = ?, updated_at = ?, updated_by = ?,
+                    row_version = row_version + 1
+                WHERE {where}
+                """,
+                tuple(params),
+            )
+            if cursor.rowcount == 0:
+                latest = self.core._get_trip_stop(stop_id)
+                if latest:
+                    self.core._assert_row_version(latest, row_version)
+                conn.rollback()
+                return None
+            self.free_stop_repo.normalize_sequences(plan_id, actor_id, now)
+            self._invalidate_trip_itinerary(plan_id, actor_id, "stop_removed", now)
+            conn.commit()
+        except Exception:
             conn.rollback()
+            raise
+        return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
+    def archive_trip_free_stop(
+        self,
+        plan_id: str,
+        free_stop_id: str,
+        actor_id: str,
+        actor_role: str,
+        row_version: Optional[int] = None,
+    ) -> Optional[dict]:
+        """Archive an independent route stop without Lead-side effects."""
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
             return None
-        self.core._normalize_trip_stop_sequences(plan_id, actor_id, now)
-        conn.execute(
-            """
-            UPDATE trip_plans
-            SET updated_at = ?, updated_by = ?, row_version = row_version + 1
-            WHERE id = ?
-            """,
-            (now, actor_id, plan_id),
-        )
-        conn.commit()
+        current = self.free_stop_repo.get_active(free_stop_id)
+        if not current or current["plan_id"] != plan_id:
+            return None
+        self.core._assert_row_version(current, row_version)
+        conn = self.core.lead_repo.conn
+        now = now_iso()
+        params = [now, now, actor_id, free_stop_id, plan_id]
+        where = "id = ? AND plan_id = ? AND archived_at IS NULL"
+        if row_version is not None:
+            where += " AND row_version = ?"
+            params.append(row_version)
+        try:
+            cursor = conn.execute(
+                f"""
+                UPDATE trip_plan_free_stops
+                SET archived_at = ?, updated_at = ?, updated_by = ?,
+                    row_version = row_version + 1
+                WHERE {where}
+                """,
+                tuple(params),
+            )
+            if cursor.rowcount == 0:
+                latest = self.free_stop_repo.get_active(free_stop_id)
+                if latest:
+                    self.core._assert_row_version(latest, row_version)
+                conn.rollback()
+                return None
+            self.free_stop_repo.normalize_sequences(plan_id, actor_id, now)
+            self._invalidate_trip_itinerary(plan_id, actor_id, "stop_removed", now)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         return self.core.get_trip_plan(plan_id, actor_id, actor_role)
 
     def export_trip_plan_markdown(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[str]:
@@ -643,6 +1542,7 @@ class TripPlanService:
         plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
         if not plan:
             return None
+        self._assert_itinerary_exportable(plan)
         lines = [
             f"# {plan['title']}",
             "",
@@ -651,13 +1551,16 @@ class TripPlanService:
             f"- Region: {plan.get('region') or '-'}",
             f"- Owner: {plan.get('owner_name') or '-'}",
             f"- Origin: {plan.get('origin_name') or '-'}",
+            f"- Departure Window: {plan.get('departure_window_start') or '-'} to {plan.get('departure_window_end') or '-'}",
             f"- Destination: {plan.get('destination_name') or '-'}",
+            f"- Return Window: {plan.get('return_window_start') or '-'} to {plan.get('return_window_end') or '-'}",
             f"- Travel Mode: {plan.get('travel_mode') or 'auto'}",
+            f"- Planning Notes: {plan.get('description') or '-'}",
             "",
-            "## Stops",
+            "## Customer Visit Schedule",
             "",
-            "| # | Customer | Location | Lead | Stage | Value | Dates | Stay | Travel From | Purpose | Result | Notes |",
-            "|---|---|---|---|---|---:|---|---:|---|---|---|---|",
+            "| " + " | ".join(self._visit_export_headers()) + " |",
+            "|---:|---|---|---|---|---|---|---|---|---|",
         ]
         summary = plan.get("itinerary_summary") or {}
         if summary:
@@ -667,29 +1570,106 @@ class TripPlanService:
                 f"- Travel Distance: {summary.get('total_distance_km') or '-'} km",
                 f"- Travel Hours: {summary.get('total_travel_hours') or '-'}",
             ]
-        for stop in plan.get("stops", []):
-            value = self.core._num(stop.get("deal_amount")) or self.core._num(stop.get("estimated_value"))
-            dates = " to ".join(x for x in [stop.get("planned_date"), stop.get("planned_end_date")] if x)
-            travel_from = stop.get("travel_from_label") or "-"
-            if stop.get("travel_distance_km"):
-                travel_from = f"{travel_from} ({stop.get('travel_mode') or '-'}, {stop.get('travel_distance_km')} km)"
+        customer_stops = [
+            stop for stop in plan.get("stops", [])
+            if stop.get("stop_kind") != "free"
+        ]
+        for number, stop in enumerate(customer_stops, start=1):
+            row = self._visit_export_row(stop, number)
             lines.append(
-                "| {seq} | {customer} | {location} | {lead} | {stage} | {value} | {dates} | {stay} | {travel_from} | {purpose} | {result} | {notes} |".format(
-                    seq=stop.get("sequence_no") or "",
-                    customer=self.core._md_cell(stop.get("customer_name")),
-                    location=self.core._md_cell(", ".join(x for x in [stop.get("city"), stop.get("country")] if x)),
-                    lead=self.core._md_cell(stop.get("lead_display_id")),
-                    stage=self.core._md_cell(stop.get("sales_stage")),
-                    value=f"{value:,.0f}" if value else "-",
-                    dates=self.core._md_cell(dates),
-                    stay=stop.get("stay_days") or 1,
-                    travel_from=self.core._md_cell(travel_from),
-                    purpose=self.core._md_cell(stop.get("visit_purpose")),
-                    result=self.core._md_cell(stop.get("result_status")),
-                    notes=self.core._md_cell(stop.get("result_notes") or stop.get("notes")),
+                "| " + " | ".join(
+                    self.core._md_cell(row[header])
+                    for header in self._visit_export_headers()
+                ) + " |"
+            )
+        free_stops = [
+            stop for stop in plan.get("stops", [])
+            if stop.get("stop_kind") == "free"
+        ]
+        if free_stops:
+            lines.extend(
+                [
+                    "",
+                    "## Non-customer Schedule",
+                    "",
+                    "| # | Place | Category | Date / Period | Duration | Purpose | Notes |",
+                    "|---:|---|---|---|---:|---|---|",
+                ]
+            )
+            for stop in free_stops:
+                date_text = " ".join(
+                    str(value) for value in (
+                        stop.get("planned_date"), stop.get("planned_start_period")
+                    ) if value
+                )
+                lines.append(
+                    "| {seq} | {place} | {category} | {date} | {duration} | {purpose} | {notes} |".format(
+                        seq=stop.get("sequence_no") or "",
+                        place=self.core._md_cell(stop.get("location_name")),
+                        category=self.core._md_cell(stop.get("category")),
+                        date=self.core._md_cell(date_text),
+                        duration=(stop.get("duration_half_days") or 2) / 2,
+                        purpose=self.core._md_cell(stop.get("visit_purpose")),
+                        notes=self.core._md_cell(stop.get("notes")),
+                    )
+                )
+        lines.extend(
+            [
+                "",
+                "## Route Legs",
+                "",
+                "| # | From | To | Mode | Distance km | Time hours | Start | End | Travel half-days | Travel days | Planning basis | Notes |",
+                "|---|---|---|---|---:|---:|---|---|---:|---:|---|---|",
+            ]
+        )
+        legs = plan.get("legs") or []
+        if not legs:
+            lines.append("| - | - | - | - | - | - | - | - | - | - | No saved route legs | - |")
+        for leg in legs:
+            lines.append(
+                "| {seq} | {from_label} | {to_label} | {mode} | {distance} | {hours} | {start} | {end} | {half_days} | {days} | {basis} | {notes} |".format(
+                    seq=leg.get("sequence_no") or "",
+                    from_label=self.core._md_cell(leg.get("from_label") or leg.get("from")),
+                    to_label=self.core._md_cell(leg.get("to_label") or leg.get("to")),
+                    mode=self.core._md_cell(leg.get("selected_mode") or leg.get("mode")),
+                    distance=self.core._md_cell(leg.get("distance_km")),
+                    hours=self.core._md_cell(leg.get("time_hours")),
+                    start=self.core._md_cell(" ".join(
+                        str(value) for value in (
+                            leg.get("planned_start_date"),
+                            leg.get("planned_start_period"),
+                        ) if value
+                    )),
+                    end=self.core._md_cell(" ".join(
+                        str(value) for value in (
+                            leg.get("planned_end_date"), leg.get("planned_end_period"),
+                        ) if value
+                    )),
+                    half_days=self.core._md_cell(leg.get("travel_half_days")),
+                    days=self.core._md_cell((leg.get("travel_half_days") or 0) / 2),
+                    basis=self.core._md_cell(self._trip_leg_confirmation(leg)),
+                    notes=self.core._md_cell(leg.get("notes")),
                 )
             )
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _visit_export_headers() -> list[str]:
+        return [
+            "No.",
+            "Company Name",
+            "Full Address",
+            "Recommended Visit Date",
+            "Demo Laser",
+            "PO Laser",
+            "Other Equipment",
+            CUSTOMER_PERSONNEL_HEADER,
+            CHANNEL_PARTNER_COMPANIONS_HEADER,
+            "Visiting topic",
+        ]
+
+    def _visit_export_row(self, stop: dict, number: int) -> dict:
+        return formal_visit_row(stop, number)
 
     def get_trip_execution(
         self,
@@ -702,8 +1682,12 @@ class TripPlanService:
         plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
         if not plan:
             return None
+        self._assert_itinerary_exportable(plan)
 
-        days = self._planned_days(plan.get("stops") or [])
+        all_schedule_items = list(plan.get("schedule_items") or [])
+        days = sorted(
+            {item.get("date") for item in all_schedule_items if item.get("date")}
+        ) or self._planned_days(plan.get("stops") or [])
         selected_date = visit_date or (days[0] if days else None)
         stops = [
             stop for stop in plan.get("stops", [])
@@ -714,6 +1698,10 @@ class TripPlanService:
             "days": days,
             "selected_date": selected_date,
             "stops": stops,
+            "schedule_items": [
+                item for item in all_schedule_items
+                if not selected_date or item.get("date") == selected_date
+            ],
         }
 
     def export_trip_execution_markdown(
@@ -736,20 +1724,79 @@ class TripPlanService:
             f"- Owner: {plan.get('owner_name') or '-'}",
             f"- Region: {plan.get('region') or '-'}",
             "",
+            "## Daily Timeline",
+            "",
+            "| Order | Date | Period | Type | Item | Mode | Distance km | Time hours |",
+            "|---:|---|---|---|---|---|---:|---:|",
+        ]
+        for item in execution.get("schedule_items", []):
+            lines.append(
+                "| {order} | {date} | {period} | {kind} | {title} | {mode} | {distance} | {hours} |".format(
+                    order=item.get("schedule_index") or "",
+                    date=self.core._md_cell(item.get("date")),
+                    period=self.core._md_cell(item.get("period")),
+                    kind=self.core._md_cell(item.get("item_type")),
+                    title=self.core._md_cell(item.get("title")),
+                    mode=self.core._md_cell(item.get("selected_mode")),
+                    distance=self.core._md_cell(item.get("distance_km")),
+                    hours=self.core._md_cell(item.get("time_hours")),
+                )
+            )
+        lines.extend([
+            "",
             "## Daily Itinerary",
             "",
-            "| # | Date | Customer | Contact | Address | Lead | Purpose | Result |",
-            "|---|---|---|---|---|---|---|---|",
-        ]
+            "| # | Date / Period | Type | Category | Place / Customer | Contact | Address | Lead | Purpose | Result |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ])
         for stop in execution.get("stops", []):
-            contact = " / ".join(x for x in [stop.get("contact_name"), stop.get("contact_phone") or stop.get("contact_email")] if x)
-            address = ", ".join(x for x in [stop.get("address"), stop.get("city"), stop.get("country")] if x)
-            dates = " to ".join(x for x in [stop.get("planned_date"), stop.get("planned_end_date")] if x)
+            briefing = stop.get("briefing") or {}
+            briefing_contacts = briefing.get("contacts") or []
+            contact = "\n".join(
+                " / ".join(
+                    str(value) for value in (
+                        item.get("name"), item.get("position"), item.get("role"),
+                        item.get("phone"), item.get("email"), item.get("notes"),
+                    ) if value
+                )
+                for item in briefing_contacts
+                if any(item.get(key) for key in ("name", "email", "phone"))
+            )
+            if not contact:
+                contact = " / ".join(
+                    x for x in (
+                        stop.get("contact_name"),
+                        stop.get("contact_phone") or stop.get("contact_email"),
+                    ) if x
+                )
+            location = stop.get("visit_location") or {}
+            address = location.get("full_address") or ", ".join(
+                x for x in (
+                    stop.get("address"), stop.get("city"),
+                    stop.get("postal_code"), stop.get("country"),
+                ) if x
+            )
+            start = " ".join(
+                str(value) for value in (
+                    stop.get("planned_date"), stop.get("planned_start_period")
+                ) if value
+            )
+            end = " ".join(
+                str(value) for value in (
+                    stop.get("planned_end_date"), stop.get("planned_end_period")
+                ) if value
+            )
+            dates = start if not end or end == start else f"{start} to {end}"
             lines.append(
-                "| {seq} | {dates} | {customer} | {contact} | {address} | {lead} | {purpose} | {result} |".format(
+                "| {seq} | {dates} | {kind} | {category} | {customer} | {contact} | {address} | {lead} | {purpose} | {result} |".format(
                     seq=stop.get("sequence_no") or "",
                     dates=self.core._md_cell(dates),
-                    customer=self.core._md_cell(stop.get("customer_name")),
+                    kind=self.core._md_cell(stop.get("stop_kind") or "customer"),
+                    category=self.core._md_cell(stop.get("category")),
+                    customer=self.core._md_cell(
+                        location.get("label") or stop.get("location_name")
+                        or stop.get("customer_name")
+                    ),
                     contact=self.core._md_cell(contact),
                     address=self.core._md_cell(address),
                     lead=self.core._md_cell(stop.get("lead_display_id") or stop.get("lead_title")),
@@ -760,6 +1807,8 @@ class TripPlanService:
 
         lines.extend(["", "## Visit Reports", ""])
         for stop in execution.get("stops", []):
+            if stop.get("stop_kind") == "free":
+                continue
             lines.extend(
                 [
                     f"### {stop.get('sequence_no') or ''}. {stop.get('customer_name') or '-'}",
@@ -804,67 +1853,166 @@ class TripPlanService:
         plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
         if not plan:
             return None
+        self._assert_itinerary_exportable(plan)
         output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow([
-            "sequence",
-            "customer",
-            "city",
-            "country",
-            "lead_display_id",
-            "lead_title",
-            "stage",
-            "owner",
-            "value",
-            "planned_date",
-            "planned_end_date",
-            "stay_days",
-            "travel_from",
-            "travel_mode",
-            "travel_distance_km",
-            "travel_time_hours",
-            "travel_days",
-            "purpose",
-            "result_status",
-            "result_notes",
-            "customer_needs",
-            "competitor",
-            "budget",
-            "decision_maker",
-            "next_action",
-            "sample_needed",
-            "quote_needed",
-            "notes",
-        ])
+        stop_headers = [
+            "sequence", "stop_kind", "category", "location_name", "customer",
+            "address", "city", "postal_code", "country", "visit_location_lat",
+            "visit_location_lng", "visit_location_source", "lead_display_id",
+            "lead_title", "stage", "owner", "value", "planned_date",
+            "planned_start_period", "planned_end_date", "planned_end_period",
+            "duration_half_days", "stay_days", "preferred_period",
+            "schedule_locked", "confirmation_status", "travel_from",
+            "travel_mode", "travel_distance_km", "travel_time_hours",
+            "travel_days", "purpose", "result_status", "result_notes",
+            "customer_needs", "competitor", "budget", "decision_maker",
+            "next_action", "sample_needed", "quote_needed", "notes",
+        ]
+        leg_headers = [
+            "leg_sequence", "leg_key", "leg_from", "leg_to", "leg_mode",
+            "leg_distance_km", "leg_time_hours", "leg_travel_half_days",
+            "leg_travel_days", "leg_planned_start_date",
+            "leg_planned_start_period", "leg_planned_end_date",
+            "leg_planned_end_period", "leg_notes", "leg_confirmation",
+        ]
+        plan_headers = [
+            "plan_title", "plan_description", "plan_start_date", "plan_end_date",
+            "plan_origin", "plan_destination", "departure_window_start",
+            "departure_window_end", "return_window_start", "return_window_end",
+        ]
+        headers = [
+            "record_type", *self._visit_export_headers(), *stop_headers,
+            *leg_headers, *plan_headers,
+        ]
+        writer = csv.DictWriter(output, fieldnames=headers)
+        writer.writeheader()
+        plan_cells = {
+            "plan_title": plan.get("title"),
+            "plan_description": plan.get("description"),
+            "plan_start_date": plan.get("start_date"),
+            "plan_end_date": plan.get("end_date"),
+            "plan_origin": plan.get("origin_name"),
+            "plan_destination": plan.get("destination_name"),
+            "departure_window_start": plan.get("departure_window_start"),
+            "departure_window_end": plan.get("departure_window_end"),
+            "return_window_start": plan.get("return_window_start"),
+            "return_window_end": plan.get("return_window_end"),
+        }
+
+        def write_row(row: dict) -> None:
+            writer.writerow(
+                {key: self.core._csv_cell(row.get(key)) for key in headers}
+            )
+
+        customer_number = 0
         for stop in plan.get("stops", []):
-            writer.writerow([
-                self.core._csv_cell(stop.get("sequence_no")),
-                self.core._csv_cell(stop.get("customer_name")),
-                self.core._csv_cell(stop.get("city")),
-                self.core._csv_cell(stop.get("country")),
-                self.core._csv_cell(stop.get("lead_display_id")),
-                self.core._csv_cell(stop.get("lead_title")),
-                self.core._csv_cell(stop.get("sales_stage")),
-                self.core._csv_cell(stop.get("lead_owner_name")),
-                self.core._num(stop.get("deal_amount")) or self.core._num(stop.get("estimated_value")),
-                self.core._csv_cell(stop.get("planned_date")),
-                self.core._csv_cell(stop.get("planned_end_date")),
-                self.core._csv_cell(stop.get("stay_days") or 1),
-                self.core._csv_cell(stop.get("travel_from_label")),
-                self.core._csv_cell(stop.get("travel_mode")),
-                self.core._csv_cell(stop.get("travel_distance_km")),
-                self.core._csv_cell(stop.get("travel_time_hours")),
-                self.core._csv_cell(stop.get("travel_days")),
-                self.core._csv_cell(stop.get("visit_purpose")),
-                self.core._csv_cell(stop.get("result_status")),
-                self.core._csv_cell(stop.get("result_notes")),
-                self.core._csv_cell(stop.get("visit_customer_needs")),
-                self.core._csv_cell(stop.get("visit_competitor")),
-                self.core._csv_cell(stop.get("visit_budget")),
-                self.core._csv_cell(stop.get("visit_decision_maker")),
-                self.core._csv_cell(stop.get("visit_next_action")),
-                self.core._csv_cell("Yes" if stop.get("visit_sample_needed") else "No"),
-                self.core._csv_cell("Yes" if stop.get("visit_quote_needed") else "No"),
-                self.core._csv_cell(stop.get("notes")),
-            ])
+            is_customer = stop.get("stop_kind") != "free"
+            if is_customer:
+                customer_number += 1
+                example = self._visit_export_row(stop, customer_number)
+            else:
+                example = {key: "" for key in self._visit_export_headers()}
+            location = stop.get("visit_location") or {}
+            write_row(
+                {
+                    "record_type": "customer_stop" if is_customer else "free_stop",
+                    **example,
+                    "sequence": stop.get("sequence_no"),
+                    "stop_kind": stop.get("stop_kind") or "customer",
+                    "category": stop.get("category"),
+                    "location_name": (
+                        location.get("label") or stop.get("location_name")
+                        or stop.get("customer_name")
+                    ),
+                    "customer": stop.get("customer_name") if is_customer else None,
+                    "address": location.get("address", stop.get("address")),
+                    "city": location.get("city", stop.get("city")),
+                    "postal_code": location.get("postal_code", stop.get("postal_code")),
+                    "country": location.get("country", stop.get("country")),
+                    "visit_location_lat": location.get("lat", stop.get("lat")),
+                    "visit_location_lng": location.get("lng", stop.get("lng")),
+                    "visit_location_source": location.get("source"),
+                    "lead_display_id": stop.get("lead_display_id"),
+                    "lead_title": stop.get("lead_title"),
+                    "stage": stop.get("sales_stage"),
+                    "owner": stop.get("lead_owner_name"),
+                    "value": self.core._num(stop.get("deal_amount"))
+                    or self.core._num(stop.get("estimated_value")),
+                    "planned_date": stop.get("planned_date"),
+                    "planned_start_period": stop.get("planned_start_period"),
+                    "planned_end_date": stop.get("planned_end_date"),
+                    "planned_end_period": stop.get("planned_end_period"),
+                    "duration_half_days": stop.get("duration_half_days"),
+                    "stay_days": stop.get("stay_days"),
+                    "preferred_period": stop.get("preferred_period"),
+                    "schedule_locked": "Yes" if stop.get("schedule_locked") else "No",
+                    "confirmation_status": stop.get("confirmation_status"),
+                    "travel_from": stop.get("travel_from_label"),
+                    "travel_mode": stop.get("travel_mode"),
+                    "travel_distance_km": stop.get("travel_distance_km"),
+                    "travel_time_hours": stop.get("travel_time_hours"),
+                    "travel_days": stop.get("travel_days"),
+                    "purpose": stop.get("visit_purpose"),
+                    "result_status": stop.get("result_status"),
+                    "result_notes": stop.get("result_notes"),
+                    "customer_needs": stop.get("visit_customer_needs"),
+                    "competitor": stop.get("visit_competitor"),
+                    "budget": stop.get("visit_budget"),
+                    "decision_maker": stop.get("visit_decision_maker"),
+                    "next_action": stop.get("visit_next_action"),
+                    "sample_needed": "Yes" if stop.get("visit_sample_needed") else "No",
+                    "quote_needed": "Yes" if stop.get("visit_quote_needed") else "No",
+                    "notes": stop.get("notes"),
+                    **plan_cells,
+                }
+            )
+        for leg in plan.get("legs") or []:
+            write_row(
+                {
+                    "record_type": "leg",
+                    "leg_sequence": leg.get("sequence_no"),
+                    "leg_key": leg.get("leg_key"),
+                    "leg_from": leg.get("from_label") or leg.get("from"),
+                    "leg_to": leg.get("to_label") or leg.get("to"),
+                    "leg_mode": leg.get("selected_mode") or leg.get("mode"),
+                    "leg_distance_km": leg.get("distance_km"),
+                    "leg_time_hours": leg.get("time_hours"),
+                    "leg_travel_half_days": leg.get("travel_half_days"),
+                    "leg_travel_days": (leg.get("travel_half_days") or 0) / 2,
+                    "leg_planned_start_date": leg.get("planned_start_date"),
+                    "leg_planned_start_period": leg.get("planned_start_period"),
+                    "leg_planned_end_date": leg.get("planned_end_date"),
+                    "leg_planned_end_period": leg.get("planned_end_period"),
+                    "leg_notes": leg.get("notes"),
+                    "leg_confirmation": self._trip_leg_confirmation(leg),
+                    **plan_cells,
+                }
+            )
         return output.getvalue()
+
+    def _formal_trip_export(self, plan_id: str, actor_id: str, actor_role: str):
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None, None
+        self._assert_itinerary_exportable(plan)
+        model = build_trip_export_model(
+            plan, self._trip_leg_confirmation
+        )
+        return plan, model
+
+    def export_trip_plan_xlsx(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+        """Export a trip plan as a styled Excel workbook."""
+        _, model = self._formal_trip_export(plan_id, actor_id, actor_role)
+        return None if model is None else render_trip_xlsx(model)
+
+    def export_trip_plan_html(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+        """Export a trip plan as a self-contained printable page."""
+        _, model = self._formal_trip_export(plan_id, actor_id, actor_role)
+        return None if model is None else render_trip_html(model)
+
+    def export_trip_plan_ics(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+        """Export half-day itinerary slots as all-day calendar events."""
+        plan, model = self._formal_trip_export(plan_id, actor_id, actor_role)
+        if model is None:
+            return None
+        return render_trip_ics(model, plan.get("schedule_items") or [])

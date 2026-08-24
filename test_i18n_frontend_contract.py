@@ -72,6 +72,12 @@ def main() -> None:
         "Conflict: {error}. Please refresh and try again.", "Error saving contact: {error}",
         "Customer is not plotted on the review map. Opened coordinate correction.",
         "Visit saved", "Error exporting visit day: {error}",
+        "Visit purpose", "Result notes", "Unscheduled stops", "Export day report",
+        "No stops on this date", "No scheduled date", "Customer departments / teams",
+        "Customer personnel", "Channel partner companions (if any)",
+        "Channel partner companions", "JPT internal participants", "Lead",
+        "Customer needs", "Budget", "Sample needed", "Quote needed",
+        "Meeting notes", "Upload files",
         "This customer needs coordinate review before it can be shown on the map.",
         "{action} conflict: this plan was updated elsewhere. The latest data will be loaded; please retry.",
         "Could not load more candidates", "Enter at least one Customer ID or Lead ID",
@@ -81,7 +87,8 @@ def main() -> None:
         "Create a full backup before import", "Authorization Check Failed",
         "Unable to verify authorization status. Restart JPT and try again.",
         "Loading candidates...", "Unable to load saved plans", "No stops yet",
-        "Archive trip plan “{title}”?", "Trip plan archived",
+        "No saved plans", "No dates", "Untitled", "Trip Plan {date}",
+        "{start} to {end}", "Archive trip plan “{title}”?", "Trip plan archived",
         "{count} files uploaded. Reselect only the files not uploaded: {files}. Error: {error}",
         "JPT has stopped", "You can close this window safely.",
         "Locked", "{count} won", "{count} open", "Open Lead", "Fix Location",
@@ -90,6 +97,9 @@ def main() -> None:
         "GLOBAL", "North America / Canada / Australia", "Russia / Turkey / Middle East",
         "Add to Plan", "Error loading coordinate data",
         "{count} customers · country aggregate", "High", "Medium", "Low",
+        "Score", "Value", "Reasons", "Map", "Showing {shown} of {total}", "Load more",
+        "Multiple open leads", "Quoted opportunities", "Active follow-up", "Pipeline value",
+        "Service or renewal context", "Coordinate needs review",
     ):
         assert f"'{label}'" in i18n, f"missing translation contract: {label}"
 
@@ -127,6 +137,8 @@ def main() -> None:
     coordinate_review = (modules / "coordinate-review-view.js").read_text(encoding="utf-8")
     review_map = (modules / "review-map-view.js").read_text(encoding="utf-8")
     inquiry_form = (modules / "inquiry-form.js").read_text(encoding="utf-8")
+    trip_plans = (modules / "trip-plans.js").read_text(encoding="utf-8")
+    trip_form = (modules / "trip-form.js").read_text(encoding="utf-8")
     assert "coordinateText('No data available')" in coordinate_review
     assert "coordinateText(p.coordinate_quality" in coordinate_review
     assert "coordinateText(isVerified ? 'Verified' : 'Auto Exact')" in coordinate_review
@@ -135,6 +147,11 @@ def main() -> None:
     assert "I18n.t('No fields configured for this tab.')" in inquiry_form
     assert "姓名或邮箱至少填写一项" not in inquiry_form
     assert "邮箱格式: example@company.com" not in inquiry_form
+    assert "I18n.t('No saved plans')" in trip_plans
+    assert "formatTripPlanDateRange(plan)" in trip_plans
+    assert "plan.title || I18n.t('Untitled')" in trip_plans
+    assert "I18n.t('Trip Plan {date}'" in trip_form
+    assert "toLocaleDateString('en-US')" not in trip_form
 
     harness = r"""
 const fs = require('fs');
@@ -216,6 +233,21 @@ assert.strictEqual(context.I18n.t('{count} won', { count: 2 }), '2 个已赢单'
 assert.strictEqual(context.I18n.t('Open Lead'), '打开商机');
 assert.strictEqual(context.I18n.t('GLOBAL'), '全球');
 assert.strictEqual(context.I18n.t('Add to Plan'), '加入计划');
+assert.strictEqual(context.I18n.t('Visit purpose'), '拜访目的');
+assert.strictEqual(context.I18n.t('Result notes'), '结果备注');
+assert.strictEqual(context.I18n.t('Unscheduled stops'), '未排程拜访');
+assert.strictEqual(context.I18n.t('Export day report'), '导出当日拜访报告');
+assert.strictEqual(context.I18n.t('Customer departments / teams'), '客户部门 / 团队');
+assert.strictEqual(context.I18n.t('Customer personnel'), '客户人员');
+assert.strictEqual(context.I18n.t('Channel partner companions (if any)'), '渠道代理公司陪同人员（如有）');
+assert.strictEqual(context.I18n.t('Channel partner companions'), '渠道代理公司陪同人员');
+assert.strictEqual(context.I18n.t('JPT internal participants'), 'JPT 内部参会人员');
+assert.strictEqual(context.I18n.t('Lead'), '商机');
+assert.strictEqual(context.I18n.t('Customer needs'), '客户需求');
+assert.strictEqual(context.I18n.t('Sample needed'), '需要样品');
+assert.strictEqual(context.I18n.t('Quote needed'), '需要报价');
+assert.strictEqual(context.I18n.t('Meeting notes'), '会议记录');
+assert.strictEqual(context.I18n.t('Upload files'), '上传文件');
 assert.strictEqual(context.I18n.t('Error loading coordinate data'), '坐标数据加载失败');
 assert.strictEqual(context.I18n.t('{count} customers · country aggregate', { count: 3 }), '3 位客户 · 国家聚合');
 assert.strictEqual(context.I18n.t('High'), '高');
@@ -227,6 +259,19 @@ assert.strictEqual(
 assert.strictEqual(
     context.I18n.t('Archive trip plan “{title}”?', { title: 'Europe 2026' }),
     '要归档出差计划“Europe 2026”吗？'
+);
+assert.strictEqual(context.I18n.t('No saved plans'), '尚无已保存的出差计划');
+assert.strictEqual(context.I18n.t('No dates'), '尚未设置日期');
+assert.strictEqual(context.I18n.t('Untitled'), '未命名');
+assert.strictEqual(
+    context.I18n.t('Trip Plan {date}', { date: context.formatDate('2026-09-15') }),
+    '出差计划 2026年9月15日'
+);
+assert.strictEqual(
+    context.I18n.t('{start} to {end}', {
+        start: context.formatDate('2026-09-15'), end: context.formatDate('2026-09-30')
+    }),
+    '2026年9月15日 至 2026年9月30日'
 );
 assert.strictEqual(
     context.I18n.t(

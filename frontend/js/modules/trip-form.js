@@ -1,7 +1,6 @@
-// ===== v0.7 Trip Planner =====
 function getTripFilters() {
     return {
-        region: document.getElementById('trip-region')?.value || '',
+        region: document.getElementById('trip-candidate-region')?.value || '',
         sales_stage: document.getElementById('trip-stage')?.value || '',
         limit: State.tripCandidatePagination.limit,
         offset: State.tripCandidatePagination.offset
@@ -9,40 +8,88 @@ function getTripFilters() {
 }
 
 function readTripPlanFormPayload() {
+    const routeDraft = window.TripPlanningDraft?.get?.();
+    // The visible form is the final source for header fields. A user may save
+    // immediately after typing, before a change/blur handler has copied the
+    // value into the in-memory route draft.
+    const header = readTripPlanHeaderFormPayload();
     return {
-        title: document.getElementById('trip-title')?.value?.trim() || `Trip Plan ${new Date().toLocaleDateString('en-US')}`,
+        ...header,
+        travel_mode: 'auto',
+        route_order_mode: routeDraft?.routeOrderMode
+            || (document.getElementById('trip-route-order-mode')?.value === 'manual' ? 'manual' : 'auto'),
+        transport_mode_priority: routeDraft?.transportModePriority || ['flight', 'drive', 'ground_public'],
+        departure_window_start: routeDraft
+            ? routeDraft.departureWindowStart || null
+            : document.getElementById('trip-departure-window-start')?.value || null,
+        departure_window_end: routeDraft
+            ? routeDraft.departureWindowEnd || null
+            : document.getElementById('trip-departure-window-end')?.value || null,
+        return_window_start: routeDraft
+            ? routeDraft.returnWindowStart || null
+            : document.getElementById('trip-return-window-start')?.value || null,
+        return_window_end: routeDraft
+            ? routeDraft.returnWindowEnd || null
+            : document.getElementById('trip-return-window-end')?.value || null,
+    };
+}
+
+function readTripPlanHeaderFormPayload() {
+    const titleInput = document.getElementById('trip-title');
+    return {
+        title: titleInput ? titleInput.value.trim()
+            || I18n.t('Trip Plan {date}', { date: formatDate(toDateInput(new Date())) }) : null,
         start_date: document.getElementById('trip-start-date')?.value || null,
         end_date: document.getElementById('trip-end-date')?.value || null,
-        region: document.getElementById('trip-region')?.value || null,
+        region: document.getElementById('trip-plan-region')?.value || null,
         origin_name: document.getElementById('trip-origin-name')?.value?.trim() || null,
         origin_lat: numericOrNull(document.getElementById('trip-origin-lat')?.value),
         origin_lng: numericOrNull(document.getElementById('trip-origin-lng')?.value),
         destination_name: document.getElementById('trip-destination-name')?.value?.trim() || null,
         destination_lat: numericOrNull(document.getElementById('trip-destination-lat')?.value),
         destination_lng: numericOrNull(document.getElementById('trip-destination-lng')?.value),
-        travel_mode: document.getElementById('trip-travel-mode')?.value || 'auto',
         avoid_weekends: Boolean(document.getElementById('trip-avoid-weekends')?.checked),
         holiday_dates: parseHolidayInput(document.getElementById('trip-holidays')?.value || ''),
-        description: document.getElementById('trip-description')?.value?.trim() || null
+        description: document.getElementById('trip-description')?.value?.trim() || null,
     };
 }
 
-function populateTripPlanForm(plan) {
+function populateTripPlanForm(plan, options = {}) {
     if (!plan) return;
-    setInputValue('trip-title', plan.title || '');
-    setInputValue('trip-start-date', plan.start_date || '');
-    setInputValue('trip-end-date', plan.end_date || '');
-    setInputValue('trip-origin-name', plan.origin_name || '');
-    setInputValue('trip-origin-lat', plan.origin_lat ?? '');
-    setInputValue('trip-origin-lng', plan.origin_lng ?? '');
-    setInputValue('trip-destination-name', plan.destination_name || '');
-    setInputValue('trip-destination-lat', plan.destination_lat ?? '');
-    setInputValue('trip-destination-lng', plan.destination_lng ?? '');
-    setInputValue('trip-travel-mode', plan.travel_mode || 'auto');
-    setInputValue('trip-holidays', (plan.holiday_dates || []).join(', '));
-    setInputValue('trip-description', plan.description || '');
+    const routeDraft = window.TripPlanningDraft?.hydrate?.(plan, options);
+    const header = routeDraft?.header || plan;
+    setInputValue('trip-title', header.title || '');
+    setInputValue('trip-start-date', header.start_date || '');
+    setInputValue('trip-end-date', header.end_date || '');
+    setInputValue('trip-plan-region', header.region || '');
+    setInputValue('trip-origin-name', header.origin_name || '');
+    setInputValue('trip-origin-lat', header.origin_lat ?? '');
+    setInputValue('trip-origin-lng', header.origin_lng ?? '');
+    setInputValue('trip-destination-name', header.destination_name || '');
+    setInputValue('trip-destination-lat', header.destination_lat ?? '');
+    setInputValue('trip-destination-lng', header.destination_lng ?? '');
+    setInputValue('trip-origin-preset', window.TripChinaHubs?.detect?.(header.origin_lat, header.origin_lng) || 'custom');
+    setInputValue('trip-destination-preset', window.TripChinaHubs?.detect?.(
+        header.destination_lat, header.destination_lng
+    ) || 'custom');
+    setInputValue('trip-travel-mode', 'auto');
+    setInputValue('trip-route-order-mode', routeDraft?.routeOrderMode || plan.route_order_mode || 'auto');
+    setInputValue('trip-departure-window-start', tripDateTimeLocalValue(
+        routeDraft ? routeDraft.departureWindowStart : plan.departure_window_start
+    ));
+    setInputValue('trip-departure-window-end', tripDateTimeLocalValue(
+        routeDraft ? routeDraft.departureWindowEnd : plan.departure_window_end
+    ));
+    setInputValue('trip-return-window-start', tripDateTimeLocalValue(
+        routeDraft ? routeDraft.returnWindowStart : plan.return_window_start
+    ));
+    setInputValue('trip-return-window-end', tripDateTimeLocalValue(
+        routeDraft ? routeDraft.returnWindowEnd : plan.return_window_end
+    ));
+    setInputValue('trip-holidays', (header.holiday_dates || []).join(', '));
+    setInputValue('trip-description', header.description || '');
     const avoidWeekends = document.getElementById('trip-avoid-weekends');
-    if (avoidWeekends) avoidWeekends.checked = plan.avoid_weekends !== false;
+    if (avoidWeekends) avoidWeekends.checked = header.avoid_weekends !== false;
 }
 
 function parseHolidayInput(value) {
@@ -52,13 +99,49 @@ function parseHolidayInput(value) {
         .filter(Boolean);
 }
 
-function readTripStopStayPayload() {
-    const stays = {};
+function readTripStopDurationPayload(options = {}) {
+    const durations = {};
+    const routeDraft = window.TripPlanningDraft?.get?.();
     (State.currentTripPlan?.stops || []).forEach(stop => {
-        const value = Number(document.getElementById(`stop-stay-${stop.id}`)?.value || stop.stay_days || 1);
-        stays[stop.id] = Number.isFinite(value) ? Math.max(1, Math.min(30, Math.round(value))) : 1;
+        const fallback = window.TripPlanningDraft?.durationFor?.(
+            stop.id, TripDuration.readStopDuration(stop)
+        ) ?? routeDraft?.stopDurations?.[stop.id]?.half_days
+            ?? TripDuration.readStopDuration(stop);
+        const visibleDays = document.getElementById(`stop-stay-${stop.id}`)?.value;
+        const hasScheduleControls = Boolean(document.getElementById(`stop-period-${stop.id}`));
+        const schedule = hasScheduleControls
+            ? window.TripStopScheduleControls?.readPayload?.(stop.id)
+            : (routeDraft?.stopDurations?.[stop.id] || stop);
+        const parsedHalfDays = visibleDays === undefined
+            ? TripDuration.normalizeHalfDays(fallback)
+            : TripDuration.parseDisplayDays(visibleDays);
+        if (parsedHalfDays == null) {
+            throw new Error(I18n.t('Stop duration must be 0.5 to 30 days in 0.5-day increments.'));
+        }
+        durations[stop.id] = {
+            half_days: parsedHalfDays,
+            preferred_period: ['auto', 'AM', 'PM'].includes(schedule.preferred_period)
+                ? schedule.preferred_period : 'auto',
+            locked: Boolean(schedule.schedule_locked ?? schedule.locked),
+        };
     });
-    return stays;
+    const changed = routeDraft && Object.entries(durations).some(
+        ([stopId, duration]) => JSON.stringify(routeDraft.stopDurations?.[stopId] || {}) !== JSON.stringify(duration)
+    );
+    if (changed && options.syncDraft !== false) {
+        window.TripPlanningDraft.change(draft => {
+            draft.stopDurations = { ...draft.stopDurations, ...durations };
+        });
+    }
+    return durations;
+}
+
+function readTripItineraryPayload() {
+    return {
+        ...window.TripPlanningDraft?.itineraryPayload?.(),
+        ...readTripPlanFormPayload(),
+        stop_durations: readTripStopDurationPayload(),
+    };
 }
 
 function numericOrNull(value) {
@@ -66,9 +149,12 @@ function numericOrNull(value) {
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
 }
+function tripDateTimeLocalValue(value) {
+    const match = String(value || '').match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})/);
+    return match ? `${match[1]}T${match[2]}:${match[3]}` : '';
+}
 
 function setInputValue(id, value) {
     const el = document.getElementById(id);
     if (el) el.value = value;
 }
-

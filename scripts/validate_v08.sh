@@ -14,7 +14,7 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python3}"
 fi
 
-echo "JPT Sales Toolkit v0.11 validation"
+echo "JPT Sales Toolkit v0.12 validation"
 echo "----------------------------------"
 
 echo
@@ -97,6 +97,19 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_inquiry_atomic_save.py
 "$PYTHON_BIN" test_inquiry_atomic_frontend_contract.py
 "$PYTHON_BIN" test_v07_review_trip.py
+"$PYTHON_BIN" test_trip_planner_stability.py
+"$PYTHON_BIN" test_trip_planner_stability_frontend_contract.py
+"$PYTHON_BIN" test_trip_planner_transport_v2.py
+"$PYTHON_BIN" test_trip_planner_free_stops.py
+"$PYTHON_BIN" test_trip_planner_transport_v2_frontend_contract.py
+"$PYTHON_BIN" test_trip_transport_suggestions.py
+"$PYTHON_BIN" test_trip_transport_suggestions_endpoint.py
+"$PYTHON_BIN" test_trip_planner_batch3_frontend_contract.py
+"$PYTHON_BIN" test_trip_planner_batch4.py
+"$PYTHON_BIN" test_trip_planner_batch4_frontend_contract.py
+"$PYTHON_BIN" test_trip_export_renderers.py
+"$PYTHON_BIN" test_trip_planner_batch5_exports.py
+"$PYTHON_BIN" test_trip_planner_batch5_frontend_contract.py
 "$PYTHON_BIN" test_v09_filters_merge.py
 "$PYTHON_BIN" test_business_region_filters.py
 "$PYTHON_BIN" test_customer_merge_integrity.py
@@ -120,4 +133,4 @@ echo "Step 3/4: core regression tests"
 
 echo
 echo "Step 4/4: validation summary"
-echo "PASS: v0.11 validation completed"
+echo "PASS: v0.12 validation completed"

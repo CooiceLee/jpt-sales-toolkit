@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>JPT 0.11.9 大规模团队全流程互动操作手册</title>
+  <title>JPT 0.12.0 大规模团队全流程互动操作手册</title>
   <style>
     :root{--wine:#8b1a1a;--wine2:#641111;--ink:#1d1d1f;--muted:#68625f;--bg:#f3f1ee;--paper:#fff;--line:#ddd6d1;--soft:#f8efec;--ok:#176b3a;--warn:#946000;--danger:#a32323;--blue:#245b87;--shadow:0 15px 42px rgba(54,35,28,.08)}
     *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:76px}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.68 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}a{color:var(--wine);text-decoration:none}a:hover{text-decoration:underline}code{background:#f2ece9;color:#741616;border-radius:5px;padding:2px 5px;overflow-wrap:anywhere}.hide{display:none!important}
@@ -50,7 +50,7 @@
       <section class="hero guide-section" id="start">
         <div class="eyebrow">JPT · TEAM TEST GUIDE</div>
         <h1>从安装到业务闭环，<br>一页完成团队实测。</h1>
-        <p>适用版本：<strong>v0.11.9-internal</strong> 团队测试 / Pre-release。本次只分发 Windows 10/11 x64 与 macOS Apple Silicon arm64；覆盖升级以 v0.11.8-internal 为直接基线。两平台门禁和团队实测全部通过前不得标记为 Stable / Latest。本页离线运行，不上传任何信息。请选择平台、角色和数据起点；页面会生成推荐路线，并在当前浏览器保存勾选进度、测试档案和问题清单。</p>
+        <p>适用版本：<strong>v0.12.0-internal</strong> UNSIGNED-INTERNAL 团队测试 / Draft Pre-release。本次只分发 Windows 10/11 x64 与 macOS Apple Silicon arm64；覆盖升级以 v0.11.9-internal schema 3 为直接基线，新版会在任何 schema 写入前自动创建并验证 <code>pre_upgrade</code> 备份，再升级到 schema 6。两平台门禁和团队实测全部通过前不得标记为 Stable / Latest。本页离线运行，不上传任何信息。请选择平台、角色和数据起点；页面会生成推荐路线，并在当前浏览器保存勾选进度、测试档案和问题清单。</p>
         <div class="pills"><span class="pill">Windows 10/11 x64</span><span class="pill">macOS Apple Silicon arm64</span><span class="pill">Leader / Sales / Tech</span><span class="pill">有历史数据 / 从零开始</span><span class="pill">UNSIGNED-INTERNAL</span></div>
         <div class="profile" style="margin-top:22px">
           <div class="profile-grid">
@@ -91,7 +91,7 @@
           <tr><td>客户 / 线索</td><td>NordWerk Demo GmbH · <code>QA-TEAM-001</code></td><td>所有模块统一使用，便于检索和清理</td></tr>
         </tbody></table></div>
         <div class="task-list">
-          <label class="task"><input type="checkbox" data-check="prepare-package" data-gate="A"><span>安装包文件名、平台和版本均为 0.11.9<small>不使用旧 DMG、旧目录或聊天转存的未知副本</small></span></label>
+          <label class="task"><input type="checkbox" data-check="prepare-package" data-gate="A"><span>安装包文件名、平台和版本均为 0.12.0<small>不使用旧 DMG、旧目录或聊天转存的未知副本</small></span></label>
           <label class="task"><input type="checkbox" data-check="prepare-hash" data-gate="A"><span>安装包 SHA-256 与清单一致<small>不一致时停止，不继续处理系统安全提示</small></span></label>
           <label class="task"><input type="checkbox" data-check="prepare-accounts" data-gate="C"><span>权限测试所需四个虚拟身份已分配<small>密码由成员本机设置，不写在手册或群聊</small></span></label>
           <label class="task"><input type="checkbox" data-check="prepare-id" data-gate="A"><span>确定唯一测试标识<small>建议团队缩写 + 日期 + 序号，便于归档测试数据</small></span></label>
@@ -101,15 +101,15 @@
       <section class="section guide-section" id="install">
         <div class="section-head"><div><h2>1. 安装、首次启动与升级</h2><p>只关闭浏览器页面不等于退出 JPT；覆盖安装前必须从左下角用户菜单选择“退出 JPT”。</p></div><span class="tag">Gate A</span></div>
         <div class="grid2">
-          <article class="card"><h3>Windows 10 / 11 x64</h3><ol><li>确认文件名包含 <code>Windows-x64</code> 和 <code>UNSIGNED-INTERNAL</code>。</li><li>双击 Setup；若 SmartScreen 提示，先核对来源和哈希，再选择“更多信息 → 仍要运行”。</li><li>按向导完成，不自行改变用户数据目录。</li><li>从“开始”菜单打开 JPT；不要运行旧解压目录副本。</li><li>浏览器应打开本机 <code>127.0.0.1</code>，标题栏显示 <code>v0.11.9-internal</code>。</li></ol></article>
-          <article class="card"><h3>macOS Apple Silicon arm64</h3><ol><li> → 关于本机，确认芯片为 Apple；Intel Mac 不使用本次 DMG。</li><li>打开 DMG，把 App 拖入“应用程序”；升级时选择替换。</li><li>推出 JPT 磁盘映像，不能直接运行 DMG 内 App。</li><li>从“应用程序”打开；未签名提示时右键 App → 打开，并再次确认。</li><li>标题栏确认 <code>v0.11.9-internal</code>。</li></ol></article>
+          <article class="card"><h3>Windows 10 / 11 x64</h3><ol><li>确认文件名包含 <code>Windows-x64</code> 和 <code>UNSIGNED-INTERNAL</code>。</li><li>双击 Setup；若 SmartScreen 提示，先核对来源和哈希，再选择“更多信息 → 仍要运行”。</li><li>按向导完成，不自行改变用户数据目录。</li><li>从“开始”菜单打开 JPT；不要运行旧解压目录副本。</li><li>浏览器应打开本机 <code>127.0.0.1</code>，标题栏显示 <code>v0.12.0-internal</code>。</li></ol></article>
+          <article class="card"><h3>macOS Apple Silicon arm64</h3><ol><li> → 关于本机，确认芯片为 Apple；Intel Mac 不使用本次 DMG。</li><li>打开 DMG，把 App 拖入“应用程序”；升级时选择替换。</li><li>推出 JPT 磁盘映像，不能直接运行 DMG 内 App。</li><li>从“应用程序”打开；未签名提示时右键 App → 打开，并再次确认。</li><li>标题栏确认 <code>v0.12.0-internal</code>。</li></ol></article>
         </div>
         <aside class="callout warn"><strong>升级后没有重新建号是正常的。</strong>程序文件与用户数据分离。Windows 数据在 <code>%LOCALAPPDATA%\JPT Sales Toolkit\data</code>；macOS 数据在 <code>~/Library/Application Support/JPT Sales Toolkit/data</code>。不要删除数据目录来刷新界面。</aside>
         <div class="diagram" aria-label="安装与数据保留示意图">
           <svg viewBox="0 0 900 210" role="img" aria-labelledby="installTitle"><title id="installTitle">程序升级与数据保留流程</title>
             <rect x="20" y="35" width="190" height="130" rx="18" fill="#fff" stroke="#8b1a1a"/><text x="115" y="72" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">旧版程序</text><text x="115" y="106" text-anchor="middle" fill="#68625f" font-size="14">退出 JPT</text><text x="115" y="132" text-anchor="middle" fill="#68625f" font-size="14">记录客户 / 线索 / 附件</text>
             <path d="M220 100 H320" stroke="#8b1a1a" stroke-width="3"/><path d="M310 90 L325 100 L310 110" fill="none" stroke="#8b1a1a" stroke-width="3"/>
-            <rect x="340" y="20" width="220" height="160" rx="18" fill="#f8efec" stroke="#8b1a1a"/><text x="450" y="58" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">首次启动新版</text><text x="450" y="91" text-anchor="middle" fill="#68625f" font-size="14">先检查 schema</text><text x="450" y="117" text-anchor="middle" fill="#68625f" font-size="14">需要迁移才建 pre_upgrade</text><text x="450" y="143" text-anchor="middle" fill="#68625f" font-size="14">无需迁移则保持原位</text>
+            <rect x="340" y="20" width="220" height="160" rx="18" fill="#f8efec" stroke="#8b1a1a"/><text x="450" y="58" text-anchor="middle" fill="#8b1a1a" font-size="18" font-weight="700">首次启动新版</text><text x="450" y="91" text-anchor="middle" fill="#68625f" font-size="14">识别 schema 3</text><text x="450" y="117" text-anchor="middle" fill="#68625f" font-size="14">创建并验证 pre_upgrade</text><text x="450" y="143" text-anchor="middle" fill="#68625f" font-size="14">升级到 schema 6</text>
             <path d="M570 100 H670" stroke="#8b1a1a" stroke-width="3"/><path d="M660 90 L675 100 L660 110" fill="none" stroke="#8b1a1a" stroke-width="3"/>
             <rect x="690" y="35" width="190" height="130" rx="18" fill="#fff" stroke="#176b3a"/><text x="785" y="72" text-anchor="middle" fill="#176b3a" font-size="18" font-weight="700">核对并重启</text><text x="785" y="106" text-anchor="middle" fill="#68625f" font-size="14">原账号、总数、阶段</text><text x="785" y="132" text-anchor="middle" fill="#68625f" font-size="14">跟进、附件均一致</text>
           </svg>
@@ -117,7 +117,7 @@
         <div class="task-list">
           <label class="task"><input type="checkbox" data-check="install-launch" data-gate="A"><span>正确安装副本成功启动<small>版本正确，浏览器访问 127.0.0.1</small></span></label>
           <label class="task"><input type="checkbox" data-check="install-persist" data-gate="A"><span>退出 JPT 后第二次启动成功<small>不是只关闭浏览器标签页</small></span></label>
-          <label class="task"><input type="checkbox" data-check="install-upgrade" data-gate="A"><span>如为升级，原账号、数量、阶段和附件一致<small>升级前完整备份；需要迁移时才有自动 pre_upgrade</small></span></label>
+          <label class="task"><input type="checkbox" data-check="install-upgrade" data-gate="A"><span>v0.11.9 升级后原账号、数量、阶段和附件一致<small>schema 3 写入前已创建并验证 pre_upgrade，完成后为 schema 6</small></span></label>
           <label class="task"><input type="checkbox" data-check="install-offline" data-gate="A"><span>无地图网络时核心业务仍可使用<small>底图失败不应阻塞客户列表和人工坐标</small></span></label>
         </div>
       </section>
@@ -196,7 +196,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         <div class="section-head"><div><h2>4. 界面结构与各模块实际操作</h2><p>点击模块名称切换下方图示、建议动作、成功判定和常见误区。图中账号和线索均为虚拟示例。</p></div><span class="tag">全角色按权限验证</span></div>
         <div class="module-tabs" id="moduleTabs" role="tablist" aria-label="模块选择"></div>
         <figure class="mock" aria-label="JPT 模块界面虚拟示意">
-          <div class="mock-top"><span>销售管线 / <b id="mockCrumb">仪表盘</b></span><span>v0.11.9-internal　中 / EN</span></div>
+          <div class="mock-top"><span>销售管线 / <b id="mockCrumb">仪表盘</b></span><span>v0.12.0-internal　中 / EN</span></div>
           <div class="mock-body">
             <nav class="mock-nav" id="mockNav"></nav>
             <div class="mock-main"><h3 id="mockTitle">仪表盘</h3><div class="mock-toolbar"><div class="mock-field">搜索客户、联系人、国家</div><div class="mock-field">全部地区</div></div><article class="lead-card"><span class="id">JPT-QA-0001 · QA-TEAM-001</span><h4>NordWerk Demo GmbH</h4><dl><dt id="fieldLabel1">负责人</dt><dd id="fieldValue1">Amy Wang</dd><dt id="fieldLabel2">下一步</dt><dd id="fieldValue2">线上会议</dd></dl></article></div>
@@ -262,7 +262,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
           <div class="flow-item"><strong>回传</strong>Tech 保存更新，导出 <code>.jptresult</code></div>
           <div class="flow-item"><strong>Leader</strong>预检版本和归属，原子合并并回执</div>
         </div>
-        <aside class="callout warn"><strong>开始前：</strong>Leader 先创建完整备份，记录目标 Tech、售前/样品任务数、售后任务数和导出时间。v0.11.8 直升 v0.11.9 不改变 schema，不应删除或重建现有客户、Lead 或任务；升级后仍要抽查原卡片并第二次启动。</aside>
+        <aside class="callout warn"><strong>开始前：</strong>Leader 先创建完整备份，记录目标 Tech、售前/样品任务数、售后任务数和导出时间。v0.11.9 schema 3 升级到 v0.12.0 schema 6 前会自动创建并验证 <code>pre_upgrade</code>；升级后仍要抽查原客户、Lead、任务和卡片，并完成第二次启动。</aside>
 
         <h3>Leader 分发 <code>.jpttask</code></h3>
         <div class="steps">
@@ -319,15 +319,25 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         <div class="steps">
           <article class="step"><div><h3>坐标复核</h3><p>搜索 <code>NordWerk Demo GmbH</code>，输入不敏感的虚拟地址；核对候选完整地址、国家、坐标和服务商后保存。并发版本冲突时刷新，不静默覆盖。</p></div></article>
           <article class="step"><div><h3>地图复盘</h3><p>按阶段、结果、业务地区和坐标质量筛选；离线底图失败时点位列表仍应可用，接口失败显示重试而不是 0。</p></div></article>
-          <article class="step"><div><h3>出差计划</h3><p>建立“QA Europe Visit”计划，按客户地理区域选候选，加入停靠点、预览路线、保存、导出；上传部分失败时只重试失败项，不重复成功项。</p></div></article>
-          <article class="step"><div><h3>归档</h3><p>确认计划可创建、查看、修改、归档。归档前出现确认；归档后活动计划不再显示，但不物理删除业务历史。</p></div></article>
+          <article class="step"><div><h3>建立日期和起返地点</h3><p>建立“QA Europe Visit”，设置 2026-09-15 至 09-30、上海出发并返回上海。加入德国、法国和意大利客户；路线中的每一站都必须落在该日期窗内。</p></div></article>
+          <article class="step"><div><h3>调整顺序与停靠</h3><p>分别试用自动顺序和手工拖动顺序，再加入酒店、机场、休息或其他没有客户任务的自由停靠。一个客户可安排多个地点；删除或移动停靠不会修改原客户资料。</p></div></article>
+          <article class="step"><div><h3>安排半天日程</h3><p>为每一站选择上午、下午或全天，并修改停留天数。保存、刷新和重新打开后，日期、半天安排、地点和顺序应保持一致。</p></div></article>
+          <article class="step"><div><h3>逐段确认交通</h3><p>勾选航班、自驾、公共交通和其他方式并调整优先级。每一段可单独改选并锁定；系统给出无需账号或 Token 的近似距离和时间，并提供外部查询入口。人工核对后再确认采用的方式、班次或时刻。</p></div></article>
+          <article class="step"><div><h3>填写拜访准备</h3><p>逐站填写访问主题、客户人员、渠道代理公司陪同人员（如有）、JPT 内部参会人员、演示设备、PO 设备和备注。一个客户的多个拜访地点可以保存不同准备内容。</p></div></article>
+          <article class="step"><div><h3>下载并核对行程</h3><p>保存当前修改后分别下载 XLSX、离线 HTML、ICS、Markdown 和 CSV。核对站点顺序、日期、上午/下午、完整地址、交通、联系人、团队、设备、主题和备注与页面一致。</p></div></article>
+          <article class="step"><div><h3>归档</h3><p>确认计划可创建、查看、修改、导出和归档。归档前出现确认；归档后活动计划不再显示，但仍保留历史。</p></div></article>
         </div>
-        <aside class="callout warn"><strong>外部服务边界：</strong>地址搜索可能把地址字段发送给高德和/或 Nominatim，底图访问 CARTO/OpenStreetMap。禁止外发的地址只用人工经纬度或地图选点。地图 Key 不进入前端、截图、日志、安装包或 GitHub。</aside>
+        <aside class="callout warn"><strong>外部服务：</strong>地址搜索可能把地址字段发送给高德和/或 Nominatim，底图访问 CARTO/OpenStreetMap；交通外链会在浏览器打开第三方查询页面。禁止外发的地址只用人工经纬度或地图选点。地图 Key 不进入前端、截图、日志、安装包或 GitHub。</aside>
+        <aside class="callout info"><strong>下载前先保存。</strong>页面仍有未保存修改、路线超出日期窗或路线已经过期时，先处理页面提示。正式文件只使用最后一次成功保存的行程。</aside>
         <div class="task-list">
           <label class="task"><input type="checkbox" data-check="map-quality" data-gate="A"><span>精确、近似、缺失三种状态可理解<small>近似点没有被当作准确地址</small></span></label>
           <label class="task"><input type="checkbox" data-check="map-search" data-gate="A"><span>不敏感虚拟地址可搜索、选择和保存<small>界面显示实际候选服务商</small></span></label>
-          <label class="task"><input type="checkbox" data-check="trip-crud" data-gate="A"><span>出差计划增、查、改、归档完整<small>路线和停靠点刷新后保持</small></span></label>
-          <label class="task"><input type="checkbox" data-check="trip-partial" data-gate="A"><span>部分失败仅重试失败项<small>已成功上传/保存项不重复</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-window-order" data-gate="A"><span>日期窗、起返地点和顺序正确<small>自动与手工顺序均可用，路线不越界</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-stops-schedule" data-gate="A"><span>自由停靠、多地点和半天日程保持<small>移动、删除、保存和重开后内容一致</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-transport" data-gate="A"><span>逐段交通可改选、锁定和人工确认<small>近似估算无需账号或 Token，外链可打开</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-briefing" data-gate="A"><span>每站拜访准备完整保存<small>联系人、团队、设备、主题和备注均可回看</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-exports" data-gate="A"><span>五种行程文件内容一致<small>XLSX、离线 HTML、ICS、Markdown、CSV 均来自已保存路线</small></span></label>
+          <label class="task"><input type="checkbox" data-check="trip-crud" data-gate="A"><span>出差计划增、查、改、归档完整<small>归档不删除历史</small></span></label>
         </div>
       </section>
 
@@ -361,14 +371,14 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         <div class="table-wrap" style="margin-top:16px"><table class="issue-table"><thead><tr><th>Gate / 模块</th><th>级别</th><th>问题与实际</th><th>证据</th><th>操作</th></tr></thead><tbody id="issueRows"></tbody></table></div>
       </section>
       <div class="search-empty hide" id="searchEmpty">没有找到匹配内容，请尝试更短的关键词。</div>
-      <p class="footer">JPT Sales Toolkit v0.11.9-internal · 团队测试 / Pre-release · 本手册离线运行，不连接程序数据库，也不上传记录。</p>
+      <p class="footer">JPT Sales Toolkit v0.12.0-internal · UNSIGNED-INTERNAL Draft Pre-release · 本手册离线运行，不连接程序数据库，也不上传记录。</p>
     </main>
   </div>
 
   <script>
     (() => {
       "use strict";
-      const VERSION="0.11.9-internal", KEY="jpt-0119-large-team-guide-v1";
+      const VERSION="0.12.0-internal", KEY="jpt-0120-large-team-guide-v1";
       const $=id=>document.getElementById(id);
       const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
       const initial={profile:{tester:"",team:"",platform:"",role:"Leader",scenario:"manual"},checks:{},issues:[],module:"dashboard"};
@@ -380,7 +390,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         manual:{title:"推荐路线：从零业务闭环",text:"先完成 Gate A 安装与账号，再用 QA-TEAM-001 手工走完 Parser → Handler → Follow-up → 售前/样品 → Deal → Fulfillment → After-sales；Gate B 可记 N/A；随后完成权限 Gate C 和终端包 Gate D。"},
         synthetic:{title:"推荐路线：虚拟标准模板",text:"Gate A 通过后复制标准模板，填 1–2 条虚拟记录，完成 Gate B；再以导入记录验证全部业务模块、角色权限 Gate C 和终端包 Gate D。"},
         history:{title:"推荐路线：真实历史数据",text:"Gate A 和完整备份先通过；Leader 使用原文件完成只读预检、账号/客户映射和原子提交；抽查警告记录、幂等更新、权限 Gate C，再完成终端包 Gate D。"},
-        upgrade:{title:"推荐路线：覆盖升级",text:"先退出旧 JPT，创建完整备份并记录账号、客户/线索数量和附件；安装新版，确认 v0.11.8 schema 3 原位保留且未伪造迁移包，再完成第二次启动；随后按团队是否有 Excel 选择真实或从零路径。"}
+        upgrade:{title:"推荐路线：覆盖升级",text:"先退出 v0.11.9，创建完整备份并记录账号、客户/线索数量和附件；安装新版，确认 schema 3 写入前已创建并验证 pre_upgrade，完成后为 schema 6；核对原数据并第二次启动，随后按团队是否有 Excel 选择真实或从零路径。"}
       };
       const modules=[
         {id:"dashboard",name:"仪表盘",roles:"Leader 看全团队；Sales 看权限范围；Tech 仅相关任务视图",action:"核对总询盘、最近 7 天、跟进中、赢单及地图；改变地区、阶段、结果和坐标质量筛选。",expected:"计数与左侧一致；接口失败显示错误和重试，不显示假 0；地图慢或离线不阻塞列表。",pitfall:"仪表盘用于复盘，不直接替代各模块的业务编辑。",tab:"数据质量",note:"1 项待复核：询盘日期需要人工确认。",f1:["负责人","Amy Wang"],f2:["下一步","线上会议"]},
@@ -393,7 +403,7 @@ Note: This is synthetic QA data. Do not contact.<button type="button" data-copy=
         {id:"aftersales",name:"07 售后",roles:"Sales/Leader 发起；Tech 更新本人任务",action:"建立售后任务，指定 Tech、到期日、问题、结果和报告。",expected:"Tech 只看到本人任务和必要关联；完成状态在卡片和详情一致。",pitfall:"售后任务是并行工作流，不等于销售 Lead 自动进入新主阶段。",tab:"售后",note:"虚拟任务：安装培训安排。",f1:["Tech","Eric Zhou"],f2:["状态","待处理"]},
         {id:"review",name:"数据复盘",roles:"Leader 全局；Sales 权限范围",action:"按阶段、结果、业务地区和坐标质量查看地图与列表；对异常位置进入坐标修正。",expected:"筛选口径与工作列表一致；离线显示提示，点位和列表仍可操作。",pitfall:"业务地区来自负责人账号，地图地理区域来自客户位置，两者不要混用。",tab:"数据质量",note:"坐标质量：近似，需要人工复核。",f1:["业务地区","欧洲"],f2:["坐标","近似"]},
         {id:"coordinate",name:"坐标复核",roles:"Leader、Owner、Collaborator 可改；Watcher/Tech 只读",action:"按客户、城市、国家、地址搜索；从候选选点或手工经纬度并保存。",expected:"显示服务商、质量和并发版本；保存后复盘地图刷新。",pitfall:"自动候选始终待人工确认；禁止外发地址不用在线搜索。",tab:"客户",note:"候选服务商：以实际界面显示为准。",f1:["质量","待复核"],f2:["国家","德国"]},
-        {id:"trip",name:"出差规划",roles:"Leader / 有权 Sales",action:"创建计划、筛选地理区域客户、增删停靠点、预览路线、保存、导出和归档。",expected:"刷新后计划和停靠点保持；归档从活动列表移除但保留历史。",pitfall:"按客户地理位置选候选，不是按负责人业务地区替代距离规划。",tab:"基础信息",note:"QA Europe Visit · 3 个停靠点（虚拟）。",f1:["计划","QA Europe Visit"],f2:["状态","草稿"]},
+        {id:"trip",name:"出差规划",roles:"Leader / 有权 Sales",action:"设置日期窗和中国起返地点，使用自动或手工顺序，加入客户与自由停靠；安排半天、多地点和逐段交通，补全拜访准备，保存后下载 XLSX、离线 HTML、ICS、Markdown 或 CSV。",expected:"刷新后日期、顺序、自由停靠、半天日程、交通锁定和拜访准备保持；五种文件与已保存路线一致；归档从活动列表移除但保留历史。",pitfall:"近似交通建议需要外部页面人工确认；未保存修改、过期路线和超出日期窗的路线不能直接生成正式文件。",tab:"路线与准备",note:"QA Europe Visit · 上海往返 · 德国—法国—意大利（虚拟）。",f1:["日期","09-15 至 09-30"],f2:["状态","草稿"]},
         {id:"transfer",name:"导出 / 导入",roles:"Leader：Excel/治理/定向 Sales JSON；Sales：本人 JSON",action:"在独立页签执行 Excel、Sales JSON、数据治理或客户合并；每次先确认当前页签和文件。",expected:"预检结果绑定同一文件；结果明确为成功、部分完成、失败或无法确认。",pitfall:"Excel、Sales JSON、Tech 任务包、完整备份和附件传递是五条不同链路。",tab:"数据质量",note:"Sales JSON 预检：允许 1、跳过 0、错误 0。",f1:["文件","QA 包"],f2:["结果","可导入"]},
         {id:"techpackage",name:"Tech 任务包",roles:"Leader 分发/合并；Tech 接收/回传；Sales 不可用",action:"Leader 选 Tech 导出完整分配快照 .jpttask；Tech 预检导入、更新任务后导出 .jptresult；Leader 再预检合并。",expected:"接收人精确匹配，只交换最小任务字段；快照撤回可控，同字段冲突阻断，不同字段可合并，重复包幂等。",pitfall:"任务包不是普通 JSON；首版没有设备数字签名，必须使用可信内部渠道。",tab:"售前 / 样品",note:".jpttask 完整快照 → Tech 结果 → .jptresult（虚拟闭环）。",f1:["接收人","Eric Zhou"],f2:["预检","错误 0 / 冲突 0"]},
         {id:"merge",name:"客户合并",roles:"Leader",action:"用法律名称、品牌名或别名搜索；选择来源和保留目标，核对只读迁移预览后执行一次。",expected:"来源归档；联系人、Lead、域名和别名迁入目标并留审计；两个名称都可搜索到目标。",pitfall:"相似度分数不构成自动合并依据；来源与目标选反时禁止执行。",tab:"客户",note:"来源将归档，目标保留；预览未写数据库。",f1:["来源","NordWerk Demo"],f2:["目标","NordWerk Demo GmbH"]},
