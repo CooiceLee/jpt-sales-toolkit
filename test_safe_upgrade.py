@@ -452,6 +452,143 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
     }
 
 
+# Every schema an installed release could be sitting on. 0.11.9 shipped schema 3
+# and 0.12.0 shipped schema 6; 7 and 8 were reached on the way to this release
+# and are covered so a later migration cannot skip them.
+INTERMEDIATE_SCHEMA_BASELINES = (6, 7, 8)
+
+# What each migration added, so a fixture can be wound back to an earlier shape.
+_SCHEMA_ADDITIONS = {
+    7: (
+        ("trip_plan_legs", (
+            "departure_airport_name", "departure_airport_lat",
+            "departure_airport_lng", "departure_airport_stay_half_days",
+            "arrival_airport_name", "arrival_airport_lat",
+            "arrival_airport_lng", "arrival_airport_stay_half_days",
+        )),
+    ),
+    8: (
+        ("trip_plan_legs", ("member_id",)),
+        ("trip_plan_free_stops", ("participant_user_ids_json",)),
+        ("trip_plans", ("planning_mode",)),
+    ),
+    9: (
+        ("trip_plan_stops", ("planned_time_accepted",)),
+        ("trip_plan_free_stops", ("planned_time_accepted",)),
+    ),
+}
+
+
+def _wind_back_to_schema(conn: sqlite3.Connection, target: int) -> None:
+    """Turn the canonical schema into the shape it had at an earlier version."""
+    for version in sorted(_SCHEMA_ADDITIONS, reverse=True):
+        if version <= target:
+            continue
+        if version == 8:
+            # The partial indexes name member_id, so they go before the column.
+            conn.execute("DROP INDEX IF EXISTS idx_trip_legs_active_member_key")
+            conn.execute("DROP INDEX IF EXISTS idx_trip_legs_active_shared_key")
+            conn.execute("DROP TABLE IF EXISTS trip_plan_members")
+        for table, columns in _SCHEMA_ADDITIONS[version]:
+            # schema.sql is not the whole of the current schema: some columns
+            # exist only in the runtime migrations, so a fixture built from it
+            # may already lack what this step would remove.
+            present = {
+                row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+            }
+            for column in columns:
+                if column in present:
+                    conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+    conn.execute(
+        "DELETE FROM app_schema_migrations WHERE version > ?", (target,)
+    )
+
+
+def test_intermediate_schema_upgrade(baseline: int) -> None:
+    """A database on an intermediate schema reaches the current one intact."""
+    close_db()
+    with tempfile.TemporaryDirectory(prefix=f"jpt_schema{baseline}_") as temp_dir:
+        data_dir = Path(temp_dir) / "data"
+        data_dir.mkdir(parents=True)
+        db_path = data_dir / "database.sqlite"
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executescript(
+                (ROOT / "backend" / "schema.sql").read_text(encoding="utf-8")
+            )
+            conn.executemany(
+                "INSERT INTO app_schema_migrations "
+                "(version, name, app_version, applied_at) VALUES (?, ?, ?, ?)",
+                [(version, name, APP_VERSION, NOW)
+                 for version, name in APP_SCHEMA_MIGRATIONS],
+            )
+            stamp = "2026-08-01T00:00:00Z"
+            actor = "user-baseline"
+            conn.execute(
+                "INSERT INTO users (id,username,display_name,role,"
+                "password_hash,is_active,created_at) VALUES "
+                "(?,'baseline','Baseline','leader','h',1,?)", (actor, stamp))
+            conn.execute(
+                "INSERT INTO customers (id,display_name,normalized_name,lat,"
+                "lng,created_at,updated_at,row_version) VALUES "
+                "('cust-b','Baseline GmbH','baseline gmbh',50.1,8.7,?,?,1)",
+                (stamp, stamp))
+            conn.execute(
+                "INSERT INTO trip_plans (id,title,owner_id,start_date,end_date,"
+                "status,created_at,created_by,updated_at,updated_by,row_version)"
+                " VALUES ('plan-b','Baseline trip',?,'2026-09-14','2026-09-30',"
+                "'Draft',?,?,?,?,1)", (actor, stamp, actor, stamp, actor))
+            conn.execute(
+                "INSERT INTO trip_plan_stops (id,plan_id,customer_id,"
+                "sequence_no,created_at,created_by,updated_at,updated_by,"
+                "row_version) VALUES ('stop-b','plan-b','cust-b',1,?,?,?,?,1)",
+                (stamp, actor, stamp, actor))
+            _wind_back_to_schema(conn, baseline)
+            conn.commit()
+        finally:
+            conn.close()
+
+        settings = init_settings(Path(temp_dir) / "app")
+        settings.data_dir = data_dir
+        settings.db_path = db_path
+        settings.upload_dir = data_dir / "attachments"
+        settings.backup_dir = data_dir / "backups"
+        settings.runtime_config_dir = data_dir / "config"
+        settings.backup_dir.mkdir()
+
+        result = initialize_database_safely(settings)
+        assert result.migrated is True, baseline
+        assert result.source_schema_version == baseline, (
+            result.source_schema_version, baseline
+        )
+        assert result.target_schema_version == APP_SCHEMA_VERSION
+        assert result.backup_path, "an upgrade must be backed up before it runs"
+        _assert_integrity(db_path)
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            assert conn.execute(
+                "SELECT display_name FROM customers"
+            ).fetchone()[0] == "Baseline GmbH"
+            assert conn.execute(
+                "SELECT title FROM trip_plans"
+            ).fetchone()[0] == "Baseline trip"
+            # The columns this release depends on exist with their safe default.
+            assert conn.execute(
+                "SELECT planning_mode FROM trip_plans"
+            ).fetchone()[0] == "legacy"
+            assert conn.execute(
+                "SELECT planned_time_accepted FROM trip_plan_stops"
+            ).fetchone()[0] == 0
+        finally:
+            conn.close()
+
+        second = initialize_database_safely(settings)
+        assert second.migrated is False, f"{baseline} migrated twice"
+        assert len(list(settings.backup_dir.glob("pre_upgrade_*.zip"))) == 1
+        print(f"PASS: schema-{baseline} upgrade fixture")
+
+
 def test_current_schema_fixture() -> None:
     """A current development profile starts unchanged and without a backup."""
     assert APP_SCHEMA_VERSION == 9
@@ -917,8 +1054,10 @@ def main() -> None:
     ):
         test_upgrade_fixture(source_version)
         print(f"PASS: {source_version} upgrade fixture")
+    for baseline in INTERMEDIATE_SCHEMA_BASELINES:
+        test_intermediate_schema_upgrade(baseline)
     test_current_schema_fixture()
-    print("PASS: schema-v6 no-migration fixture")
+    print("PASS: current-schema no-migration fixture")
     test_failed_migration_restores_original()
     print("PASS: failed migration restores validated original database")
     test_manual_recovery_is_scoped_and_preserves_current_database()
