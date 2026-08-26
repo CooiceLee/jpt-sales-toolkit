@@ -127,6 +127,7 @@
         }
     }
 
-    window.TripScheduleView = Object.freeze({ sortItems, render, renderPlan, businessDays, dayOf, periodOf });
+    window.TripScheduleView = Object.freeze({ sortItems, render, renderPlan,
+        businessDays, dayOf, periodOf, transportModeLabel });
     window.addEventListener?.('language:changed', () => renderPlan(State.currentTripPlan));
 })();

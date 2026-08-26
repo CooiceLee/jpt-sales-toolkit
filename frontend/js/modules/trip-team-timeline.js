@@ -9,6 +9,22 @@
         return member?.display_name || userId || t('Unassigned');
     }
 
+    const modeLabel = value =>
+        window.TripScheduleView?.transportModeLabel?.(value) || value || '';
+
+    /**
+     * What makes two members' items the same thing.
+     *
+     * For a journey that is the same way of travelling as well as the same two
+     * places: colleagues who drive and take a train between the same cities are
+     * not travelling together, and merging them would claim they are.
+     */
+    function identityOf(item) {
+        const base = `${item.item_type}|${item.source_id}|${item.title}`;
+        return item.item_type === 'leg'
+            ? `${base}|${item.selected_mode || ''}` : base;
+    }
+
     /**
      * One line per thing that happens, with everybody who is on it.
      *
@@ -19,7 +35,7 @@
     function groupSlot(items, plan) {
         const merged = new Map();
         items.forEach(item => {
-            const key = `${item.item_type}|${item.source_id}|${item.title}`;
+            const key = identityOf(item);
             const entry = merged.get(key) || {
                 ...item, members: [], unresolved: false,
             };
@@ -50,6 +66,8 @@
             ${stopId ? `onclick="TripBriefingActions.open('${h(stopId)}')"` : 'disabled'}>
             <span class="trip-team-entry-who">${h(who)}</span>
             <strong>${h(entry.title || entry.source_id)}${
+                isLeg && entry.selected_mode
+                    ? ` · ${modeLabel(entry.selected_mode)}` : ''}${
                 entry.half_day_count > 1
                     ? ` · ${t('Half-day {index} of {count}', {
                         index: entry.half_day_index, count: entry.half_day_count,
@@ -113,6 +131,6 @@
     }
 
     window.TripTeamTimeline = Object.freeze({
-        render, renderPlan, groupSlot, incompleteNotice,
+        render, renderPlan, groupSlot, identityOf, incompleteNotice,
     });
 })();

@@ -25,13 +25,16 @@ globalThis.I18n = { t: (key, params = {}) =>
     String(key).replace(/\\{(\\w+)\\}/g, (_, name) => params[name] ?? `{${name}}`) };
 globalThis.window = globalThis;
 globalThis.document = { getElementById: () => null };
+globalThis.TripDuration = { label: value => `${value} half-days` };
+globalThis.State = {};
 """
 
 
 def run_js(body: str) -> dict:
     sources = "\n".join(
         (MODULES / name).read_text(encoding="utf-8")
-        for name in ("trip-team-risks.js", "trip-team-timeline.js")
+        for name in ("trip-schedule-view.js", "trip-team-risks.js",
+                     "trip-team-timeline.js")
     )
     script = f"{HARNESS}\n{sources}\n{body}"
     result = subprocess.run(
@@ -87,6 +90,65 @@ def check_parallel_events_stay_separate() -> None:
     """)
     assert data["lines"] == 2, "parallel visits must stay separate"
     assert data["who"] == ["Li", "Zhang"], data["who"]
+
+
+def check_travel_merges_only_when_it_is_the_same_journey() -> None:
+    """Same two places is not the same journey; the way of travelling counts.
+
+    Two colleagues between the same cities, one driving and one on a train, are
+    not travelling together. Merging them would claim they are, and the line
+    would show one of the two modes as if it were both of theirs.
+    """
+    data = run_js("""
+    const plan = { members: [
+        { user_id: 'z', display_name: 'Zhang' },
+        { user_id: 'l', display_name: 'Li' }] };
+    const leg = (member, mode) => ({
+        member_id: member, source_id: 'f>s', item_type: 'leg',
+        title: 'Frankfurt \u2192 Stuttgart', selected_mode: mode,
+        date: '2026-09-18', period: 'AM', lane_order: 2,
+    });
+    const together = TripTeamTimeline.groupSlot(
+        [leg('z', 'ground_public'), leg('l', 'ground_public')], plan);
+    const apart = TripTeamTimeline.groupSlot(
+        [leg('z', 'drive'), leg('l', 'ground_public')], plan);
+    console.log(JSON.stringify({
+        togetherRows: together.length,
+        togetherWho: together[0].members,
+        apartRows: apart.length,
+        apartModes: apart.map(entry => entry.selected_mode).sort(),
+        apartWho: apart.map(entry => entry.members.join('')).sort(),
+    }));
+    """)
+    assert data["togetherRows"] == 1, "the same journey is one line"
+    assert data["togetherWho"] == ["Zhang", "Li"], data["togetherWho"]
+    assert data["apartRows"] == 2, (
+        "driving and taking a train between the same cities is not travelling "
+        "together"
+    )
+    assert data["apartModes"] == ["drive", "ground_public"], data["apartModes"]
+    assert data["apartWho"] == ["Li", "Zhang"], data["apartWho"]
+
+
+def check_travel_shows_how_they_travel() -> None:
+    """A split travel line has to say why it is split."""
+    data = run_js("""
+    const plan = { members: [{ user_id: 'z', display_name: 'Zhang' }] };
+    const nodes = new Map([['t', { innerHTML: '' }]]);
+    globalThis.document = { getElementById: id => nodes.get(id) || null };
+    TripTeamTimeline.render({ ...plan, schedule_items: [{
+        member_id: 'z', source_id: 'f>s', item_type: 'leg',
+        title: 'Frankfurt \u2192 Stuttgart', selected_mode: 'drive',
+        date: '2026-09-18', period: 'AM', lane_order: 1,
+    }] }, nodes.get('t'));
+    console.log(JSON.stringify({ html: nodes.get('t').innerHTML }));
+    """)
+    assert "Drive" in data["html"], (
+        f"the travel line never says how they travel: {data['html']}"
+    )
+    assert "drive" not in data["html"].replace("Drive", ""), (
+        "the raw mode leaked into the page instead of its label"
+    )
 
 
 def check_unresolved_travel_is_marked_not_drawn() -> None:
@@ -358,6 +420,8 @@ def check_module_wiring() -> None:
 def main() -> None:
     check_shared_events_merge()
     check_parallel_events_stay_separate()
+    check_travel_merges_only_when_it_is_the_same_journey()
+    check_travel_shows_how_they_travel()
     check_unresolved_travel_is_marked_not_drawn()
     check_risk_bar_reads_backend_risks()
     check_backend_sends_kinds_not_sentences()
