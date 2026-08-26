@@ -174,6 +174,7 @@ assert.strictEqual(context.TripDuration.parseDisplayTravelDays('0.5'),1);
 assert.strictEqual(context.TripDuration.parseDisplayTravelDays('1'),2);
 assert.strictEqual(context.TripDuration.parseDisplayTravelDays('0.25'),null);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-form.js','utf8'),context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-stop-duration-payload.js','utf8'),context);
 const payload=context.readTripItineraryPayload();
 assert(!Object.prototype.hasOwnProperty.call(payload,'stop_stays'),
   'Batch 4 route writes must not send the legacy whole-day map');

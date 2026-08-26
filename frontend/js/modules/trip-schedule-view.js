@@ -100,6 +100,14 @@
     }
 
     function renderPlan(plan) {
+        window.TripTeamView?.render?.(plan);
+        // Team planning has its own timeline: a plan with several travellers
+        // cannot be read as one column of half-days.
+        if (plan?.planning_mode === 'team') {
+            window.TripTeamTimeline?.renderPlan?.(plan);
+            return;
+        }
+        window.TripTeamRisks?.render?.(plan);
         const root = document.getElementById('trip-schedule-list');
         const notice = staleNotice(plan);
         if (notice) {

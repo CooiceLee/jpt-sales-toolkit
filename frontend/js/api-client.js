@@ -710,6 +710,19 @@ const ApiClient = (function() {
         });
     }
 
+    async function setTripMember(planId, data) {
+        return request(`/review/trip-plans/${planId}/members`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    }
+
+    async function removeTripMember(planId, userId) {
+        return request(`/review/trip-plans/${planId}/members/${userId}`, {
+            method: 'DELETE'
+        });
+    }
+
     async function reorderTripStops(planId, stopIds, rowVersion = null) {
         const body = { stop_ids: stopIds };
         if (rowVersion) body.row_version = rowVersion;
@@ -1168,6 +1181,8 @@ const ApiClient = (function() {
         addTripFreeStop,
         updateTripFreeStop,
         archiveTripFreeStop,
+        setTripMember,
+        removeTripMember,
         getTripTransportSuggestions,
         updateTripStop,
         reorderTripStops,

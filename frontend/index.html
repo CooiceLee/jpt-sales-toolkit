@@ -691,6 +691,7 @@
                     <div class="trip-layout">
                         <div class="trip-main">
                             <div id="trip-map"></div>
+                    <div id="trip-risk-bar" class="trip-risk-bar" role="status" aria-live="polite" hidden></div>
                     <section id="trip-schedule-panel" class="review-panel trip-schedule-panel" aria-labelledby="trip-schedule-title">
                         <div class="trip-schedule-heading">
                             <div>
@@ -822,6 +823,10 @@
                             </div>
                         </div>
                         <aside class="trip-side">
+                            <section id="trip-team-panel" class="review-panel" aria-labelledby="trip-team-title" hidden>
+                                <div class="card-title" id="trip-team-title">Travel Team</div>
+                                <div id="trip-team-body"></div>
+                            </section>
                             <div class="review-panel">
                                 <div class="card-title">Plan</div>
                                 <div class="trip-form">
@@ -830,6 +835,13 @@
                                         <input type="date" class="form-input" id="trip-start-date">
                                         <input type="date" class="form-input" id="trip-end-date">
                                     </div>
+                                    <label class="trip-field-label">
+                                        <span>Planning mode</span>
+                                        <select class="form-input" id="trip-planning-mode" title="Planning mode" aria-label="Planning mode">
+                                            <option value="legacy">One traveller</option>
+                                            <option value="team">Travel team</option>
+                                        </select>
+                                    </label>
                                     <select class="form-input" id="trip-plan-region" title="Plan region" aria-label="Plan region">
                                         <option value="">Plan region (optional)</option>
                                         <option value="EU">Europe</option>
@@ -1294,7 +1306,12 @@
     <script src="/static/js/modules/trip-briefing-rows.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-form.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-duration-payload.js?v=1.0"></script>
     <script src="/static/js/modules/trip-schedule-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-risks.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-timeline.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-schedule-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-export-actions.js?v=1.0"></script>

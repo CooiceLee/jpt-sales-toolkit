@@ -2,6 +2,7 @@
 (function() {
     const ROUTE_FIELD_IDS = Object.freeze([
         'trip-title', 'trip-start-date', 'trip-end-date', 'trip-plan-region',
+        'trip-planning-mode',
         'trip-origin-name', 'trip-origin-lat', 'trip-origin-lng',
         'trip-destination-name', 'trip-destination-lat', 'trip-destination-lng',
         'trip-avoid-weekends', 'trip-holidays', 'trip-description',

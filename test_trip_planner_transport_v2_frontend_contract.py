@@ -129,6 +129,7 @@ vm.createContext(context);
 for (const file of [
   'frontend/js/modules/trip-duration.js',
   'frontend/js/modules/trip-form.js',
+  'frontend/js/modules/trip-stop-duration-payload.js',
   'frontend/js/modules/trip-planning-draft.js',
   'frontend/js/modules/trip-china-hubs.js',
   'frontend/js/modules/trip-transport-actions.js',
@@ -236,6 +237,7 @@ vm.createContext(context);
 for (const file of [
   'frontend/js/modules/trip-duration.js',
   'frontend/js/modules/trip-form.js',
+  'frontend/js/modules/trip-stop-duration-payload.js',
   'frontend/js/modules/trip-planning-draft.js',
   'frontend/js/modules/trip-china-hubs.js',
   'frontend/js/modules/trip-transport-actions.js',

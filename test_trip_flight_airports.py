@@ -683,6 +683,32 @@ def check_team_lanes_and_timeline(service) -> None:
             f"a leg on the timeline needs its own planned time: {leg['leg_key']}"
         )
 
+    # A visit lasting more than one half-day occupies every one of them, or the
+    # afternoon of a day-long visit looks free and a second thing gets booked in.
+    long_visit = plan_team_itinerary(
+        service, ("zhang",),
+        [TeamEvent("f", "customer", place(50.11, 8.68, "Frankfurt", "f"), 4,
+                   ("zhang",), (_date(2026, 9, 16), "AM"), label="f")],
+        {"__default__": shanghai}, (_date(2026, 9, 15), "AM"), ["flight"],
+    )
+    visit_slots = [
+        (item["date"], item["period"]) for item in long_visit.schedule_items
+        if item["source_id"] == "f" and item["item_type"] != "leg"
+    ]
+    assert len(visit_slots) == 4, f"a two-day visit occupies four half-days: {visit_slots}"
+    assert len(set(visit_slots)) == 4, "each half-day appears once"
+    counts = {
+        item["half_day_count"] for item in long_visit.schedule_items
+        if item["source_id"] == "f"
+    }
+    assert counts == {4}, counts
+    stop_rows = [
+        row for row in long_visit.stop_updates if row["id"] == "f"
+    ]
+    assert len(stop_rows) == 1, "the stop itself is still one row"
+    assert stop_rows[0]["planned_date"] == "2026-09-16"
+    assert stop_rows[0]["planned_end_date"] == "2026-09-17"
+
     # Each member's finish is what a return overrun can later be measured from.
     for member in team:
         total = result.member_totals[member]

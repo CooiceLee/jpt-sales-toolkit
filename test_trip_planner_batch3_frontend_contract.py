@@ -334,7 +334,7 @@ const context={console,State:{tripBusy:false,currentTripPlan:initial,tripCandida
  numericOrNull(value){if(value===''||value==null)return null;const number=Number(value);return Number.isFinite(number)?number:null;},
  parseHolidayInput(){return[]},tripDateTimeLocalValue(value){return value||''}};
 context.window=context;vm.createContext(context);
-for(const file of ['trip-duration.js','trip-stop-schedule-controls.js','trip-form.js','trip-planning-draft.js','trip-itinerary-view.js','trip-itinerary-actions.js'])
+for(const file of ['trip-duration.js','trip-stop-schedule-controls.js','trip-form.js','trip-stop-duration-payload.js','trip-planning-draft.js','trip-itinerary-view.js','trip-itinerary-actions.js'])
  vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 context.populateTripPlanForm(initial,{committed:true});
 
@@ -396,7 +396,7 @@ const elements=new Map([
 const context={console,State:{currentTripPlan:{stops:[]}},document:{getElementById:id=>elements.get(id)||null},
  numericOrNull:value=>value===''?null:Number(value),parseHolidayInput:()=>[]};
 context.window=context;context.TripPlanningDraft={get:()=>({header:{title:'Stale title',description:null},routeOrderMode:'auto',transportModePriority:['flight'],departureWindowStart:'',departureWindowEnd:'',returnWindowStart:'',returnWindowEnd:''}),itineraryPayload:()=>({title:'Stale title',description:null,route_order_mode:'auto',transport_mode_priority:['flight']})};
-vm.createContext(context);vm.runInContext(fs.readFileSync('frontend/js/modules/trip-form.js','utf8'),context);
+vm.createContext(context);vm.runInContext(fs.readFileSync('frontend/js/modules/trip-form.js','utf8'),context);vm.runInContext(fs.readFileSync('frontend/js/modules/trip-stop-duration-payload.js','utf8'),context);
 const payload=context.readTripItineraryPayload();
 assert.strictEqual(payload.title,'Visible title');
 assert.strictEqual(payload.description,'Visible unsaved planning note');

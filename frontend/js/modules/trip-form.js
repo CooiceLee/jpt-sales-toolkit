@@ -42,6 +42,7 @@ function readTripPlanHeaderFormPayload() {
         start_date: document.getElementById('trip-start-date')?.value || null,
         end_date: document.getElementById('trip-end-date')?.value || null,
         region: document.getElementById('trip-plan-region')?.value || null,
+        planning_mode: document.getElementById('trip-planning-mode')?.value || 'legacy',
         origin_name: document.getElementById('trip-origin-name')?.value?.trim() || null,
         origin_lat: numericOrNull(document.getElementById('trip-origin-lat')?.value),
         origin_lng: numericOrNull(document.getElementById('trip-origin-lng')?.value),
@@ -62,6 +63,7 @@ function populateTripPlanForm(plan, options = {}) {
     setInputValue('trip-start-date', header.start_date || '');
     setInputValue('trip-end-date', header.end_date || '');
     setInputValue('trip-plan-region', header.region || '');
+    setInputValue('trip-planning-mode', header.planning_mode || 'legacy');
     setInputValue('trip-origin-name', header.origin_name || '');
     setInputValue('trip-origin-lat', header.origin_lat ?? '');
     setInputValue('trip-origin-lng', header.origin_lng ?? '');
@@ -97,43 +99,6 @@ function parseHolidayInput(value) {
         .split(/[\n,]+/)
         .map(item => item.trim())
         .filter(Boolean);
-}
-
-function readTripStopDurationPayload(options = {}) {
-    const durations = {};
-    const routeDraft = window.TripPlanningDraft?.get?.();
-    (State.currentTripPlan?.stops || []).forEach(stop => {
-        const fallback = window.TripPlanningDraft?.durationFor?.(
-            stop.id, TripDuration.readStopDuration(stop)
-        ) ?? routeDraft?.stopDurations?.[stop.id]?.half_days
-            ?? TripDuration.readStopDuration(stop);
-        const visibleDays = document.getElementById(`stop-stay-${stop.id}`)?.value;
-        const hasScheduleControls = Boolean(document.getElementById(`stop-period-${stop.id}`));
-        const schedule = hasScheduleControls
-            ? window.TripStopScheduleControls?.readPayload?.(stop.id)
-            : (routeDraft?.stopDurations?.[stop.id] || stop);
-        const parsedHalfDays = visibleDays === undefined
-            ? TripDuration.normalizeHalfDays(fallback)
-            : TripDuration.parseDisplayDays(visibleDays);
-        if (parsedHalfDays == null) {
-            throw new Error(I18n.t('Stop duration must be 0.5 to 30 days in 0.5-day increments.'));
-        }
-        durations[stop.id] = {
-            half_days: parsedHalfDays,
-            preferred_period: ['auto', 'AM', 'PM'].includes(schedule.preferred_period)
-                ? schedule.preferred_period : 'auto',
-            locked: Boolean(schedule.schedule_locked ?? schedule.locked),
-        };
-    });
-    const changed = routeDraft && Object.entries(durations).some(
-        ([stopId, duration]) => JSON.stringify(routeDraft.stopDurations?.[stopId] || {}) !== JSON.stringify(duration)
-    );
-    if (changed && options.syncDraft !== false) {
-        window.TripPlanningDraft.change(draft => {
-            draft.stopDurations = { ...draft.stopDurations, ...durations };
-        });
-    }
-    return durations;
 }
 
 function readTripItineraryPayload() {

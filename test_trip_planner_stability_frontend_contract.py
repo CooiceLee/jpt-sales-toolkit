@@ -228,6 +228,11 @@ vm.runInContext(
     context,
     { filename: 'trip-form.js' }
 );
+vm.runInContext(
+    fs.readFileSync('frontend/js/modules/trip-stop-duration-payload.js', 'utf8'),
+    context,
+    { filename: 'trip-stop-duration-payload.js' }
+);
 
 const filters = vm.runInContext('getTripFilters()', context);
 const planPayload = vm.runInContext('readTripPlanFormPayload()', context);

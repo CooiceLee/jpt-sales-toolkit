@@ -164,18 +164,27 @@ def _record_travel(ctx: TeamScheduleContext, user, leg, from_slot, elapsed):
 
 def _record_event(ctx: TeamScheduleContext, event, user, slots,
                   inbound_resolved):
-    """Put an event on the timeline, and on the stop it belongs to."""
-    ctx.result.schedule_items.append(
-        {
-            "member_id": user,
-            "source_id": event.stop_id,
-            "date": slots[0][0].isoformat(),
-            "period": slots[0][1],
-            "item_type": event.kind,
-            "title": event.label or event.stop_id,
-            "inbound_travel_resolved": inbound_resolved,
-        }
-    )
+    """Put an event on the timeline, and on the stop it belongs to.
+
+    A visit that lasts more than one half-day occupies every one of them, so it
+    appears in each. Recording only the first would leave the afternoon of a
+    day-long visit looking free, which is how a second thing gets booked into
+    it. The stop itself is still one row, from its start to its end.
+    """
+    for index, slot in enumerate(slots, start=1):
+        ctx.result.schedule_items.append(
+            {
+                "member_id": user,
+                "source_id": event.stop_id,
+                "date": slot[0].isoformat(),
+                "period": slot[1],
+                "item_type": event.kind,
+                "title": event.label or event.stop_id,
+                "half_day_index": index,
+                "half_day_count": len(slots),
+                "inbound_travel_resolved": inbound_resolved,
+            }
+        )
     ctx.result.stop_updates.append(
         {
             "member_id": user,

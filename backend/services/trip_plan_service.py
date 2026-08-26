@@ -355,6 +355,12 @@ class TripPlanService:
         summary = plan_data.get("itinerary_summary") or {}
         is_stale = summary.get("stale") is True or summary.get("valid") is False
         plan_data["members"] = self.member_repo.list_active(plan_id)
+        if plan_data.get("planning_mode") == "team":
+            # Who could be added to the trip. Only team planning needs it, so
+            # legacy plans are not made to carry the account list.
+            plan_data["available_members"] = (
+                self.briefing_repo.available_participants(actor_id)
+            )
         plan_data["legs"] = [] if is_stale else self.leg_repo.list_active(plan_id)
         plan_data["schedule_items"] = (
             [] if is_stale else list(summary.get("schedule_items") or [])
