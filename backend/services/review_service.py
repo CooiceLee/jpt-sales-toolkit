@@ -936,8 +936,16 @@ class ReviewService:
                         }
                     )
                 if preferred_period != "auto" and preferred_period != locked_period:
-                    raise ValueError(
-                        "The locked visit time conflicts with its AM/PM preference"
+                    # The AM/PM preference says when the salesperson would like
+                    # to call; the appointment says when the customer agreed.
+                    # The agreement wins, exactly as it does over weekends.
+                    risks.append(
+                        {
+                            "kind": "booked_outside_preferred_period",
+                            "stop_id": stop["id"],
+                            "preferred_period": preferred_period,
+                            "booked_period": locked_period,
+                        }
                     )
                 if self._slot_key(locked_slot) < self._slot_key(visit_start_slot):
                     raise ValueError(

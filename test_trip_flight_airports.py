@@ -284,6 +284,95 @@ def check_member_isolation(service, plan_id: str, stop_id: str, actor: str) -> N
         raise AssertionError("a leg for a non-member was accepted")
 
 
+def check_booked_time_beats_preferences(service, plan_id: str, actor: str) -> None:
+    """A confirmed appointment outranks the weekend, holiday and AM/PM wishes."""
+    conn = get_db()
+    stop_id = conn.execute(
+        "SELECT id FROM trip_plan_stops WHERE plan_id = ? AND archived_at IS NULL",
+        (plan_id,),
+    ).fetchone()[0]
+    conn.execute(
+        "UPDATE trip_plans SET start_date='2026-09-14', end_date='2026-10-10',"
+        " holiday_dates=? WHERE id=?",
+        ('["2026-10-01"]', plan_id),
+    )
+    for booked_date, booked_period, preferred, expected_risk in (
+        # 2026-09-19 is a Saturday, 2026-10-01 a Chinese holiday.
+        ("2026-09-19", "AM", "auto", "booked_on_skipped_day"),
+        ("2026-10-01", "AM", "auto", "booked_on_skipped_day"),
+        ("2026-09-16", "PM", "AM", "booked_outside_preferred_period"),
+    ):
+        conn.execute(
+            "UPDATE trip_plan_stops SET schedule_locked=1, planned_date=?,"
+            " planned_start_period=?, preferred_period=? WHERE id=?",
+            (booked_date, booked_period, preferred, stop_id),
+        )
+        conn.commit()
+        plan = service.get_trip_plan(plan_id, actor, "leader")
+        calc = service._calculate_trip_itinerary(plan, {"stop_order": [stop_id]})
+        visit = calc["stop_updates"][0]
+        assert visit["planned_date"] == booked_date, (
+            f"booked {booked_date} was moved to {visit['planned_date']}"
+        )
+        assert visit["planned_start_period"] == booked_period
+        kinds = [item["kind"] for item in calc["summary"]["risks"]]
+        assert expected_risk in kinds, f"expected {expected_risk}, got {kinds}"
+    conn.execute(
+        "UPDATE trip_plan_stops SET schedule_locked=0, planned_date=NULL,"
+        " planned_start_period=NULL, preferred_period='auto' WHERE id=?",
+        (stop_id,),
+    )
+    conn.commit()
+
+
+def check_team_primitives() -> None:
+    """Parallel visits are legitimate; only one actionable risk per situation."""
+    from datetime import date as _date
+
+    from backend.services.trip_team_schedule import (
+        TeamEvent,
+        member_lanes,
+        resolve_participants,
+        staffing_risks,
+    )
+
+    team = ("zhang", "li")
+    slot = (_date(2026, 9, 16), "AM")
+
+    def visit(stop_id, attendees):
+        return TeamEvent(
+            stop_id=stop_id, kind="customer", point={"lat": 0.0, "lng": 0.0},
+            duration_half_days=1, participants=tuple(attendees), booked_slot=slot,
+        )
+
+    assert resolve_participants((), team) == team, "silence means the whole team"
+    assert resolve_participants(("zhang",), team) == ("zhang",)
+    assert resolve_participants(("nobody",), team) == team, "unknown ids ignored"
+
+    for attendees, expected in (
+        ((["zhang"], ["li"]), []),
+        ((["zhang"], ["zhang"]), ["member_double_booked"]),
+        (([], []), ["parallel_visits_unassigned"]),
+        ((["zhang"], []), ["parallel_visits_unassigned"]),
+    ):
+        events = [visit("frankfurt", attendees[0]), visit("paris", attendees[1])]
+        kinds = [item["kind"] for item in staffing_risks(events, team)]
+        assert kinds == expected, f"{attendees} -> {kinds}, expected {expected}"
+
+    events = [visit("frankfurt", ["zhang"]), visit("paris", ["zhang"])]
+    lanes = member_lanes(events, team)
+    assert len(lanes["zhang"]) == 2, "a conflicting visit must not be dropped"
+
+    shared = TeamEvent(
+        stop_id="stuttgart", kind="free", point={"lat": 0.0, "lng": 0.0},
+        duration_half_days=1, participants=("zhang", "li"),
+        booked_slot=(_date(2026, 9, 17), "AM"),
+    )
+    lanes = member_lanes([*events, shared], team)
+    assert lanes["zhang"][-1].stop_id == "stuttgart"
+    assert lanes["li"][-1].stop_id == "stuttgart", "a shared event is the merge"
+
+
 def check_schema() -> None:
     conn = sqlite3.connect(str(TEST_DIR / "database.sqlite"))
     columns = {row[1] for row in conn.execute("PRAGMA table_info(trip_plan_legs)")}
@@ -305,6 +394,8 @@ def main() -> None:
     check_itinerary(service, plan_id, stop_id, actor)
     check_persistence(service, plan_id, stop_id, actor)
     check_member_isolation(service, plan_id, stop_id, actor)
+    check_booked_time_beats_preferences(service, plan_id, actor)
+    check_team_primitives()
     check_calendar_deadline(service)
     check_weekend_departure(service, plan_id, actor)
     close_db()
