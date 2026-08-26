@@ -775,7 +775,7 @@ def check_permissions_and_validation(client: TestClient, ctx: dict) -> None:
 
 
 def check_schema4_to_current_upgrade() -> None:
-    assert APP_SCHEMA_VERSION == 6
+    assert APP_SCHEMA_VERSION == 7
     with tempfile.TemporaryDirectory(prefix="jpt_trip_schema4_to_current_") as temp:
         data_dir = Path(temp) / "data"
         data_dir.mkdir()
@@ -821,7 +821,8 @@ def check_schema4_to_current_upgrade() -> None:
         settings.runtime_config_dir.mkdir()
         result = initialize_database_safely(settings)
         assert result.migrated is True
-        assert result.source_schema_version == 4 and result.target_schema_version == 6
+        assert result.source_schema_version == 4
+        assert result.target_schema_version == APP_SCHEMA_VERSION
         assert result.backup_path and result.backup_path.is_file()
         conn = sqlite3.connect(str(db_path))
         try:

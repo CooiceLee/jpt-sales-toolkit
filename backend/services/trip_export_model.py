@@ -97,6 +97,21 @@ def _timeline_rows(plan: dict) -> list[dict]:
 def _leg_rows(plan: dict, confirmation: Callable[[dict], str]) -> list[dict]:
     rows = []
     for leg in plan.get("legs") or []:
+        # A flown connection is distributed as the movements it is made of, so a
+        # printed itinerary shows the transfers to and from the airport too.
+        segments = leg.get("segments") or []
+        if segments:
+            for segment in segments:
+                rows.append(dict(zip(LEG_HEADERS, (
+                    leg.get("sequence_no"), segment.get("from_label"),
+                    segment.get("to_label"),
+                    product_mode(segment.get("selected_mode")),
+                    segment.get("distance_km"), segment.get("time_hours"),
+                    _slot(segment), _slot(segment, "planned_end"),
+                    segment.get("travel_half_days"),
+                    product_basis(confirmation(leg)), leg.get("notes"),
+                ))))
+            continue
         rows.append(dict(zip(LEG_HEADERS, (
             leg.get("sequence_no"), leg.get("from_label") or leg.get("from"),
             leg.get("to_label") or leg.get("to"),

@@ -31,7 +31,14 @@ from .trip_leg_contract import (
     validate_stop_order,
     validate_time_windows,
 )
-from .trip_leg_engine import build_leg, select_mode
+from .trip_leg_engine import build_leg, select_mode, travel_calendar_half_days
+from .trip_flight_expansion import airport_point, ground_mode, is_expandable
+from .trip_flight_waypoints import (
+    anchor_waypoints,
+    apply_flight_waypoints,
+    flight_leg_indices,
+    split_waypoints,
+)
 from .trip_plan_service import TripPlanService
 from .visibility_service import VisibilityService
 
@@ -534,6 +541,8 @@ class ReviewService:
             "leads": [],
         }
 
+    WAYPOINT_CATEGORIES = frozenset({"airport", "transit"})
+
     def _calculate_trip_itinerary(self, plan: dict, data: dict) -> dict:
         stops = plan.get("stops") or []
         if not stops:
@@ -634,8 +643,16 @@ class ReviewService:
         stop_durations = self._clean_stop_durations(
             data, {str(stop["id"]) for stop in stops}
         )
-        origin_data = self._route_endpoint("origin", data, plan) or routable_stops[0][1]
-        destination_data = self._route_endpoint("destination", data, plan) or routable_stops[-1][1]
+        origin_data = self._route_endpoint("origin", data, plan)
+        if not origin_data:
+            raise ValueError(
+                "Set the trip departure location and its coordinates before previewing the route"
+            )
+        destination_data = self._route_endpoint("destination", data, plan)
+        if not destination_data:
+            raise ValueError(
+                "Set the trip return location and its coordinates before previewing the route"
+            )
         origin = {**origin_data, "kind": "origin", "stop_id": None}
         destination = {**destination_data, "kind": "destination", "stop_id": None}
         explicit_order = validate_stop_order(
@@ -653,14 +670,33 @@ class ReviewService:
                 origin, destination, routable_stops, priority
             )
 
+        incoming_overrides = (
+            data.get("leg_overrides") if "leg_overrides" in data else None
+        )
+        # Transport is chosen per stop-to-stop connection. Decide the modes on a
+        # route without airports, then let only the flown legs route through one:
+        # driving to an airport just to drive on to the next stop is nonsense.
+        base_stops, waypoint_groups = split_waypoints(ordered_stops)
+        if waypoint_groups:
+            base_points = [origin, *[point for _, point in base_stops], destination]
+            flown = flight_leg_indices(
+                base_points,
+                priority,
+                {
+                    **self.trip_plan_service.leg_repo.locked_overrides(plan["id"]),
+                    **(incoming_overrides if isinstance(incoming_overrides, dict) else {}),
+                },
+                lambda start, end: self._haversine_km(
+                    start["lat"], start["lng"], end["lat"], end["lng"]
+                ),
+            )
+            ordered_stops = apply_flight_waypoints(base_stops, waypoint_groups, flown)
+
         route_points = [origin, *[point for _, point in ordered_stops], destination]
         leg_keys = {
             f"{left.get('stop_id') or 'origin'}>{right.get('stop_id') or 'destination'}"
             for left, right in zip(route_points, route_points[1:])
         }
-        incoming_overrides = (
-            data.get("leg_overrides") if "leg_overrides" in data else None
-        )
         if route_order_mode == "auto" and isinstance(incoming_overrides, dict):
             obsolete_keys = sorted(set(incoming_overrides) - leg_keys)
             if obsolete_keys:
@@ -673,11 +709,21 @@ class ReviewService:
                     "Ignored obsolete leg overrides after automatic route reorder: "
                     + ", ".join(obsolete_keys)
                 )
-        overrides = normalize_overrides(
-            incoming_overrides,
-            leg_keys,
-            self.trip_plan_service.leg_repo.locked_overrides(plan["id"]),
+        stored = self.trip_plan_service.leg_repo.locked_overrides(plan["id"])
+        for key, airports in self.trip_plan_service.leg_repo.saved_airports(
+            plan["id"]
+        ).items():
+            stored.setdefault(key, {}).update(airports)
+        dropped_airports = sorted(
+            key for key in self.trip_plan_service.leg_repo.saved_airports(plan["id"])
+            if key not in leg_keys
         )
+        if dropped_airports:
+            warnings.append(
+                "These legs no longer exist after reordering, so their airports "
+                "are not used: " + ", ".join(dropped_airports)
+            )
+        overrides = normalize_overrides(incoming_overrides, leg_keys, stored)
 
         current_point = origin
         initial_slot = departure_start_slot or (start, "AM")
@@ -723,10 +769,85 @@ class ReviewService:
                 self, sequence_no, current_point, point, priority, overrides.get(key)
             )
             leg["plan_id"] = plan["id"]
+            segments = self._expand_flight_leg(leg, current_point, point, priority)
+            leg_slots = []
+            if segments:
+                # One stored connection, several real movements: the transfers to
+                # and from the airport and any wait between them all take time.
+                for index, segment in enumerate(segments, start=1):
+                    slots, cursor = self._allocate_calendar_slots(
+                        cursor, segment["travel_half_days"]
+                    )
+                    segment["planned_start_date"] = (
+                        slots[0][0].isoformat() if slots else None
+                    )
+                    segment["planned_start_period"] = slots[0][1] if slots else None
+                    segment["planned_end_date"] = (
+                        slots[-1][0].isoformat() if slots else None
+                    )
+                    segment["planned_end_period"] = slots[-1][1] if slots else None
+                    leg_slots.extend(slots)
+                    append_schedule_items(
+                        slots,
+                        item_type="leg",
+                        source_id=f"{leg['leg_key']}#{index}",
+                        sequence_no=sequence_no,
+                        title=(
+                            f"{segment.get('from_label') or '-'} → "
+                            f"{segment.get('to_label') or '-'}"
+                        ),
+                        confirmation_status=None,
+                        details={
+                            "selected_mode": segment["selected_mode"],
+                            "distance_km": segment["distance_km"],
+                            "time_hours": segment["time_hours"],
+                            "segment_role": segment["role"],
+                        },
+                    )
+                    if segment["stay_half_days"]:
+                        stay_slots, cursor = self._allocate_calendar_slots(
+                            cursor, segment["stay_half_days"]
+                        )
+                        leg_slots.extend(stay_slots)
+                        append_schedule_items(
+                            stay_slots,
+                            item_type="airport",
+                            source_id=f"{leg['leg_key']}#{index}-stay",
+                            sequence_no=sequence_no,
+                            title=segment.get("stay_label") or "Airport",
+                            confirmation_status=None,
+                            details={"segment_role": f"{segment['role']}_stay"},
+                        )
+                leg["segments"] = segments
+                leg["distance_km"] = round(
+                    sum(item["distance_km"] for item in segments), 1
+                )
+                leg["time_hours"] = round(
+                    sum(item["time_hours"] for item in segments), 1
+                )
+                leg["travel_half_days"] = min(60, len(leg_slots))
+                leg["travel_days"] = math.ceil(leg["travel_half_days"] / 2)
+            else:
+                leg_slots, cursor = self._allocate_calendar_slots(
+                    cursor, int(leg["travel_half_days"])
+                )
+                append_schedule_items(
+                    leg_slots,
+                    item_type="leg",
+                    source_id=leg["leg_key"],
+                    sequence_no=sequence_no,
+                    title=(
+                        f"{leg.get('from_label') or '-'} → "
+                        f"{leg.get('to_label') or '-'}"
+                    ),
+                    confirmation_status=None,
+                    details={
+                        "selected_mode": leg.get("selected_mode"),
+                        "distance_km": leg.get("distance_km"),
+                        "time_hours": leg.get("time_hours"),
+                    },
+                )
             travel_half_days = int(leg["travel_half_days"])
-            leg_slots, cursor = self._allocate_work_slots(
-                cursor, travel_half_days, bool(avoid_weekends), holidays
-            )
             leg["planned_start_date"] = (
                 leg_slots[0][0].isoformat() if leg_slots else None
             )
@@ -736,19 +857,6 @@ class ReviewService:
             )
             leg["planned_end_period"] = leg_slots[-1][1] if leg_slots else None
             legs.append(leg)
-            append_schedule_items(
-                leg_slots,
-                item_type="leg",
-                source_id=leg["leg_key"],
-                sequence_no=sequence_no,
-                title=f"{leg.get('from_label') or '-'} → {leg.get('to_label') or '-'}",
-                confirmation_status=None,
-                details={
-                    "selected_mode": leg.get("selected_mode"),
-                    "distance_km": leg.get("distance_km"),
-                    "time_hours": leg.get("time_hours"),
-                },
-            )
             if leg_slots:
                 last_occupied_slot = leg_slots[-1]
             if (
@@ -784,8 +892,20 @@ class ReviewService:
                     "Set the route order to manual before locking a visit time"
                 )
 
+            is_customer = (stop.get("stop_kind") or "customer") != "free"
+            is_waypoint = (
+                not is_customer
+                and stop.get("category") in self.WAYPOINT_CATEGORIES
+            )
+            # Only customer visits need business hours; travel, hotels and rests
+            # happen on the calendar, and airports are passed through.
+            schedule_half_days = 0 if is_waypoint else duration_half_days
             visit_start_slot = self._seek_preferred_period(
-                cursor, preferred_period, bool(avoid_weekends), holidays
+                cursor,
+                preferred_period,
+                bool(avoid_weekends),
+                holidays,
+                calendar_only=not is_customer,
             )
             if schedule_locked:
                 locked_date = self._parse_date(stop.get("planned_date"))
@@ -809,14 +929,19 @@ class ReviewService:
                     )
                 visit_start_slot = locked_slot
 
-            visit_slots, cursor = self._allocate_work_slots(
-                visit_start_slot,
-                duration_half_days,
-                bool(avoid_weekends),
-                holidays,
-            )
-            visit_start = visit_slots[0]
-            visit_end = visit_slots[-1]
+            if is_customer:
+                visit_slots, cursor = self._allocate_work_slots(
+                    visit_start_slot,
+                    schedule_half_days,
+                    bool(avoid_weekends),
+                    holidays,
+                )
+            else:
+                visit_slots, cursor = self._allocate_calendar_slots(
+                    visit_start_slot, schedule_half_days
+                )
+            visit_start = visit_slots[0] if visit_slots else visit_start_slot
+            visit_end = visit_slots[-1] if visit_slots else visit_start_slot
             stay_days = math.ceil(duration_half_days / 2)
             confirmation_status = stop.get("confirmation_status") or "unconfirmed"
             schedule_semantic_changed = any(
@@ -843,6 +968,7 @@ class ReviewService:
                     "planned_start_period": visit_start[1],
                     "planned_end_period": visit_end[1],
                     "duration_half_days": duration_half_days,
+                    "schedule_half_days": schedule_half_days,
                     "stay_days": stay_days,
                     "preferred_period": preferred_period,
                     "schedule_locked": schedule_locked,
@@ -854,8 +980,9 @@ class ReviewService:
                     "travel_days": int(leg["travel_days"]),
                 }
             )
+            # A waypoint occupies no time but still has to appear on the timeline.
             append_schedule_items(
-                visit_slots,
+                visit_slots or [visit_start_slot],
                 item_type=(stop.get("stop_kind") or "customer"),
                 source_id=stop["id"],
                 sequence_no=sequence_no,
@@ -865,6 +992,7 @@ class ReviewService:
                     or "Stop"
                 ),
                 confirmation_status=confirmation_status,
+                details={"waypoint": True} if is_waypoint else None,
             )
 
             total_distance += leg["distance_km"]
@@ -888,12 +1016,85 @@ class ReviewService:
             return_start_slot
             and self._slot_key(return_start_slot) > self._slot_key(cursor)
         ):
-            cursor = self._next_work_slot(
-                return_start_slot, bool(avoid_weekends), holidays
-            )
-        final_slots, cursor = self._allocate_work_slots(
-            cursor, final_half_days, bool(avoid_weekends), holidays
+            cursor = return_start_slot
+        final_sequence = len(ordered_stops) + 1
+        final_segments = self._expand_flight_leg(
+            final_leg, current_point, destination, priority
         )
+        final_slots = []
+        if final_segments:
+            for index, segment in enumerate(final_segments, start=1):
+                slots, cursor = self._allocate_calendar_slots(
+                    cursor, segment["travel_half_days"]
+                )
+                segment["planned_start_date"] = (
+                    slots[0][0].isoformat() if slots else None
+                )
+                segment["planned_start_period"] = slots[0][1] if slots else None
+                segment["planned_end_date"] = (
+                    slots[-1][0].isoformat() if slots else None
+                )
+                segment["planned_end_period"] = slots[-1][1] if slots else None
+                final_slots.extend(slots)
+                append_schedule_items(
+                    slots,
+                    item_type="leg",
+                    source_id=f"{final_leg['leg_key']}#{index}",
+                    sequence_no=final_sequence,
+                    title=(
+                        f"{segment.get('from_label') or '-'} → "
+                        f"{segment.get('to_label') or '-'}"
+                    ),
+                    confirmation_status=None,
+                    details={
+                        "selected_mode": segment["selected_mode"],
+                        "distance_km": segment["distance_km"],
+                        "time_hours": segment["time_hours"],
+                        "segment_role": segment["role"],
+                    },
+                )
+                if segment["stay_half_days"]:
+                    stay_slots, cursor = self._allocate_calendar_slots(
+                        cursor, segment["stay_half_days"]
+                    )
+                    final_slots.extend(stay_slots)
+                    append_schedule_items(
+                        stay_slots,
+                        item_type="airport",
+                        source_id=f"{final_leg['leg_key']}#{index}-stay",
+                        sequence_no=final_sequence,
+                        title=segment.get("stay_label") or "Airport",
+                        confirmation_status=None,
+                        details={"segment_role": f"{segment['role']}_stay"},
+                    )
+            final_leg["segments"] = final_segments
+            final_leg["distance_km"] = round(
+                sum(item["distance_km"] for item in final_segments), 1
+            )
+            final_leg["time_hours"] = round(
+                sum(item["time_hours"] for item in final_segments), 1
+            )
+            final_leg["travel_half_days"] = min(60, len(final_slots))
+            final_leg["travel_days"] = math.ceil(final_leg["travel_half_days"] / 2)
+            final_half_days = int(final_leg["travel_half_days"])
+        else:
+            final_slots, cursor = self._allocate_calendar_slots(cursor, final_half_days)
+            append_schedule_items(
+                final_slots,
+                item_type="leg",
+                source_id=final_leg["leg_key"],
+                sequence_no=final_sequence,
+                title=(
+                    f"{final_leg.get('from_label') or '-'} → "
+                    f"{final_leg.get('to_label') or '-'}"
+                ),
+                confirmation_status=None,
+                details={
+                    "selected_mode": final_leg.get("selected_mode"),
+                    "distance_km": final_leg.get("distance_km"),
+                    "time_hours": final_leg.get("time_hours"),
+                },
+            )
         final_leg["planned_start_date"] = (
             final_slots[0][0].isoformat() if final_slots else None
         )
@@ -903,22 +1104,6 @@ class ReviewService:
         )
         final_leg["planned_end_period"] = final_slots[-1][1] if final_slots else None
         legs.append(final_leg)
-        append_schedule_items(
-            final_slots,
-            item_type="leg",
-            source_id=final_leg["leg_key"],
-            sequence_no=len(ordered_stops) + 1,
-            title=(
-                f"{final_leg.get('from_label') or '-'} → "
-                f"{final_leg.get('to_label') or '-'}"
-            ),
-                confirmation_status=None,
-                details={
-                    "selected_mode": final_leg.get("selected_mode"),
-                    "distance_km": final_leg.get("distance_km"),
-                    "time_hours": final_leg.get("time_hours"),
-                },
-        )
         if final_slots:
             last_occupied_slot = final_slots[-1]
         calculated_end = last_occupied_slot[0]
@@ -983,10 +1168,10 @@ class ReviewService:
             "stop_count": len(ordered_stops),
             "leg_count": len(legs),
             "total_stay_half_days": sum(
-                item["duration_half_days"] for item in stop_updates
+                item["schedule_half_days"] for item in stop_updates
             ),
             "total_stay_days": sum(
-                item["duration_half_days"] for item in stop_updates
+                item["schedule_half_days"] for item in stop_updates
             ) / 2,
             "total_travel_half_days": total_travel_half_days,
             "total_travel_days": total_travel_half_days / 2,
@@ -1276,6 +1461,25 @@ class ReviewService:
             (day + timedelta(days=1), "AM"), avoid_weekends, holidays
         )
 
+    def _after_calendar_slot(self, slot: tuple[date, str]) -> tuple[date, str]:
+        day, period = slot
+        if period == "AM":
+            return day, "PM"
+        return day + timedelta(days=1), "AM"
+
+    def _allocate_calendar_slots(
+        self,
+        start_slot: tuple[date, str],
+        count: int,
+    ) -> tuple[list[tuple[date, str]], tuple[date, str]]:
+        """Occupy consecutive half-days including weekends and holidays."""
+        cursor = start_slot
+        slots = []
+        for _ in range(max(0, int(count))):
+            slots.append(cursor)
+            cursor = self._after_calendar_slot(cursor)
+        return slots, cursor
+
     def _allocate_work_slots(
         self,
         start_slot: tuple[date, str],
@@ -1300,11 +1504,14 @@ class ReviewService:
         preferred: str,
         avoid_weekends: bool,
         holidays: list[str],
+        calendar_only: bool = False,
     ) -> tuple[date, str]:
         if preferred == "auto" or cursor[1] == preferred:
             return cursor
         if preferred == "PM" and cursor[1] == "AM":
             return cursor[0], "PM"
+        if calendar_only:
+            return self._after_calendar_slot(cursor)
         return self._after_work_slot(cursor, avoid_weekends, holidays)
 
     def _work_slots_after(
@@ -1365,23 +1572,25 @@ class ReviewService:
         stops: list[tuple[dict, dict]],
         priority: list[str],
     ) -> list[tuple[dict, dict]]:
-        remaining = list(stops)
+        # Airports and transit points belong to the visit they serve, so they are
+        # ordered as one chain instead of being scattered across the route.
+        remaining = anchor_waypoints(stops)
         ordered = []
         current = origin
         while remaining:
-            next_item = min(
+            next_chain = min(
                 remaining,
-                key=lambda item: (
-                    self._route_distance_score(current, item[1], priority)
+                key=lambda chain: (
+                    self._route_distance_score(current, chain[-1][1], priority)
                     + (
-                        self._route_distance_score(item[1], destination, priority) * 0.15
+                        self._route_distance_score(chain[-1][1], destination, priority) * 0.15
                         if destination else 0
                     )
                 ),
             )
-            ordered.append(next_item)
-            remaining.remove(next_item)
-            current = next_item[1]
+            ordered.extend(next_chain)
+            remaining.remove(next_chain)
+            current = next_chain[-1][1]
         return ordered
 
     def _route_distance_score(
@@ -1396,6 +1605,45 @@ class ReviewService:
         selected_mode = select_mode(distance_km, priority)
         estimate_mode = selected_mode if selected_mode != "other" else "drive"
         return self._estimate_travel_leg(start, end, estimate_mode)["time_hours"]
+
+    def _expand_flight_leg(
+        self, leg: dict, start_point: dict, end_point: dict, priority: list[str]
+    ) -> Optional[list[dict]]:
+        """Describe a flown connection as its ground transfers and the flight.
+
+        Returns ``None`` when the leg is not a fully described flight, so the
+        caller keeps treating it as a single segment.
+        """
+        if not is_expandable(leg):
+            return None
+        departure = airport_point(leg, "departure")
+        arrival = airport_point(leg, "arrival")
+        transfer = ground_mode(priority)
+        hops = (
+            ("to_airport", transfer, start_point, departure),
+            ("flight", "flight", departure, arrival),
+            ("from_airport", transfer, arrival, end_point),
+        )
+        segments = []
+        for role, mode, left, right in hops:
+            estimate = self._estimate_travel_leg(left, right, mode)
+            hours = float(estimate["time_hours"])
+            segments.append(
+                {
+                    "role": role,
+                    "selected_mode": mode,
+                    "from_label": left.get("label"),
+                    "to_label": right.get("label"),
+                    "distance_km": round(float(estimate["distance_km"]), 1),
+                    "time_hours": round(hours, 1),
+                    "travel_half_days": travel_calendar_half_days(hours),
+                    "stay_half_days": int(
+                        (right or {}).get("stay_half_days") or 0
+                    ) if role != "from_airport" else 0,
+                    "stay_label": (right or {}).get("label") if role != "from_airport" else None,
+                }
+            )
+        return segments
 
     def _estimate_travel_leg(self, start: dict, end: dict, requested_mode: str) -> dict:
         km = self._haversine_km(start["lat"], start["lng"], end["lat"], end["lng"])

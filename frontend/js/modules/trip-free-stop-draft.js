@@ -33,7 +33,10 @@
             const event = field.tagName === 'SELECT' ? 'change' : 'input';
             field.addEventListener(event, () => {
                 if (LOCATION_FIELDS.has(id)) window.TripFreeStopForm?.locationTextChanged?.();
-                else mark();
+                else {
+                    if (id === 'trip-free-stop-category') window.TripFreeStopForm?.categoryChanged?.();
+                    mark();
+                }
             });
         });
     }

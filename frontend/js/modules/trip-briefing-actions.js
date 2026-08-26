@@ -1,5 +1,7 @@
 /** Loading, full-replacement saving and explicit geocoding for visit briefings. */
 (function() {
+    const BRIEFING_FIELDS = ['timezone', 'location', 'customer_team', 'contacts',
+        'participants', 'channel_partner_companions', 'equipment', 'agenda_items'];
     let requestEpoch = 0;
     let locationEpoch = 0;
     let candidates = [];
@@ -71,9 +73,13 @@
                 stop.row_version = data.stop_row_version ?? stop.row_version;
                 stop.confirmation_status = data.confirmation_status || stop.confirmation_status;
             }
+            // Show what was just written, not the previous version.
+            if (stop) stop.briefing = Object.fromEntries(
+                BRIEFING_FIELDS.map(field => [field, data[field]]));
             TripBriefingDraft.markClean(data);
-            TripBriefingForm.populate(data);
+            close({ force: true });
             renderCurrentTripPlan();
+            window.TripPlannerModule?.renderVisitExecution?.(State.currentTripPlan);
             window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
             notify(I18n.t('Customer visit preparation saved.'));
         } catch (error) {

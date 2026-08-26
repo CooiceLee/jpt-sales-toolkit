@@ -23,12 +23,20 @@
             ? I18n.t('Travel duration must be 0 to 30 days in 0.5-day increments.') : '';
         durationInput?.setCustomValidity?.(durationError);
         if (durationError) { notify(durationError); return; }
+        if (selected === 'other' && !(manualHours > 0 || manualHalfDays > 0)) {
+            notify(I18n.t('Other transport requires manual travel hours or travel days before previewing.'));
+            return;
+        }
         TripPlanningDraft.change(draft => {
+            const kept = window.TripLegAirports?.pick?.(draft.legOverrides[leg.leg_key]) || {};
             if (!selected && !locked) {
-                delete draft.legOverrides[leg.leg_key];
+                // Clearing the mode must not throw away a searched airport.
+                if (Object.keys(kept).length) draft.legOverrides[leg.leg_key] = kept;
+                else delete draft.legOverrides[leg.leg_key];
                 return;
             }
             draft.legOverrides[leg.leg_key] = {
+                ...kept,
                 selected_mode: selected,
                 mode_locked: locked,
                 manual_distance_km: manualDistance,
@@ -37,10 +45,6 @@
                 notes: document.getElementById(`trip-leg-notes-${index}`)?.value?.trim() || null,
             };
         });
-        if (selected === 'other' && !(manualHours > 0 || manualHalfDays > 0)) {
-            notify(I18n.t('Other transport requires manual travel hours or travel days before previewing.'));
-            return;
-        }
         schedulePreview();
     }
 

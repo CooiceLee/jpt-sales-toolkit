@@ -30,7 +30,10 @@ class NominatimProvider:
                 "format": "jsonv2",
                 "limit": limit,
                 "addressdetails": 1,
-                "accept-language": "en,zh-CN;q=0.8",
+                # Chinese first: this team reads Chinese, and asking for it also
+                # lets a Chinese query match places outside China by their
+                # Chinese name instead of ranking same-spelling domestic ones.
+                "accept-language": "zh-CN,zh;q=0.9,en;q=0.6",
             },
             {"User-Agent": self.user_agent, "Accept": "application/json"},
             self.name,

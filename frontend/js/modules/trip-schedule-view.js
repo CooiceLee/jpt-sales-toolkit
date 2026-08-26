@@ -85,8 +85,30 @@
         return result;
     }
 
+    function staleNotice(plan) {
+        const summary = plan?.itinerary_summary || {};
+        if (!(summary.stale === true || summary.valid === false)) return '';
+        // An out-of-date itinerary is not an empty one. Say why it went away and
+        // offer the way back, instead of showing a grid of empty half-days.
+        const reason = (summary.warnings || [])[0]
+            || 'The itinerary is out of date. Preview and save it again.';
+        return `<div class="empty-state compact trip-schedule-stale">
+            <div>${escapeHtml(I18n.t(reason))}</div>
+            <button type="button" class="btn btn-primary btn-sm"
+                onclick="previewCurrentTripItinerary()">${escapeHtml(I18n.t('Preview route'))}</button>
+        </div>`;
+    }
+
     function renderPlan(plan) {
-        render(plan?.schedule_items || [], document.getElementById('trip-schedule-list'), businessDays(plan));
+        const root = document.getElementById('trip-schedule-list');
+        const notice = staleNotice(plan);
+        if (notice) {
+            if (root) root.innerHTML = notice;
+            const status = document.getElementById('trip-schedule-status');
+            if (status) status.textContent = I18n.t('Needs a new preview');
+            return;
+        }
+        render(plan?.schedule_items || [], root, businessDays(plan));
         const status = document.getElementById('trip-schedule-status');
         if (status) status.textContent = I18n.t('{count} schedule items', {
             count: (plan?.schedule_items || []).length,

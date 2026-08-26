@@ -123,7 +123,7 @@
         model.customer_team = model.customer_team.filter(item =>
             ['name','title','phone','email','notes'].some(key => String(item[key] || '').trim()));
         if (model.customer_team.some(item => !String(item.name || '').trim())) {
-            throw new Error(I18n.t('Each customer team row needs a name.'));
+            throw new Error(I18n.t('A row under "Other customer attendees (typed in)" has details but no name. Add the name, or remove that row.'));
         }
         model.contacts = model.contacts.filter(item =>
             ['source_contact_id','name','position','email','phone','role','notes'].some(key => String(item[key] || '').trim()));

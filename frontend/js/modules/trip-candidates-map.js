@@ -73,13 +73,23 @@ function renderTripMap() {
             const label = location.name || stop.location_name || stop.customer_name || I18n.t('Stop');
             const address = [location.address, location.city, location.postal_code, location.country]
                 .filter(Boolean).join(', ');
-            L.circleMarker(point, {
+            const marker = L.circleMarker(point, {
                 radius: isFree ? 8 : 6,
                 color: '#ffffff', weight: 2,
                 fillColor: isFree ? '#d97706' : '#1f5135', fillOpacity: 0.95,
             }).bindTooltip(escapeHtml(`${stop.sequence_no || ''}. ${label}${address ? ` · ${address}` : ''}${
                 isFree ? ` · ${I18n.t('Personal stop')}` : ''
             }`)).addTo(State.tripMapLayer);
+            // A customer visit carries its date on the map: the point of the map
+            // is to see when the trip reaches each customer, not just where.
+            const when = scheduleBadge(stop);
+            if (!isFree && when) {
+                marker.bindTooltip(
+                    `<b>${escapeHtml(String(stop.sequence_no || ''))}</b> ${escapeHtml(when)}`,
+                    { permanent: true, direction: 'top', offset: [0, -8],
+                      className: 'trip-map-when', opacity: 1 }
+                );
+            }
         });
         addPoint(plan.destination_lat, plan.destination_lng, plan.destination_name || I18n.t('Destination'), '#7c3aed');
         if (routePoints.length >= 2) {
@@ -95,6 +105,20 @@ function renderTripMap() {
     if (bounds.length) {
         State.tripMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 6 });
     }
+}
+
+function scheduleBadge(stop) {
+    const short = value => {
+        const text = String(value || '');
+        return text.length >= 10 ? text.slice(5) : text;
+    };
+    const start = short(stop.planned_date);
+    if (!start) return '';
+    const end = short(stop.planned_end_date);
+    if (end && end !== start) return `${start}→${end}`;
+    const period = stop.planned_start_period === stop.planned_end_period
+        ? stop.planned_start_period : '';
+    return period ? `${start} ${period}` : start;
 }
 
 window.focusTripCandidate = function(index) {

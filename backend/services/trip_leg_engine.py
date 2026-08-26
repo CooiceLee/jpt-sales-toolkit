@@ -14,10 +14,14 @@ def select_mode(distance_km: float, priority: list[str]) -> str:
             return mode
         if mode == "ground_public" and distance_km <= 1800:
             return mode
-    for mode in priority:
-        if mode != "other":
-            return mode
     return "other"
+
+
+def travel_calendar_half_days(time_hours: float) -> int:
+    """Calendar half-days (12 elapsed hours each) a transfer occupies."""
+    if time_hours <= 1:
+        return 0
+    return max(1, math.ceil(time_hours / 12))
 
 
 def build_leg(
@@ -30,10 +34,11 @@ def build_leg(
 ) -> dict:
     override = override or {}
     straight_km = core._haversine_km(start["lat"], start["lng"], end["lat"], end["lng"])
-    selected_mode = override.get("selected_mode") or select_mode(straight_km, priority)
-    if selected_mode == "other" and not (
+    requested_mode = override.get("selected_mode")
+    selected_mode = requested_mode or select_mode(straight_km, priority)
+    if requested_mode == "other" and not (
         (override.get("manual_time_hours") or 0) > 0
-        or override.get("manual_travel_half_days") is not None
+        or (override.get("manual_travel_half_days") or 0) > 0
         or (override.get("manual_travel_days") or 0) > 0
     ):
         key = f"{start.get('stop_id') or 'origin'}>{end.get('stop_id') or 'destination'}"
@@ -51,7 +56,7 @@ def build_leg(
     if travel_half_days is None and override.get("manual_travel_days") is not None:
         travel_half_days = int(override["manual_travel_days"]) * 2
     if travel_half_days is None:
-        travel_half_days = 0 if time_hours <= 1 else max(1, math.ceil(time_hours / 4))
+        travel_half_days = travel_calendar_half_days(time_hours)
     travel_half_days = min(60, int(travel_half_days))
     travel_days = math.ceil(travel_half_days / 2)
     manual_travel_days = override.get("manual_travel_days")
@@ -86,4 +91,19 @@ def build_leg(
         "notes": override.get("notes"),
         "from": start.get("label"),
         "to": end.get("label"),
+        # Airports belong to this connection and travel with it, so the caller
+        # can expand the leg without reaching back into the override.
+        **{
+            field: override.get(field)
+            for field in (
+                "departure_airport_name",
+                "departure_airport_lat",
+                "departure_airport_lng",
+                "departure_airport_stay_half_days",
+                "arrival_airport_name",
+                "arrival_airport_lat",
+                "arrival_airport_lng",
+                "arrival_airport_stay_half_days",
+            )
+        },
     }

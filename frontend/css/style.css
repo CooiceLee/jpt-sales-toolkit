@@ -1663,8 +1663,99 @@ html, body {
 
 .trip-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 26vw, 440px);
   gap: 18px;
+  align-items: start;
+}
+
+/* The plan window and the customer list drive every date in the itinerary, so
+   they stay in view while the middle column is scrolled and refined.
+   The scrollport is .main-content, not the viewport: it sits below the header
+   and carries 24px of padding, so the column must be measured against that or
+   its lower half can only be reached by scrolling the whole page. */
+.trip-side {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - var(--header-height) - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 1180px) {
+  .trip-layout { grid-template-columns: minmax(0, 1fr); }
+  /* Stacked in one column there is nothing to pin against. */
+  .trip-side {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/* Nothing inside a grid column may widen the page: a table has a large
+   intrinsic width and must scroll inside its own panel instead. */
+.trip-layout > *,
+.trip-layout .review-panel {
+  min-width: 0;
+}
+
+.trip-side #trip-candidate-list {
+  overflow-x: auto;
+}
+
+.trip-side #trip-candidate-list .data-table {
+  width: 100%;
+}
+
+/* The narrow column keeps what is needed to choose a customer: who, where,
+   score and the actions. Open count, value and reasons are secondary. */
+.trip-side #trip-candidate-list .data-table th:nth-child(4),
+.trip-side #trip-candidate-list .data-table td:nth-child(4),
+.trip-side #trip-candidate-list .data-table th:nth-child(5),
+.trip-side #trip-candidate-list .data-table td:nth-child(5),
+.trip-side #trip-candidate-list .data-table th:nth-child(6),
+.trip-side #trip-candidate-list .data-table td:nth-child(6) {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .trip-side #trip-candidate-list .data-table th:nth-child(4),
+  .trip-side #trip-candidate-list .data-table td:nth-child(4),
+  .trip-side #trip-candidate-list .data-table th:nth-child(5),
+  .trip-side #trip-candidate-list .data-table td:nth-child(5),
+  .trip-side #trip-candidate-list .data-table th:nth-child(6),
+  .trip-side #trip-candidate-list .data-table td:nth-child(6) {
+    display: table-cell;
+  }
+}
+
+/* The plan form is the dense half, so it takes the wide column and spreads its
+   paired fields across it instead of stacking them in a narrow strip. */
+@media (min-width: 1181px) {
+  .trip-main .trip-form > .trip-date-row,
+  .trip-main .trip-form > .trip-route-grid,
+  .trip-main .trip-form > .trip-window-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .trip-main .trip-form > .trip-free-stop-editor .trip-free-stop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* datetime-local reports a large intrinsic width; without this it pushes past
+   the panel instead of fitting the column it was placed in. */
+.trip-layout .form-input,
+.trip-layout input[type="datetime-local"],
+.trip-layout input[type="date"] {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Two date/time fields cannot fit side by side once the panel narrows. */
+@media (max-width: 900px) {
+  .trip-layout .trip-date-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 .trip-main,
@@ -2086,6 +2177,86 @@ html, body {
 .trip-free-stop-draft-status { min-height: 18px; color: #92400e; font-size: 11px; }
 .trip-free-stop-candidates { display: grid; gap: 6px; max-height: 160px; overflow: auto; margin: 6px 0; }
 .trip-free-stop-candidates .btn { justify-content: flex-start; text-align: left; white-space: normal; }
+.trip-free-stop-candidates .btn[aria-selected="true"] {
+  border-color: var(--brand-700, #8B1A1A);
+  background: #fdf2f2;
+  color: var(--brand-700, #8B1A1A);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--brand-700, #8B1A1A);
+}
+.trip-free-stop-candidates .btn[aria-selected="true"]::before {
+  content: "\2713\00a0";
+  font-weight: 700;
+}
+/* A confirmed search result already sets the status to success; use it to show
+   that these two boxes now hold the coordinates of the chosen place. */
+.trip-free-stop-status.success ~ .trip-free-stop-coords .form-input {
+  border-color: #27613b;
+  background: #f0fdf4;
+  font-weight: 600;
+}
+
+.visit-prep-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 4px;
+  color: var(--ink-500);
+  font-size: 11px;
+}
+
+.leaflet-tooltip.trip-map-when {
+  padding: 1px 6px;
+  border: 1px solid rgba(31, 81, 53, 0.35);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f5135;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+}
+
+.leaflet-tooltip.trip-map-when::before { display: none; }
+
+.trip-leg-airports {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.trip-leg-airport {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: end;
+  gap: 6px;
+}
+
+.trip-leg-airport > .trip-free-stop-status,
+.trip-leg-airport > .trip-free-stop-candidates {
+  grid-column: 1 / -1;
+}
+
+.trip-leg-airport-label {
+  color: var(--ink-500);
+  font-size: 11px;
+  padding-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .trip-leg-airport { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+}
+
+.trip-stop-waypoint {
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11px;
+}
 
 .trip-stop-free {
   border-color: rgba(217, 119, 6, 0.38);
@@ -2135,7 +2306,11 @@ html, body {
 
 .trip-stop-schedule-controls .trip-schedule-lock { grid-column: 1 / -1; }
 
-.trip-schedule-panel { margin-top: 18px; }
+.trip-schedule-panel { margin-top: 0; }
+
+/* In the middle column there is no room for a side-by-side briefing editor. */
+.trip-main .trip-schedule-workspace { grid-template-columns: minmax(0, 1fr); }
+.trip-main .trip-schedule-list { max-height: min(420px, 46vh); }
 
 .trip-schedule-heading,
 .trip-briefing-head,

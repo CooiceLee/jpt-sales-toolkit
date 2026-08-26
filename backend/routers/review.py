@@ -46,6 +46,16 @@ class TripLegOverride(BaseModel):
     manual_travel_days: Optional[int] = Field(None, ge=0)
     manual_travel_half_days: Optional[int] = Field(None, ge=0, le=60)
     notes: Optional[str] = None
+    # Airports belong to the flown connection; coordinates always come from a
+    # location search, never from the user typing them.
+    departure_airport_name: Optional[str] = Field(None, max_length=200)
+    departure_airport_lat: Optional[float] = Field(None, ge=-90, le=90)
+    departure_airport_lng: Optional[float] = Field(None, ge=-180, le=180)
+    departure_airport_stay_half_days: Optional[int] = Field(None, ge=0, le=60)
+    arrival_airport_name: Optional[str] = Field(None, max_length=200)
+    arrival_airport_lat: Optional[float] = Field(None, ge=-90, le=90)
+    arrival_airport_lng: Optional[float] = Field(None, ge=-180, le=180)
+    arrival_airport_stay_half_days: Optional[int] = Field(None, ge=0, le=60)
 
 
 def get_review_service() -> ReviewService:

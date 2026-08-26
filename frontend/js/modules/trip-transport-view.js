@@ -56,13 +56,17 @@
                 <button type="button" class="btn btn-secondary btn-sm" onclick="TripSuggestionActions.searchLeg(${index})">${h(t('Search this leg'))}</button>
             </div>
             <div class="trip-leg-manual ${selected === 'other' || hasManualMetrics ? '' : 'hidden'}" id="trip-leg-manual-${index}">
-                <input type="number" min="0" step="0.1" class="form-input" id="trip-leg-distance-${index}" value="${h(override.manual_distance_km ?? '')}" placeholder="${h(t('Distance km'))}" onchange="TripTransportActions.legChanged(${index})">
-                <input type="number" min="0.1" step="0.1" class="form-input" id="trip-leg-hours-${index}" value="${h(override.manual_time_hours ?? '')}" placeholder="${h(t('Travel hours'))}" onchange="TripTransportActions.legChanged(${index})">
-                <input type="number" min="0" max="30" step="0.5" class="form-input" data-leg-duration-half-days id="trip-leg-days-${index}"
-                    value="${h(override.manual_travel_half_days != null ? TripDuration.toDisplayTravelDays(override.manual_travel_half_days) : '')}"
-                    placeholder="${h(t('Travel duration (days, 0.5 steps)'))}" onchange="TripTransportActions.legChanged(${index})">
+                <label class="trip-field-label"><span>${h(t('Distance km'))}</span>
+                    <input type="number" min="0" step="0.1" class="form-input" id="trip-leg-distance-${index}" value="${h(override.manual_distance_km ?? '')}" placeholder="${h(t('Distance km'))}" onchange="TripTransportActions.legChanged(${index})"></label>
+                <label class="trip-field-label"><span>${h(t('Travel hours'))}</span>
+                    <input type="number" min="0.1" step="0.1" class="form-input" id="trip-leg-hours-${index}" value="${h(override.manual_time_hours ?? '')}" placeholder="${h(t('Travel hours'))}" onchange="TripTransportActions.legChanged(${index})"></label>
+                <label class="trip-field-label"><span>${h(t('Travel duration (days, 0.5 steps)'))}</span>
+                    <input type="number" min="0" max="30" step="0.5" class="form-input" data-leg-duration-half-days id="trip-leg-days-${index}"
+                        value="${h(override.manual_travel_half_days != null ? TripDuration.toDisplayTravelDays(override.manual_travel_half_days) : '')}"
+                        placeholder="${h(t('Travel duration (days, 0.5 steps)'))}" onchange="TripTransportActions.legChanged(${index})"></label>
                 <textarea class="form-input" rows="2" id="trip-leg-notes-${index}" placeholder="${h(t('Transport notes'))}" onchange="TripTransportActions.legChanged(${index})">${h(override.notes || '')}</textarea>
             </div>
+            ${window.TripLegAirportsView?.render?.(index, override, shownMode) || ''}
             <div class="trip-leg-suggestions" id="trip-leg-suggestions-${index}"></div>
         </div>`;
     }

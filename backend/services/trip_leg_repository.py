@@ -42,6 +42,45 @@ class TripLegRepository:
             result.append(item)
         return result
 
+    def saved_airports(self, plan_id: str) -> dict[str, dict]:
+        """Return the most recent airports recorded for each leg key.
+
+        Unlike locked overrides these survive a plain regeneration: choosing an
+        airport is real work and must not require locking the leg as well.
+        """
+        rows = self.conn.execute(
+            """
+            SELECT * FROM trip_plan_legs
+            WHERE plan_id = ?
+            ORDER BY leg_key,
+                     (archived_at IS NULL) DESC,
+                     updated_at DESC, created_at DESC, id DESC
+            """,
+            (plan_id,),
+        ).fetchall()
+        result: dict[str, dict] = {}
+        for row in rows:
+            leg = dict(row)
+            key = leg["leg_key"]
+            if key in result:
+                continue
+            saved = {
+                field: leg.get(field)
+                for field in (
+                    "departure_airport_name",
+                    "departure_airport_lat",
+                    "departure_airport_lng",
+                    "departure_airport_stay_half_days",
+                    "arrival_airport_name",
+                    "arrival_airport_lat",
+                    "arrival_airport_lng",
+                    "arrival_airport_stay_half_days",
+                )
+            }
+            if saved.get("departure_airport_name") or saved.get("arrival_airport_name"):
+                result[key] = saved
+        return result
+
     def locked_overrides(self, plan_id: str) -> dict[str, dict]:
         rows = self.conn.execute(
             """
@@ -108,9 +147,14 @@ class TripLegRepository:
                     manual_travel_days, manual_travel_half_days,
                     planned_start_date, planned_start_period,
                     planned_end_date, planned_end_period, notes,
+                    departure_airport_name, departure_airport_lat,
+                    departure_airport_lng, departure_airport_stay_half_days,
+                    arrival_airport_name, arrival_airport_lat,
+                    arrival_airport_lng, arrival_airport_stay_half_days,
                     created_at, created_by, updated_at, updated_by
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          ?, ?, ?)
                 """,
                 (
                     generate_uuid(),
@@ -152,6 +196,14 @@ class TripLegRepository:
                     leg.get("planned_end_date"),
                     leg.get("planned_end_period"),
                     leg.get("notes"),
+                    leg.get("departure_airport_name"),
+                    leg.get("departure_airport_lat"),
+                    leg.get("departure_airport_lng"),
+                    int(leg.get("departure_airport_stay_half_days") or 0),
+                    leg.get("arrival_airport_name"),
+                    leg.get("arrival_airport_lat"),
+                    leg.get("arrival_airport_lng"),
+                    int(leg.get("arrival_airport_stay_half_days") or 0),
                     timestamp,
                     actor_id,
                     timestamp,

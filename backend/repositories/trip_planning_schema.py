@@ -135,6 +135,30 @@ LEG_HALF_DAY_COLUMNS = {
 }
 
 
+LEG_FLIGHT_AIRPORT_COLUMNS = {
+    "departure_airport_name": "TEXT",
+    "departure_airport_lat": (
+        "REAL CHECK (departure_airport_lat BETWEEN -90 AND 90)"
+    ),
+    "departure_airport_lng": (
+        "REAL CHECK (departure_airport_lng BETWEEN -180 AND 180)"
+    ),
+    "arrival_airport_name": "TEXT",
+    "arrival_airport_lat": "REAL CHECK (arrival_airport_lat BETWEEN -90 AND 90)",
+    "arrival_airport_lng": "REAL CHECK (arrival_airport_lng BETWEEN -180 AND 180)",
+    # A traveller may reach a distant airport the night before, or rest near the
+    # landing airport, so each end can hold its own stay.
+    "departure_airport_stay_half_days": (
+        "INTEGER NOT NULL DEFAULT 0 "
+        "CHECK (departure_airport_stay_half_days BETWEEN 0 AND 60)"
+    ),
+    "arrival_airport_stay_half_days": (
+        "INTEGER NOT NULL DEFAULT 0 "
+        "CHECK (arrival_airport_stay_half_days BETWEEN 0 AND 60)"
+    ),
+}
+
+
 def _column_names(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
 
@@ -251,3 +275,13 @@ def apply_trip_planning_schema_v6(conn: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_visit_briefings_stop "
         "ON trip_visit_briefings(stop_id)"
     )
+
+
+def apply_trip_planning_schema_v7(conn: sqlite3.Connection) -> None:
+    """Let a flown leg record the airports it departs from and arrives at.
+
+    Airports belong to the connection between two stops, not to the stop list:
+    stored as stops they would be reordered away from the leg they serve. Purely
+    additive columns keep existing legs and itineraries untouched.
+    """
+    _add_columns(conn, "trip_plan_legs", LEG_FLIGHT_AIRPORT_COLUMNS)

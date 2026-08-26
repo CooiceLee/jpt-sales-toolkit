@@ -53,13 +53,21 @@
                     </div>
                     <span class="score-pill">${h(t(stop.result_status || 'Planned'))}</span>
                 </div>
+                <div class="visit-prep-head">
+                    <span>${h(t('From visit preparation'))}</span>
+                    <button type="button" class="btn btn-secondary btn-sm"
+                        onclick="TripBriefingActions.open('${h(stop.id)}')">${h(t(
+                        customerPersonnel || channelPartners || internalParticipants
+                            ? 'Edit visit preparation' : 'Fill in visit preparation'
+                    ))}</button>
+                </div>
                 <div class="visit-info-grid">
                     ${window.JPTRender.field(t('Customer personnel'), customerPersonnel)}
                     ${window.JPTRender.field(t('Channel partner companions'), channelPartners)}
                     ${window.JPTRender.field(t('JPT internal participants'), internalParticipants)}
                     ${window.JPTRender.field(t('Address'), address)}
                     ${window.JPTRender.field(t('Lead'), lead)}
-                    ${window.JPTRender.field(t('Purpose'), stop.visit_purpose)}
+                    ${window.JPTRender.field(t('Visit topics'), window.TripVisitState.agendaLine(stop))}
                 </div>
                 <div class="visit-template-grid">
                     <textarea class="form-input" rows="2" id="visit-needs-${h(stop.id)}" placeholder="${h(t('Customer needs'))}">${h(stop.visit_customer_needs || '')}</textarea>

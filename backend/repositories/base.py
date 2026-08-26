@@ -26,6 +26,7 @@ from .trip_planning_schema import (
     apply_trip_planning_schema_v4,
     apply_trip_planning_schema_v5,
     apply_trip_planning_schema_v6,
+    apply_trip_planning_schema_v7,
 )
 
 # Database connection singleton
@@ -33,7 +34,7 @@ _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
 _connection_init_lock = threading.RLock()
 _SQLITE_BUSY_TIMEOUT_MS = 5000
-APP_SCHEMA_VERSION = 6
+APP_SCHEMA_VERSION = 7
 APP_SCHEMA_MIGRATIONS = (
     # Historical migration numbers are immutable. Future schema versions must
     # append a new explicit tuple instead of rebinding the v1 record.
@@ -43,6 +44,7 @@ APP_SCHEMA_MIGRATIONS = (
     (4, "trip_plan_legs_v1"),
     (5, "trip_plan_free_stops_v1"),
     (6, "trip_plan_half_day_schedule_v1"),
+    (7, "trip_plan_flight_airports_v1"),
 )
 _APP_SCHEMA_LEDGER_DDL = """
 CREATE TABLE IF NOT EXISTS app_schema_migrations (
@@ -304,6 +306,11 @@ def _apply_runtime_schema_v6(conn: sqlite3.Connection) -> None:
     apply_trip_planning_schema_v6(conn)
 
 
+def _apply_runtime_schema_v7(conn: sqlite3.Connection) -> None:
+    """Record the departure and arrival airports of a flown leg."""
+    apply_trip_planning_schema_v7(conn)
+
+
 def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     """Reapply every idempotent runtime step when drift is detected."""
     _apply_runtime_schema_v1(conn)
@@ -312,6 +319,7 @@ def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     _apply_runtime_schema_v4(conn)
     _apply_runtime_schema_v5(conn)
     _apply_runtime_schema_v6(conn)
+    _apply_runtime_schema_v7(conn)
 
 
 def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> None:
@@ -328,6 +336,7 @@ def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> Non
             4: _apply_runtime_schema_v4,
             5: _apply_runtime_schema_v5,
             6: _apply_runtime_schema_v6,
+            7: _apply_runtime_schema_v7,
         }
         for version, name in APP_SCHEMA_MIGRATIONS:
             if version <= current:

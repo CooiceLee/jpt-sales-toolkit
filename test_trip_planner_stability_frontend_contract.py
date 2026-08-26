@@ -245,6 +245,7 @@ context.TripVisitState = {
     customerPersonnelLine: () => '',
     channelPartnerLine: () => '',
     internalParticipantsLine: () => '',
+    agendaLine: stop => (stop && stop.visit_purpose) || '',
     addressLine: () => '',
     getSelectedDate: () => '',
 };

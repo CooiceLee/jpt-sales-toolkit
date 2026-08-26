@@ -8,10 +8,27 @@
     function isDirty(stopId = null) {
         return stopId == null ? dirtyStops.size > 0 : dirtyStops.has(String(stopId));
     }
+    function dirtyNames() {
+        const stops = State.currentTripPlan?.stops || [];
+        const names = [...dirtyStops].map(id => {
+            const stop = stops.find(item => String(item.id) === id);
+            return stop?.customer_name || stop?.location_name || null;
+        }).filter(Boolean);
+        return names.length ? names.join(', ') : I18n.t('a visit card');
+    }
     function guard(options = {}) {
         if (!dirtyStops.size) return false;
-        const message = I18n.t('Save or discard visit execution changes before continuing.');
-        if (options.silent) notify(message); else alert(message);
+        if (options.silent) {
+            notify(I18n.t('Save or discard visit execution changes before continuing.'));
+            return true;
+        }
+        // Offer the same escape the route, personal-stop and briefing drafts give,
+        // otherwise an edited visit card blocks every action until the app restarts.
+        if (confirm(I18n.t('Unsaved visit execution changes for {names} will be discarded. Continue?',
+            { names: dirtyNames() }))) {
+            reset();
+            return false;
+        }
         return true;
     }
     function discard(stopId) {

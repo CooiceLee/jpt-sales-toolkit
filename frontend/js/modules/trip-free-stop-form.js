@@ -1,8 +1,10 @@
 /** Editor state for non-customer itinerary stops. */
 (function() {
     const CATEGORIES = Object.freeze(['rest', 'hotel', 'airport', 'transit', 'meal', 'other']);
+    const WAYPOINT_CATEGORIES = Object.freeze(['airport', 'transit']);
     let candidates = [];
     let contextVersion = 0;
+    let chosenIndex = -1;
     const el = id => document.getElementById(id);
     const value = id => String(el(id)?.value ?? '').trim();
     const set = (id, next) => { if (el(id)) el(id).value = next ?? ''; };
@@ -13,12 +15,17 @@
         root.className = `trip-free-stop-status ${kind}`.trim();
         root.textContent = message ? I18n.t(message) : '';
     }
+    function paintChosen() {
+        el('trip-free-stop-geocode-candidates')?.querySelectorAll?.('[role="option"]')
+            .forEach((node, index) => node.setAttribute('aria-selected', String(index === chosenIndex)));
+    }
     function renderCandidates(items = [], provider = '') {
         candidates = items.filter(item => Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)));
+        chosenIndex = -1;
         const root = el('trip-free-stop-geocode-candidates');
         if (!root) return;
         root.innerHTML = candidates.map((item, index) => `<button type="button" class="btn btn-secondary btn-sm"
-            role="option" onclick="TripFreeStopForm.chooseCandidate(${index})">${escapeHtml(
+            role="option" aria-selected="false" onclick="TripFreeStopForm.chooseCandidate(${index})">${escapeHtml(
                 item.normalized_address || `${item.lat}, ${item.lng}`
             )} · ${escapeHtml(item.confidence || I18n.t('Approximate'))}</button>`).join('');
         root.hidden = !candidates.length;
@@ -31,10 +38,19 @@
         if (!item) return;
         set('trip-free-stop-lat', Number(item.lat).toFixed(6));
         set('trip-free-stop-lng', Number(item.lng).toFixed(6));
+        chosenIndex = index;
+        paintChosen();
         window.TripFreeStopDraft?.mark?.();
         status(I18n.t('Location selected: {address}', {
             address: item.normalized_address || `${item.lat}, ${item.lng}`
         }), 'success');
+    }
+    function categoryChanged() {
+        const waypoint = WAYPOINT_CATEGORIES.includes(value('trip-free-stop-category'));
+        const field = el('trip-free-stop-stay-field');
+        const note = el('trip-free-stop-waypoint-note');
+        if (field) field.hidden = waypoint;
+        if (note) note.hidden = !waypoint;
     }
     function open(stopId = null) {
         if (window.TripBriefingDraft?.guard?.()) return;
@@ -67,6 +83,7 @@
         set('trip-free-stop-postal', '');
         renderCandidates([]);
         status('');
+        categoryChanged();
         window.TripFreeStopDraft?.reset?.();
         const editor = el('trip-free-stop-editor');
         if (editor) editor.hidden = false;
@@ -128,7 +145,7 @@
         status('Location text changed. Search again or manually confirm the coordinates.', 'warning');
     }
     window.TripFreeStopForm = Object.freeze({ open, close, payload, geocodeFields, renderCandidates,
-        chooseCandidate, status, setBusy, editingId: () => value('trip-free-stop-id'),
+        chooseCandidate, status, setBusy, categoryChanged, editingId: () => value('trip-free-stop-id'),
         rowVersion: () => Number(value('trip-free-stop-row-version')) || null,
         contextVersion: () => contextVersion,
         isOpen: () => Boolean(el('trip-free-stop-editor') && !el('trip-free-stop-editor').hidden),

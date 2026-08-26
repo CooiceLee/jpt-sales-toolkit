@@ -54,6 +54,8 @@ function renderTripStopCard(stop, index, total) {
             </div>`;
 }
 
+const WAYPOINT_CATEGORIES = ['airport', 'transit'];
+
 function renderTripFreeStopCard(stop, index, total) {
     const name = stop.location_name || stop.customer_name || I18n.t('Untitled');
     const category = I18n.t(({ rest: 'Rest', hotel: 'Hotel', airport: 'Airport', transit: 'Transit', meal: 'Meal' })[stop.category] || 'Other');
@@ -67,10 +69,12 @@ function renderTripFreeStopCard(stop, index, total) {
         <div class="trip-stop-schedule">${escapeHtml(formatTripStopSchedule(stop))}</div>
         ${stop.visit_purpose ? `<div class="trip-free-stop-detail"><strong>${escapeHtml(I18n.t('Purpose'))}:</strong> ${escapeHtml(stop.visit_purpose)}</div>` : ''}
         ${stop.notes ? `<div class="trip-free-stop-detail"><strong>${escapeHtml(I18n.t('Notes'))}:</strong> ${escapeHtml(stop.notes)}</div>` : ''}
-        <label class="trip-field-label"><span>${escapeHtml(I18n.t('Stop duration (days)'))}</span>
+        ${WAYPOINT_CATEGORIES.includes(stop.category)
+            ? `<div class="trip-stop-waypoint">${escapeHtml(I18n.t('Pass-through point. It joins the route without taking visit time.'))}</div>`
+            : `<label class="trip-field-label"><span>${escapeHtml(I18n.t('Stop duration (days)'))}</span>
             <input type="number" min="0.5" max="30" step="0.5" class="form-input" data-stop-duration-half-days id="stop-stay-${escapeHtml(stop.id)}"
                 value="${escapeHtml(TripDuration.toDisplayDays(TripPlanningDraft.durationFor(stop.id, TripDuration.readStopDuration(stop))))}"
-                oninput="TripTransportActions.stayChanged('${stop.id}', this.value)"></label>
+                oninput="TripTransportActions.stayChanged('${stop.id}', this.value)"></label>`}
         ${TripStopScheduleControls.render(stop)}
         <div class="trip-stop-actions">
             <button type="button" class="btn btn-secondary btn-sm" onclick="moveTripStop('${stop.id}', -1)" ${index === 0 ? 'disabled' : ''}>${escapeHtml(I18n.t('Up'))}</button>

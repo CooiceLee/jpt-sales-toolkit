@@ -145,7 +145,7 @@
                     ].map(([value,label]) => `<option value="${value}" ${model.confirmation_status === value ? 'selected' : ''}>${h(I18n.t(label))}</option>`).join('')}</select></label>
                     <label class="trip-field-label"><span>${h(I18n.t('Timezone'))}</span><input class="form-input" id="trip-briefing-timezone" value="${h(model.timezone)}" placeholder="Europe/Berlin"></label></div>
                 ${suggestionsHtml(source)}${locationHtml(model)}
-                ${renderSection('customer_team', 'Customer departments / teams', model.customer_team, source)}${renderSection('contacts', 'Customer personnel', model.contacts, source)}
+                ${renderSection('contacts', 'Customer contacts (from the customer record)', model.contacts, source)}${renderSection('customer_team', 'Other customer attendees (typed in)', model.customer_team, source)}
                 ${renderSection('channel_partner_companions', 'Channel partner companions (if any)', model.channel_partner_companions, source)}${renderSection('participants', 'JPT internal participants', model.participants, source)}
                 ${renderSection('equipment', 'Equipment', model.equipment, source)}
                 ${renderSection('agenda_items', 'Visiting topics', model.agenda_items, source)}

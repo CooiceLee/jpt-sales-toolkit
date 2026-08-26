@@ -666,7 +666,7 @@ def check_reassigned_plan_revokes_creator_access(client: TestClient, ctx: dict) 
 
 
 def check_schema3_to_current_upgrade() -> None:
-    assert APP_SCHEMA_VERSION == 6
+    assert APP_SCHEMA_VERSION == 7
     with tempfile.TemporaryDirectory(prefix="jpt_trip_schema3_to_current_") as temp:
         data_dir = Path(temp) / "data"
         data_dir.mkdir()
@@ -732,7 +732,8 @@ def check_schema3_to_current_upgrade() -> None:
         settings.runtime_config_dir.mkdir()
         first = initialize_database_safely(settings)
         assert first.migrated is True
-        assert first.source_schema_version == 3 and first.target_schema_version == 6
+        assert first.source_schema_version == 3
+        assert first.target_schema_version == APP_SCHEMA_VERSION
         assert first.backup_path and first.backup_path.is_file()
         conn = sqlite3.connect(str(db_path))
         try:
@@ -747,7 +748,7 @@ def check_schema3_to_current_upgrade() -> None:
             assert conn.execute("SELECT COUNT(*) FROM trip_plan_legs").fetchone()[0] == 0
             assert [row[0] for row in conn.execute(
                 "SELECT version FROM app_schema_migrations ORDER BY version"
-            )] == [1, 2, 3, 4, 5, 6]
+            )] == list(range(1, APP_SCHEMA_VERSION + 1))
             assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
             assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         finally:

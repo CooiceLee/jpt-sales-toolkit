@@ -272,7 +272,8 @@ const context={console,State:{currentTripPlan:plan},I18n:{t:key=>zh[key]||key},
  document:{getElementById:id=>id==='trip-visit-execution'?target:null},
  TripVisitState:{escape:value=>String(value??''),planDays(){return[]},currentDateForPlan(){return''},
   stopMatchesDay(){return true},compareStops(){return 0},scheduleLabel(){return''},customerPersonnelLine(){return'客户甲'},
-  channelPartnerLine(){return'代理乙'},internalParticipantsLine(){return'内部丙'},addressLine(){return''}},
+  channelPartnerLine(){return'代理乙'},internalParticipantsLine(){return'内部丙'},addressLine(){return''},
+  agendaLine(stop){return (stop&&stop.visit_purpose)||''}},
  TripVisitDraft:{mark(){},discard(){}},JPTRender:{field:(label,value)=>`<div>${label}:${value||''}</div>`,empty:value=>value}};
 context.window=context;vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planner.js','utf8'),context);
@@ -291,7 +292,7 @@ def check_briefing_payload_is_full_replace_with_double_cas() -> None:
     _node(r"""
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 let sent=null;
-const root={hidden:true,innerHTML:'',setAttribute(){}};
+const root={hidden:true,innerHTML:'',setAttribute(){},closest(){return null}};
 const status={textContent:'',classList:{toggle(){}}};
 const fields={
  'trip-briefing-editor':root,'trip-briefing-draft-status':status,

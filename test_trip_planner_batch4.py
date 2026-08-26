@@ -98,8 +98,8 @@ def _drop_v6_contract(conn: sqlite3.Connection) -> None:
             conn.execute(f'ALTER TABLE trip_plan_legs DROP COLUMN "{column}"')
 
 
-def check_schema5_to_schema6_upgrade() -> None:
-    assert APP_SCHEMA_VERSION == 6
+def check_schema5_to_current_upgrade() -> None:
+    assert APP_SCHEMA_VERSION == 7
     with tempfile.TemporaryDirectory(prefix="jpt_trip_schema5_to_6_") as temp:
         data_dir = Path(temp) / "data"
         data_dir.mkdir()
@@ -166,11 +166,14 @@ def check_schema5_to_schema6_upgrade() -> None:
         settings.runtime_config_dir.mkdir()
         result = initialize_database_safely(settings)
         assert result.migrated is True
-        assert (result.source_schema_version, result.target_schema_version) == (5, 6)
+        assert (result.source_schema_version, result.target_schema_version) == (
+            5,
+            APP_SCHEMA_VERSION,
+        )
         assert result.backup_path and result.backup_path.is_file()
         conn = sqlite3.connect(str(db_path))
         try:
-            assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == APP_SCHEMA_VERSION
             assert conn.execute(
                 "SELECT title,row_version FROM trip_plans WHERE id='p1'"
             ).fetchone() == ("Keep Route", 9)
@@ -1351,7 +1354,7 @@ def check_visit_location_route_timeline_and_invalidation(
 
 def run() -> None:
     try:
-        check_schema5_to_schema6_upgrade()
+        check_schema5_to_current_upgrade()
         close_db()
         with TestClient(app) as client:
             ctx = _seed(client)

@@ -112,6 +112,17 @@
         return peopleLine(stop.briefing?.participants, ['display_name', 'role', 'responsibility']);
     }
 
+    function agendaLine(stop = {}) {
+        // What the traveller actually wrote beats the label the system attached
+        // when the customer was added to the plan.
+        const items = stop.briefing?.agenda_items || [];
+        const written = items
+            .map(item => [item.topic, item.expected_outcome].filter(Boolean).join(' → '))
+            .filter(Boolean)
+            .join('; ');
+        return written || stop.visit_purpose || '';
+    }
+
     function addressLine(stop = {}) {
         const location = visitLocation(stop);
         return [location.address, location.city, location.postal_code, location.country]
@@ -128,6 +139,7 @@
         visitLocation,
         contactLine: customerPersonnelLine,
         customerPersonnelLine,
+        agendaLine,
         channelPartnerLine,
         internalParticipantsLine,
         addressLine,
