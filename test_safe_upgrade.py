@@ -248,6 +248,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
                 5: APP_VERSION,
                 6: APP_VERSION,
                 7: APP_VERSION,
+                8: APP_VERSION,
             }
             conn.executemany(
                 "INSERT INTO app_schema_migrations "
@@ -452,7 +453,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
 
 def test_current_schema_fixture() -> None:
     """A current development profile starts unchanged and without a backup."""
-    assert APP_SCHEMA_VERSION == 7
+    assert APP_SCHEMA_VERSION == 8
     close_db()
     with tempfile.TemporaryDirectory(prefix="jpt_current_schema_") as temp_dir:
         data_dir = Path(temp_dir) / "data"

@@ -531,6 +531,8 @@ CREATE TABLE IF NOT EXISTS trip_plans (
     return_window_end TEXT,
     avoid_weekends INTEGER NOT NULL DEFAULT 1,
     holiday_dates TEXT,
+    planning_mode TEXT NOT NULL DEFAULT 'legacy'
+        CHECK (planning_mode IN ('legacy', 'team')),
     itinerary_generated_at TEXT,
     itinerary_summary TEXT,
     description TEXT,
@@ -648,9 +650,27 @@ CREATE TABLE IF NOT EXISTS trip_plan_free_stops (
     row_version INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS trip_plan_members (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    origin_name_override TEXT,
+    origin_lat_override REAL CHECK (origin_lat_override BETWEEN -90 AND 90),
+    origin_lng_override REAL CHECK (origin_lng_override BETWEEN -180 AND 180),
+    destination_name_override TEXT,
+    destination_lat_override REAL CHECK (destination_lat_override BETWEEN -90 AND 90),
+    destination_lng_override REAL CHECK (destination_lng_override BETWEEN -180 AND 180),
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    row_version INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS trip_plan_legs (
     id TEXT PRIMARY KEY,
     plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    member_id TEXT NOT NULL DEFAULT '',
     leg_key TEXT NOT NULL,
     sequence_no INTEGER NOT NULL,
     from_kind TEXT NOT NULL CHECK (from_kind IN ('origin', 'stop')),
@@ -781,9 +801,11 @@ CREATE INDEX IF NOT EXISTS idx_trip_stops_customer ON trip_plan_stops(customer_i
 CREATE INDEX IF NOT EXISTS idx_trip_stops_lead ON trip_plan_stops(lead_id);
 CREATE INDEX IF NOT EXISTS idx_trip_free_stops_plan
     ON trip_plan_free_stops(plan_id, archived_at, sequence_no);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_legs_active_key
-    ON trip_plan_legs(plan_id, leg_key) WHERE archived_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_legs_active_member_key
+    ON trip_plan_legs(plan_id, member_id, leg_key) WHERE archived_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_trip_legs_plan_sequence
     ON trip_plan_legs(plan_id, archived_at, sequence_no);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_visit_briefings_stop
     ON trip_visit_briefings(stop_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_plan_members_user
+    ON trip_plan_members(plan_id, user_id);

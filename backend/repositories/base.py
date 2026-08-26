@@ -27,6 +27,7 @@ from .trip_planning_schema import (
     apply_trip_planning_schema_v5,
     apply_trip_planning_schema_v6,
     apply_trip_planning_schema_v7,
+    apply_trip_planning_schema_v8,
 )
 
 # Database connection singleton
@@ -34,7 +35,7 @@ _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
 _connection_init_lock = threading.RLock()
 _SQLITE_BUSY_TIMEOUT_MS = 5000
-APP_SCHEMA_VERSION = 7
+APP_SCHEMA_VERSION = 8
 APP_SCHEMA_MIGRATIONS = (
     # Historical migration numbers are immutable. Future schema versions must
     # append a new explicit tuple instead of rebinding the v1 record.
@@ -45,6 +46,7 @@ APP_SCHEMA_MIGRATIONS = (
     (5, "trip_plan_free_stops_v1"),
     (6, "trip_plan_half_day_schedule_v1"),
     (7, "trip_plan_flight_airports_v1"),
+    (8, "trip_plan_team_members_v1"),
 )
 _APP_SCHEMA_LEDGER_DDL = """
 CREATE TABLE IF NOT EXISTS app_schema_migrations (
@@ -70,6 +72,7 @@ _RUNTIME_REQUIRED_TABLES = {
     "trip_plan_legs",
     "trip_plan_free_stops",
     "trip_visit_briefings",
+    "trip_plan_members",
     "tech_task_exchange_batches",
     "tech_task_exchange_bindings",
 }
@@ -122,7 +125,7 @@ _RUNTIME_REQUIRED_INDEXES = {
     "idx_data_quality_issues_batch",
     "idx_tech_exchange_batches_recipient",
     "idx_tech_exchange_bindings_local",
-    "idx_trip_legs_active_key",
+    "idx_trip_legs_active_member_key",
     "idx_trip_legs_plan_sequence",
     "idx_trip_free_stops_plan",
     "idx_trip_visit_briefings_stop",
@@ -311,6 +314,11 @@ def _apply_runtime_schema_v7(conn: sqlite3.Connection) -> None:
     apply_trip_planning_schema_v7(conn)
 
 
+def _apply_runtime_schema_v8(conn: sqlite3.Connection) -> None:
+    """Record the travelling team and attribute each leg to a member."""
+    apply_trip_planning_schema_v8(conn)
+
+
 def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     """Reapply every idempotent runtime step when drift is detected."""
     _apply_runtime_schema_v1(conn)
@@ -320,6 +328,7 @@ def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     _apply_runtime_schema_v5(conn)
     _apply_runtime_schema_v6(conn)
     _apply_runtime_schema_v7(conn)
+    _apply_runtime_schema_v8(conn)
 
 
 def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> None:
@@ -337,6 +346,7 @@ def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> Non
             5: _apply_runtime_schema_v5,
             6: _apply_runtime_schema_v6,
             7: _apply_runtime_schema_v7,
+            8: _apply_runtime_schema_v8,
         }
         for version, name in APP_SCHEMA_MIGRATIONS:
             if version <= current:

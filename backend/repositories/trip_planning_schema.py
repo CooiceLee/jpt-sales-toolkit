@@ -16,6 +16,25 @@ PLAN_COLUMNS = {
     "return_window_end": "TEXT",
 }
 
+TRIP_PLAN_MEMBERS_DDL = """
+CREATE TABLE IF NOT EXISTS trip_plan_members (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    origin_name_override TEXT,
+    origin_lat_override REAL CHECK (origin_lat_override BETWEEN -90 AND 90),
+    origin_lng_override REAL CHECK (origin_lng_override BETWEEN -180 AND 180),
+    destination_name_override TEXT,
+    destination_lat_override REAL CHECK (destination_lat_override BETWEEN -90 AND 90),
+    destination_lng_override REAL CHECK (destination_lng_override BETWEEN -180 AND 180),
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    row_version INTEGER NOT NULL DEFAULT 1
+)
+"""
+
 TRIP_PLAN_LEGS_DDL = """
 CREATE TABLE IF NOT EXISTS trip_plan_legs (
     id TEXT PRIMARY KEY,
@@ -285,3 +304,35 @@ def apply_trip_planning_schema_v7(conn: sqlite3.Connection) -> None:
     additive columns keep existing legs and itineraries untouched.
     """
     _add_columns(conn, "trip_plan_legs", LEG_FLIGHT_AIRPORT_COLUMNS)
+
+
+def apply_trip_planning_schema_v8(conn: sqlite3.Connection) -> None:
+    """Let a plan record who travels, and which member each leg belongs to.
+
+    A trip is planned for team members, so a leg is one member's movement. Two
+    colleagues can cover the same pair of stops by different transport, which
+    the old ``(plan_id, leg_key)`` unique index could not represent.
+
+    ``member_id`` defaults to the empty string rather than NULL: SQLite treats
+    NULLs as distinct in a unique index, so a nullable column would silently
+    stop protecting legacy single-path plans from duplicate legs.
+    """
+    conn.execute(TRIP_PLAN_MEMBERS_DDL)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_plan_members_user "
+        "ON trip_plan_members(plan_id, user_id)"
+    )
+    if "planning_mode" not in _column_names(conn, "trip_plans"):
+        conn.execute(
+            "ALTER TABLE trip_plans ADD COLUMN planning_mode TEXT NOT NULL "
+            "DEFAULT 'legacy' CHECK (planning_mode IN ('legacy', 'team'))"
+        )
+    if "member_id" not in _column_names(conn, "trip_plan_legs"):
+        conn.execute(
+            "ALTER TABLE trip_plan_legs ADD COLUMN member_id TEXT NOT NULL DEFAULT ''"
+        )
+    conn.execute("DROP INDEX IF EXISTS idx_trip_legs_active_key")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_legs_active_member_key "
+        "ON trip_plan_legs(plan_id, member_id, leg_key) WHERE archived_at IS NULL"
+    )
