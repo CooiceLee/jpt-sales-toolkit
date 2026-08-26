@@ -1493,6 +1493,13 @@ class ReviewService:
             return day, "PM"
         return day + timedelta(days=1), "AM"
 
+    def _after_slots(self, slot: tuple, count: int) -> tuple:
+        """The half-day reached after occupying ``count`` calendar half-days."""
+        cursor = slot
+        for _ in range(max(0, int(count))):
+            cursor = self._after_calendar_slot(cursor)
+        return cursor
+
     def _allocate_calendar_slots(
         self,
         start_slot: tuple[date, str],

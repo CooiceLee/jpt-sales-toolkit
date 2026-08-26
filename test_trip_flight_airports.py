@@ -424,6 +424,114 @@ def check_team_primitives() -> None:
     )
 
 
+def check_team_itinerary(service) -> None:
+    """Every member walks their own trip, and nothing is invented for them."""
+    from datetime import date as _date
+
+    from backend.services.trip_team_schedule import TeamEvent, plan_team_itinerary
+
+    team = ("zhang", "li")
+    priority = ["drive", "flight", "ground_public"]
+    shanghai = {"lat": 31.14, "lng": 121.80, "label": "Shanghai",
+                "kind": "origin", "stop_id": None}
+    shenzhen = {"lat": 22.64, "lng": 113.81, "label": "Shenzhen",
+                "kind": "origin", "stop_id": None}
+
+    def place(lat, lng, label, stop_id):
+        return {"lat": lat, "lng": lng, "label": label, "kind": "stop",
+                "stop_id": stop_id}
+
+    frankfurt = place(50.11, 8.68, "Frankfurt", "f")
+    paris = place(48.85, 2.35, "Paris", "p")
+    munich = place(48.13, 11.58, "Munich", "m")
+    stuttgart = place(48.78, 9.18, "Stuttgart", "s")
+    dusseldorf = place(51.22, 6.78, "Dusseldorf", "d")
+
+    def event(stop_id, point, attendees, slot=None, kind="customer"):
+        return TeamEvent(stop_id, kind, point, 1, tuple(attendees), slot,
+                         label=stop_id)
+
+    def plan(events, origins=None):
+        return plan_team_itinerary(
+            service, team, events, origins or {"__default__": shanghai},
+            (_date(2026, 9, 15), "AM"), priority,
+        )
+
+    morning = (_date(2026, 9, 16), "AM")
+
+    # Two colleagues, two cities, same hour: ordinary, and no journey between
+    # the customers may appear.
+    result = plan([event("f", frankfurt, ["zhang"], morning),
+                   event("p", paris, ["li"], morning)])
+    pairs = {(leg["member_id"], leg["leg_key"]) for leg in result.legs}
+    assert pairs == {("zhang", "origin>f"), ("li", "origin>p")}, pairs
+    assert result.risks == []
+
+    # Nobody named: neither visit may be routed for anyone.
+    result = plan([event("f", frankfurt, [], morning),
+                   event("p", paris, [], morning)])
+    assert [risk["kind"] for risk in result.risks] == [
+        "parallel_visits_unassigned"
+    ]
+    assert result.legs == []
+    assert not any(
+        totals["route_complete"] for totals in result.member_totals.values()
+    ), "nobody's position can be trusted after an unassigned parallel pair"
+
+    # One person, two places, same hour: both kept, neither routed.
+    result = plan([event("f", frankfurt, ["zhang"], morning),
+                   event("p", paris, ["zhang"], morning)])
+    assert "member_double_booked" in [risk["kind"] for risk in result.risks]
+    assert not any(leg["member_id"] == "zhang" for leg in result.legs)
+    assert result.member_totals["zhang"]["route_complete"] is False
+    assert result.member_totals["li"]["route_complete"] is True, (
+        "one member's clash must not disturb another"
+    )
+
+    # Split, regroup, then carry on together from the shared place.
+    result = plan([
+        event("f", frankfurt, ["zhang"], morning),
+        event("p", paris, ["li"], morning),
+        event("s", stuttgart, ["zhang", "li"], (_date(2026, 9, 17), "AM"), "free"),
+        event("m", munich, ["zhang", "li"], (_date(2026, 9, 18), "AM")),
+    ])
+    pairs = {(leg["member_id"], leg["leg_key"]) for leg in result.legs}
+    assert {("zhang", "f>s"), ("li", "p>s")} <= pairs, pairs
+    assert {("zhang", "s>m"), ("li", "s>m")} <= pairs, "the merge is the shared event"
+    assert all(
+        totals["route_complete"] for totals in result.member_totals.values()
+    )
+
+    # Colleagues leaving from different Chinese cities.
+    result = plan(
+        [event("f", frankfurt, ["zhang"], morning),
+         event("p", paris, ["li"], morning)],
+        origins={"__default__": shanghai, "zhang": shanghai, "li": shenzhen},
+    )
+    starts = {
+        leg["member_id"]: leg["from_label"]
+        for leg in result.legs if leg["leg_key"].startswith("origin>")
+    }
+    assert starts == {"zhang": "Shanghai", "li": "Shenzhen"}, starts
+
+    # An unknown position is restored by the next booked appointment.
+    result = plan([
+        event("f", frankfurt, ["zhang"], morning),
+        event("p", paris, ["zhang"], morning),
+        event("m", munich, ["zhang"], (_date(2026, 9, 17), "AM")),
+        event("d", dusseldorf, ["zhang"], (_date(2026, 9, 17), "PM")),
+    ])
+    keys = [leg["leg_key"] for leg in result.legs if leg["member_id"] == "zhang"]
+    assert not any(key.endswith(">m") for key in keys), (
+        "travel to Munich cannot be worked out and must not be invented"
+    )
+    booked = [item for item in result.schedule_items if item["source_id"] == "m"]
+    assert booked and booked[0]["date"] == "2026-09-17"
+    assert booked[0]["inbound_travel_resolved"] is False
+    assert "m>d" in keys, "the appointment says where they are, so travel resumes"
+    assert result.member_totals["zhang"]["route_complete"] is False
+
+
 def check_schema() -> None:
     conn = sqlite3.connect(str(TEST_DIR / "database.sqlite"))
     columns = {row[1] for row in conn.execute("PRAGMA table_info(trip_plan_legs)")}
@@ -447,6 +555,7 @@ def main() -> None:
     check_member_isolation(service, plan_id, stop_id, actor)
     check_booked_time_beats_preferences(service, plan_id, actor)
     check_team_primitives()
+    check_team_itinerary(service)
     check_calendar_deadline(service)
     check_weekend_departure(service, plan_id, actor)
     close_db()

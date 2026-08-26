@@ -18,14 +18,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from .trip_leg_engine import build_leg
+
 
 @dataclass
 class MemberState:
-    """Where a member is, and when they are free again."""
+    """Where a member is, when they are free again, and whether we know.
+
+    ``route_known`` goes false the moment the plan stops being able to say where
+    somebody is - two visits booked over each other, or a parallel pair nobody
+    has been assigned to. While it is false no travel is invented for them; a
+    booked appointment later says where they are and puts it back to true.
+    """
 
     user_id: str
     location: dict
     slot: tuple
+    route_known: bool = True
 
 
 @dataclass
@@ -87,6 +96,30 @@ def resolve_participants(event_participants, team: tuple) -> tuple:
     if not event_participants:
         return team
     return tuple(user for user in event_participants if user in team)
+
+
+def double_booked_stop_ids(events: list, team: tuple) -> dict:
+    """Per member, the visits that overlap another visit of theirs.
+
+    Overlap is measured across the half-days each visit occupies, not just the
+    one it starts in: a day-long visit booked for the morning still runs into
+    the afternoon appointment that follows it.
+    """
+    booked: dict = {}
+    for event in events:
+        if not event.booked_slot:
+            continue
+        for user in resolve_participants(event.participants, team):
+            for slot in occupied_slots(event):
+                booked.setdefault(user, {}).setdefault(slot, set()).add(
+                    event.stop_id
+                )
+    clashing: dict = {}
+    for user, slots in booked.items():
+        for stop_ids in slots.values():
+            if len(stop_ids) > 1:
+                clashing.setdefault(user, set()).update(stop_ids)
+    return clashing
 
 
 def unresolved_events(events: list, team: tuple) -> set:
@@ -160,38 +193,30 @@ def staffing_risks(events: list, team: tuple) -> list[dict]:
                 }
             )
 
-    # Overlap is measured across the half-days each visit occupies, not just the
-    # one it starts in: a day-long visit booked for the morning still runs into
-    # the afternoon appointment that follows it.
-    booked: dict = {}
-    for event in events:
-        if not event.booked_slot:
+    unassigned_dates = {
+        risk["date"]
+        for risk in risks
+        if risk["kind"] == "parallel_visits_unassigned"
+    }
+    for user, stop_ids in sorted(double_booked_stop_ids(events, team).items()):
+        clashing = sorted(
+            (event for event in events if event.stop_id in stop_ids),
+            key=lambda item: (
+                item.booked_slot[0].isoformat(), item.booked_slot[1]
+            ),
+        )
+        first = clashing[0].booked_slot
+        if first[0].isoformat() in unassigned_dates:
             continue
-        for user in resolve_participants(event.participants, team):
-            for slot in occupied_slots(event):
-                booked.setdefault(user, {}).setdefault(slot, set()).add(event.stop_id)
-    for user in sorted(booked):
-        clashing: dict = {}
-        for slot, stop_ids in booked[user].items():
-            if len(stop_ids) > 1:
-                clashing.setdefault(tuple(sorted(stop_ids)), []).append(slot)
-        for stop_ids, slots in sorted(clashing.items()):
-            first = min(slots)
-            if any(
-                risk["kind"] == "parallel_visits_unassigned"
-                and risk["date"] == first[0].isoformat()
-                for risk in risks
-            ):
-                continue
-            risks.append(
-                {
-                    "kind": "member_double_booked",
-                    "user_id": user,
-                    "date": first[0].isoformat(),
-                    "period": first[1],
-                    "stop_ids": list(stop_ids),
-                }
-            )
+        risks.append(
+            {
+                "kind": "member_double_booked",
+                "user_id": user,
+                "date": first[0].isoformat(),
+                "period": first[1],
+                "stop_ids": sorted(stop_ids),
+            }
+        )
     return risks
 
 
@@ -216,3 +241,132 @@ def member_lanes(events: list, team: tuple) -> dict:
             0 if (item.booked_slot or ("", "AM"))[1] == "AM" else 1,
         ))
     return lanes
+
+
+def _ordered_events(events: list) -> list:
+    """Booked events in the order they happen, then the rest as given."""
+    booked = sorted(
+        (event for event in events if event.booked_slot),
+        key=lambda item: (
+            item.booked_slot[0].isoformat(),
+            0 if item.booked_slot[1] == "AM" else 1,
+        ),
+    )
+    return [*booked, *(event for event in events if not event.booked_slot)]
+
+
+def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
+                        start_slot: tuple, priority: list) -> TeamPlanResult:
+    """Walk every member through the events they attend.
+
+    A booked appointment is a fact: it says where somebody is at a given hour
+    whatever the travel estimate says, and it puts a member whose position had
+    become unknown back on the map. An estimate that cannot make it in time
+    produces a risk, never a refusal and never a delayed appointment.
+    """
+    result = TeamPlanResult()
+    result.risks.extend(staffing_risks(events, team))
+    skip = unresolved_events(events, team)
+    clashing = double_booked_stop_ids(events, team)
+
+    states = {
+        user: MemberState(user, origins.get(user) or origins.get("__default__"),
+                          start_slot, True)
+        for user in team
+    }
+    previous_stop: dict = {user: None for user in team}
+    totals = {
+        user: {"distance_km": 0.0, "travel_hours": 0.0, "route_complete": True}
+        for user in team
+    }
+
+    for event in _ordered_events(events):
+        attendees = resolve_participants(event.participants, team)
+        if event.stop_id in skip:
+            # Nobody knows who went, so nobody's position can be trusted after it.
+            for user in team:
+                states[user].route_known = False
+                totals[user]["route_complete"] = False
+            continue
+        if not attendees:
+            continue
+
+        for user in attendees:
+            state = states[user]
+            if event.stop_id in clashing.get(user, set()):
+                # They cannot be at both, and picking one would invent the rest
+                # of their trip from a place they may never have been.
+                state.route_known = False
+                totals[user]["route_complete"] = False
+                continue
+
+            inbound_resolved = state.route_known and state.location is not None
+            if inbound_resolved:
+                leg = build_leg(
+                    core, len(result.legs) + 1, state.location, event.point,
+                    priority, None,
+                )
+                leg["member_id"] = user
+                leg["leg_key"] = (
+                    f"{previous_stop[user] or 'origin'}>{event.stop_id}"
+                )
+                result.legs.append(leg)
+                totals[user]["distance_km"] += float(leg["distance_km"])
+                totals[user]["travel_hours"] += float(leg["time_hours"])
+            else:
+                totals[user]["route_complete"] = False
+
+            if event.booked_slot:
+                start = event.booked_slot
+                if inbound_resolved:
+                    arrival = core._after_slots(
+                        state.slot, int(leg["travel_half_days"])
+                    )
+                    if core._slot_key(arrival) > core._slot_key(start):
+                        result.risks.append(
+                            {
+                                "kind": "cannot_reach_booked_visit",
+                                "user_id": user,
+                                "stop_id": event.stop_id,
+                                "date": start[0].isoformat(),
+                                "period": start[1],
+                            }
+                        )
+            elif state.route_known:
+                start = state.slot
+            else:
+                continue
+
+            slots = [start]
+            for _ in range(max(1, int(event.duration_half_days or 1)) - 1):
+                slots.append(_next_slot(slots[-1]))
+            result.schedule_items.append(
+                {
+                    "member_id": user,
+                    "source_id": event.stop_id,
+                    "date": slots[0][0].isoformat(),
+                    "period": slots[0][1],
+                    "item_type": event.kind,
+                    "title": event.label or event.stop_id,
+                    "inbound_travel_resolved": inbound_resolved,
+                }
+            )
+            result.stop_updates.append(
+                {
+                    "member_id": user,
+                    "id": event.stop_id,
+                    "planned_date": slots[0][0].isoformat(),
+                    "planned_start_period": slots[0][1],
+                    "planned_end_date": slots[-1][0].isoformat(),
+                    "planned_end_period": slots[-1][1],
+                }
+            )
+            # The visit itself re-anchors the member, whether or not the journey
+            # to it could be worked out.
+            state.location = event.point
+            state.slot = _next_slot(slots[-1])
+            state.route_known = True
+            previous_stop[user] = event.stop_id
+
+    result.member_totals = totals
+    return result
