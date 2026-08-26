@@ -16,9 +16,19 @@ leg, airport and slot helpers still do the arithmetic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 
 from .trip_leg_engine import build_leg
+from .trip_team_rules import (
+    double_booked_stop_ids,
+    invalid_assignment_events,
+    next_slot,
+    ordered_events,
+    previous_slot,
+    resolve_participants,
+    staffing_risks,
+    unassigned_parallel_events,
+)
 
 
 @dataclass
@@ -59,222 +69,24 @@ class TeamPlanResult:
     risks: list = field(default_factory=list)
     member_totals: dict = field(default_factory=dict)
 
+@dataclass
+class TeamScheduleContext:
+    """Everything one scheduling run carries as it walks the events.
 
-def _next_slot(slot: tuple) -> tuple:
-    day, period = slot
-    if period == "AM":
-        return day, "PM"
-    return day + timedelta(days=1), "AM"
-
-
-def _previous_slot(slot: tuple) -> tuple:
-    day, period = slot
-    if period == "PM":
-        return day, "AM"
-    return day - timedelta(days=1), "PM"
-
-
-def occupied_slots(event: "TeamEvent") -> tuple:
-    """The half-days a booked event actually takes up.
-
-    A visit that starts in the morning and lasts a day still occupies the
-    afternoon, so comparing start times alone would miss a real clash.
+    The fixed facts about the trip are worked out once when the run starts, so
+    the scheduling below asks this rather than recomputing or passing a dozen
+    arguments down.
     """
-    if not event.booked_slot:
-        return ()
-    slots = []
-    slot = event.booked_slot
-    for _ in range(max(1, int(event.duration_half_days or 1))):
-        slots.append(slot)
-        slot = _next_slot(slot)
-    return tuple(slots)
 
-
-def resolve_participants(event_participants, team: tuple) -> tuple:
-    """Who travels to an event.
-
-    Nobody named means the whole team: a plan in team mode has already said who
-    is travelling, so silence means everyone rather than nobody.
-
-    Naming somebody who is not on the trip is a different thing entirely, and
-    must not quietly become "everyone goes" - that is the opposite of what was
-    asked for. It resolves to nobody, and the caller reports it.
-    """
-    if not event_participants:
-        return team
-    return tuple(user for user in event_participants if user in team)
-
-
-def double_booked_stop_ids(events: list, team: tuple) -> dict:
-    """Per member, the visits that overlap another visit of theirs.
-
-    Overlap is measured across the half-days each visit occupies, not just the
-    one it starts in: a day-long visit booked for the morning still runs into
-    the afternoon appointment that follows it.
-    """
-    booked: dict = {}
-    for event in events:
-        if not event.booked_slot:
-            continue
-        for user in resolve_participants(event.participants, team):
-            for slot in occupied_slots(event):
-                booked.setdefault(user, {}).setdefault(slot, set()).add(
-                    event.stop_id
-                )
-    clashing: dict = {}
-    for user, slots in booked.items():
-        for stop_ids in slots.values():
-            if len(stop_ids) > 1:
-                clashing.setdefault(user, set()).update(stop_ids)
-    return clashing
-
-
-def invalid_assignment_events(events: list, team: tuple) -> set:
-    """Events naming only people who are not on this trip.
-
-    Nobody travels to them, but that says nothing about where the actual team
-    members are, so their journeys carry on unaffected.
-    """
-    return {
-        event.stop_id
-        for event in events
-        if event.participants
-        and not resolve_participants(event.participants, team)
-    }
-
-
-def unassigned_parallel_events(events: list, team: tuple) -> set:
-    """Simultaneous visits nobody has been assigned to.
-
-    They cannot all be attended by the whole team, and until somebody is named
-    there is no way to say which member ended up where.
-    """
-    unresolved = set()
-    for group in group_by_slot(events).values():
-        if len(group) < 2:
-            continue
-        for event in group:
-            if not event.participants:
-                unresolved.add(event.stop_id)
-    return unresolved
-
-
-def unresolved_events(events: list, team: tuple) -> set:
-    """Every event that cannot be routed, whatever the reason."""
-    return invalid_assignment_events(events, team) | unassigned_parallel_events(
-        events, team
-    )
-
-
-def group_by_slot(events: list[TeamEvent]) -> dict:
-    """Booked events that share a half-day, keyed by that half-day."""
-    groups: dict = {}
-    for event in events:
-        if event.booked_slot:
-            groups.setdefault(event.booked_slot, []).append(event)
-    return groups
-
-
-def staffing_risks(events: list, team: tuple) -> list[dict]:
-    """Report who cannot be in two places at once, and what is unstaffed.
-
-    Two visits in the same half-day are legitimate when different colleagues
-    cover them, so this reports rather than refuses.
-    """
-    risks: list[dict] = []
-
-    for event in events:
-        if event.participants and not resolve_participants(
-            event.participants, team
-        ):
-            risks.append(
-                {
-                    "kind": "participant_not_in_trip_team",
-                    "stop_id": event.stop_id,
-                    "user_ids": sorted(str(user) for user in event.participants),
-                }
-            )
-
-    for slot, group in sorted(group_by_slot(events).items()):
-        if len(group) < 2:
-            continue
-        unstaffed = [
-            event.stop_id for event in group if not (event.participants or ())
-        ]
-        if unstaffed:
-            # Nobody has been named yet, so reporting that the whole team is
-            # double-booked as well would only be noise: the one thing to do is
-            # decide who goes where.
-            risks.append(
-                {
-                    "kind": "parallel_visits_unassigned",
-                    "date": slot[0].isoformat(),
-                    "period": slot[1],
-                    "visit_count": len(group),
-                    "stop_ids": sorted(unstaffed),
-                }
-            )
-
-    unassigned_slots = {
-        (risk["date"], risk["period"])
-        for risk in risks
-        if risk["kind"] == "parallel_visits_unassigned"
-    }
-    for user, stop_ids in sorted(double_booked_stop_ids(events, team).items()):
-        clashing = sorted(
-            (event for event in events if event.stop_id in stop_ids),
-            key=lambda item: (
-                item.booked_slot[0].isoformat(), item.booked_slot[1]
-            ),
-        )
-        first = clashing[0].booked_slot
-        if (first[0].isoformat(), first[1]) in unassigned_slots:
-            continue
-        risks.append(
-            {
-                "kind": "member_double_booked",
-                "user_id": user,
-                "date": first[0].isoformat(),
-                "period": first[1],
-                "stop_ids": sorted(stop_ids),
-            }
-        )
-    return risks
-
-
-def member_lanes(events: list, team: tuple) -> dict:
-    """The events each member attends, ordered by when they happen.
-
-    Events whose traveller is still unknown are left out: a lane is a sequence
-    of places one person actually goes to, and guessing here would produce a
-    route nobody travels.
-    """
-    skip = unresolved_events(events, team)
-    lanes: dict = {user: [] for user in team}
-    for event in events:
-        if event.stop_id in skip:
-            continue
-        for user in resolve_participants(event.participants, team):
-            lanes.setdefault(user, []).append(event)
-    for user, lane in lanes.items():
-        lane.sort(key=lambda item: (
-            item.booked_slot is None,
-            item.booked_slot[0].isoformat() if item.booked_slot else "",
-            0 if (item.booked_slot or ("", "AM"))[1] == "AM" else 1,
-        ))
-    return lanes
-
-
-def _ordered_events(events: list) -> list:
-    """Booked events in the order they happen, then the rest as given."""
-    booked = sorted(
-        (event for event in events if event.booked_slot),
-        key=lambda item: (
-            item.booked_slot[0].isoformat(),
-            0 if item.booked_slot[1] == "AM" else 1,
-        ),
-    )
-    return [*booked, *(event for event in events if not event.booked_slot)]
+    team: tuple
+    result: TeamPlanResult
+    states: dict
+    previous_stop: dict
+    lane_sequence: dict
+    totals: dict
+    invalid: set
+    unassigned: set
+    clashing: dict
 
 
 def build_member_leg(core, member_id, from_point, to_point, leg_key,
@@ -307,6 +119,276 @@ def build_member_leg(core, member_id, from_point, to_point, leg_key,
     return leg, int(leg["travel_half_days"])
 
 
+
+def _spread_slots(start: tuple, half_days) -> list:
+    """The half-days one event occupies, starting where it was placed."""
+    slots = [start]
+    for _ in range(max(1, int(half_days or 1)) - 1):
+        slots.append(next_slot(slots[-1]))
+    return slots
+
+
+def _record_travel(ctx: TeamScheduleContext, user, leg, from_slot, elapsed):
+    """Put a journey on the timeline, and on the leg itself.
+
+    Travel has to be visible or the customers look teleported. A flown leg has
+    already been expanded into its ground transfers, and each of those is its
+    own line on the timeline.
+    """
+    slots = _spread_slots(from_slot, elapsed)
+    leg["planned_start_date"] = slots[0][0].isoformat() if elapsed else None
+    leg["planned_start_period"] = slots[0][1] if elapsed else None
+    leg["planned_end_date"] = slots[-1][0].isoformat() if elapsed else None
+    leg["planned_end_period"] = slots[-1][1] if elapsed else None
+    if not elapsed:
+        return
+    for segment in leg.get("segments") or [None]:
+        part = segment or leg
+        ctx.result.schedule_items.append(
+            {
+                "member_id": user,
+                "source_id": leg["leg_key"] if segment is None
+                else f"{leg['leg_key']}#{segment['role']}",
+                "date": slots[0][0].isoformat(),
+                "period": slots[0][1],
+                "item_type": "leg",
+                "title": (
+                    f"{part.get('from_label') or '-'} → "
+                    f"{part.get('to_label') or '-'}"
+                ),
+                "selected_mode": part.get("selected_mode"),
+                "inbound_travel_resolved": True,
+            }
+        )
+
+
+def _record_event(ctx: TeamScheduleContext, event, user, slots,
+                  inbound_resolved):
+    """Put an event on the timeline, and on the stop it belongs to."""
+    ctx.result.schedule_items.append(
+        {
+            "member_id": user,
+            "source_id": event.stop_id,
+            "date": slots[0][0].isoformat(),
+            "period": slots[0][1],
+            "item_type": event.kind,
+            "title": event.label or event.stop_id,
+            "inbound_travel_resolved": inbound_resolved,
+        }
+    )
+    ctx.result.stop_updates.append(
+        {
+            "member_id": user,
+            "id": event.stop_id,
+            "stop_kind": event.kind,
+            "planned_date": slots[0][0].isoformat(),
+            "planned_start_period": slots[0][1],
+            "planned_end_date": slots[-1][0].isoformat(),
+            "planned_end_period": slots[-1][1],
+        }
+    )
+
+
+def _lose_position(ctx: TeamScheduleContext, user):
+    """Stop claiming to know where somebody is.
+
+    While a position is unknown no travel is invented from it; a later booked
+    appointment says where they are and puts it back.
+    """
+    ctx.states[user].route_known = False
+    ctx.totals[user]["route_complete"] = False
+
+
+def _initialize_team_context(team: tuple, events: list, origins: dict,
+                             start_slot: tuple) -> TeamScheduleContext:
+    """Everybody at their departure point, and what the appointments imply."""
+    result = TeamPlanResult()
+    result.risks.extend(staffing_risks(events, team))
+    return TeamScheduleContext(
+        team=team,
+        result=result,
+        states={
+            user: MemberState(
+                user, origins.get(user) or origins.get("__default__"),
+                start_slot, True,
+            )
+            for user in team
+        },
+        previous_stop={user: None for user in team},
+        lane_sequence={user: 0 for user in team},
+        totals={
+            user: {
+                "distance_km": 0.0, "travel_hours": 0.0, "route_complete": True,
+                "calculated_end_date": None, "calculated_end_period": None,
+            }
+            for user in team
+        },
+        invalid=invalid_assignment_events(events, team),
+        unassigned=unassigned_parallel_events(events, team),
+        clashing=double_booked_stop_ids(events, team),
+    )
+
+
+def _build_inbound_legs(core, ctx: TeamScheduleContext, event, travelling,
+                        priority, leg_settings) -> dict:
+    """The journey each member still on the map takes to reach this event."""
+    inbound: dict = {}
+    for user in travelling:
+        state = ctx.states[user]
+        if not (state.route_known and state.location is not None):
+            continue
+        leg_key = f"{ctx.previous_stop[user] or 'origin'}>{event.stop_id}"
+        inbound[user] = build_member_leg(
+            core, user, state.location, event.point, leg_key, priority,
+            leg_settings, ctx.lane_sequence[user] + 1,
+        )
+    return inbound
+
+
+def _event_start_slot(core, ctx: TeamScheduleContext, event, travelling,
+                      inbound):
+    """When this event begins, or None if there is no way to say.
+
+    A booked appointment is a fact and needs no arrival time. An event with no
+    booked time starts once its last attendee has got there, which cannot be
+    worked out while somebody's position is unknown.
+    """
+    if event.booked_slot:
+        return event.booked_slot
+    arrivals = [
+        core._after_slots(ctx.states[user].slot, elapsed)
+        for user, (_, elapsed) in inbound.items()
+    ]
+    if len(inbound) < len(travelling) or not arrivals:
+        return None
+    return max(arrivals, key=core._slot_key)
+
+
+def _record_unattended_event(ctx: TeamScheduleContext, event) -> None:
+    """An appointment nobody can be routed to still happened."""
+    if event.booked_slot:
+        _record_event(
+            ctx, event, None,
+            _spread_slots(event.booked_slot, event.duration_half_days), False,
+        )
+
+
+def _schedule_team_event(core, ctx: TeamScheduleContext, event, priority,
+                         leg_settings) -> None:
+    """Move everybody who attends this event to it, and mark what cannot be."""
+    if event.stop_id in ctx.invalid:
+        # Nobody on this trip goes, but that says nothing about where the real
+        # members are, so their journeys are untouched.
+        _record_unattended_event(ctx, event)
+        return
+
+    if event.stop_id in ctx.unassigned:
+        # Any member might have gone, so none of their positions can be trusted
+        # afterwards. The appointment itself is still real.
+        for user in ctx.team:
+            _lose_position(ctx, user)
+        _record_unattended_event(ctx, event)
+        return
+
+    attendees = resolve_participants(event.participants, ctx.team)
+    if not attendees:
+        return
+
+    # Members who cannot be at this event and another at the same hour keep the
+    # appointment but lose their position: choosing one of the two would invent
+    # the rest of their trip from a place they may never have been.
+    conflicted = [
+        user for user in attendees
+        if event.stop_id in ctx.clashing.get(user, set())
+    ]
+    travelling = [user for user in attendees if user not in conflicted]
+
+    inbound = _build_inbound_legs(
+        core, ctx, event, travelling, priority, leg_settings
+    )
+    start = _event_start_slot(core, ctx, event, travelling, inbound)
+    if start is None:
+        return
+    slots = _spread_slots(start, event.duration_half_days)
+
+    for user in conflicted:
+        _record_event(ctx, event, user, slots, False)
+        _lose_position(ctx, user)
+
+    for user in travelling:
+        _attend_event(core, ctx, event, user, slots, start, inbound)
+
+
+def _attend_event(core, ctx: TeamScheduleContext, event, user, slots, start,
+                  inbound) -> None:
+    """One member arrives, is recorded at the event, and waits there."""
+    resolved = user in inbound
+    if resolved:
+        leg, elapsed = inbound[user]
+        ctx.lane_sequence[user] += 1
+        _record_travel(ctx, user, leg, ctx.states[user].slot, elapsed)
+        ctx.result.legs.append(leg)
+        ctx.totals[user]["distance_km"] += float(leg["distance_km"])
+        ctx.totals[user]["travel_hours"] += float(leg["time_hours"])
+        arrival = core._after_slots(ctx.states[user].slot, elapsed)
+        if event.booked_slot and core._slot_key(arrival) > core._slot_key(start):
+            # The appointment stays where the customer put it. Not making it in
+            # time is something to report, never a reason to move the meeting.
+            ctx.result.risks.append(
+                {
+                    "kind": "cannot_reach_booked_visit",
+                    "user_id": user,
+                    "stop_id": event.stop_id,
+                    "date": start[0].isoformat(),
+                    "period": start[1],
+                }
+            )
+    else:
+        ctx.totals[user]["route_complete"] = False
+    _record_event(ctx, event, user, slots, resolved)
+    state = ctx.states[user]
+    state.location = event.point
+    state.slot = next_slot(slots[-1])
+    state.route_known = True
+    ctx.previous_stop[user] = event.stop_id
+
+
+def _schedule_member_return(core, ctx: TeamScheduleContext, user, destinations,
+                            priority, leg_settings) -> None:
+    """One member's journey home. A trip is not complete until they are back."""
+    state = ctx.states[user]
+    home = (destinations or {}).get(user) or (destinations or {}).get(
+        "__default__"
+    )
+    if not home or not state.route_known or state.location is None:
+        if home:
+            ctx.totals[user]["route_complete"] = False
+        return
+    if ctx.previous_stop[user] is None:
+        return
+    leg, elapsed = build_member_leg(
+        core, user, state.location, home,
+        f"{ctx.previous_stop[user]}>destination", priority, leg_settings,
+        ctx.lane_sequence[user] + 1,
+    )
+    ctx.lane_sequence[user] += 1
+    _record_travel(ctx, user, leg, state.slot, elapsed)
+    ctx.result.legs.append(leg)
+    ctx.totals[user]["distance_km"] += float(leg["distance_km"])
+    ctx.totals[user]["travel_hours"] += float(leg["time_hours"])
+    state.slot = core._after_slots(state.slot, elapsed)
+    state.location = home
+
+
+def _finalize_member_totals(ctx: TeamScheduleContext) -> None:
+    """When each member finishes, which is what a late return is measured from."""
+    for user in ctx.team:
+        last = previous_slot(ctx.states[user].slot)
+        ctx.totals[user]["calculated_end_date"] = last[0].isoformat()
+        ctx.totals[user]["calculated_end_period"] = last[1]
+    ctx.result.member_totals = ctx.totals
+
+
 def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
                         start_slot: tuple, priority: list,
                         destinations: dict | None = None,
@@ -318,216 +400,12 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
     become unknown back on the map. An estimate that cannot make it in time
     produces a risk, never a refusal and never a delayed appointment.
     """
-    result = TeamPlanResult()
-    result.risks.extend(staffing_risks(events, team))
-    invalid = invalid_assignment_events(events, team)
-    unassigned = unassigned_parallel_events(events, team)
-    clashing = double_booked_stop_ids(events, team)
-
-    states = {
-        user: MemberState(user, origins.get(user) or origins.get("__default__"),
-                          start_slot, True)
-        for user in team
-    }
-    previous_stop: dict = {user: None for user in team}
-    lane_sequence: dict = {user: 0 for user in team}
-    totals = {
-        user: {
-            "distance_km": 0.0, "travel_hours": 0.0, "route_complete": True,
-            "calculated_end_date": None, "calculated_end_period": None,
-        }
-        for user in team
-    }
-
-    def record_travel(user, leg, from_slot, elapsed):
-        slots = [from_slot]
-        for _ in range(max(0, int(elapsed)) - 1):
-            slots.append(_next_slot(slots[-1]))
-        leg["planned_start_date"] = slots[0][0].isoformat() if elapsed else None
-        leg["planned_start_period"] = slots[0][1] if elapsed else None
-        leg["planned_end_date"] = slots[-1][0].isoformat() if elapsed else None
-        leg["planned_end_period"] = slots[-1][1] if elapsed else None
-        if not elapsed:
-            return
-        for segment in leg.get("segments") or [None]:
-            result.schedule_items.append(
-                {
-                    "member_id": user,
-                    "source_id": leg["leg_key"] if segment is None
-                    else f"{leg['leg_key']}#{segment['role']}",
-                    "date": slots[0][0].isoformat(),
-                    "period": slots[0][1],
-                    "item_type": "leg",
-                    "title": (
-                        f"{leg.get('from_label') or '-'} \u2192 "
-                        f"{leg.get('to_label') or '-'}"
-                    ) if segment is None else (
-                        f"{segment.get('from_label') or '-'} \u2192 "
-                        f"{segment.get('to_label') or '-'}"
-                    ),
-                    "selected_mode": (segment or leg).get("selected_mode"),
-                    "inbound_travel_resolved": True,
-                }
-            )
-
-    def record(event, user, slots, inbound_resolved):
-        result.schedule_items.append(
-            {
-                "member_id": user,
-                "source_id": event.stop_id,
-                "date": slots[0][0].isoformat(),
-                "period": slots[0][1],
-                "item_type": event.kind,
-                "title": event.label or event.stop_id,
-                "inbound_travel_resolved": inbound_resolved,
-            }
-        )
-        result.stop_updates.append(
-            {
-                "member_id": user,
-                "id": event.stop_id,
-                "stop_kind": event.kind,
-                "planned_date": slots[0][0].isoformat(),
-                "planned_start_period": slots[0][1],
-                "planned_end_date": slots[-1][0].isoformat(),
-                "planned_end_period": slots[-1][1],
-            }
-        )
-
-    def spread(start, half_days):
-        slots = [start]
-        for _ in range(max(1, int(half_days or 1)) - 1):
-            slots.append(_next_slot(slots[-1]))
-        return slots
-
-    for event in _ordered_events(events):
-        attendees = resolve_participants(event.participants, team)
-
-        if event.stop_id in invalid:
-            # Nobody on this trip goes, but that says nothing about where the
-            # real members are, so their journeys are untouched.
-            if event.booked_slot:
-                record(event, None, spread(event.booked_slot,
-                                           event.duration_half_days), False)
-            continue
-
-        if event.stop_id in unassigned:
-            # Any member might have gone, so none of their positions can be
-            # trusted afterwards. The appointment itself is still real.
-            for user in team:
-                states[user].route_known = False
-                totals[user]["route_complete"] = False
-            if event.booked_slot:
-                record(event, None, spread(event.booked_slot,
-                                           event.duration_half_days), False)
-            continue
-
-        if not attendees:
-            continue
-
-        # Members who cannot be at this event and another at the same hour keep
-        # the appointment but lose their position: choosing one of the two would
-        # invent the rest of their trip from a place they may never have been.
-        conflicted = [
-            user for user in attendees
-            if event.stop_id in clashing.get(user, set())
-        ]
-        travelling = [user for user in attendees if user not in conflicted]
-
-        inbound: dict = {}
-        for user in travelling:
-            state = states[user]
-            if not (state.route_known and state.location is not None):
-                continue
-            leg_key = f"{previous_stop[user] or 'origin'}>{event.stop_id}"
-            inbound[user] = build_member_leg(
-                core, user, state.location, event.point, leg_key, priority,
-                leg_settings, lane_sequence[user] + 1,
-            )
-
-        if event.booked_slot:
-            start = event.booked_slot
-        else:
-            arrivals = [
-                core._after_slots(states[user].slot, elapsed)
-                for user, (_, elapsed) in inbound.items()
-            ]
-            if len(inbound) < len(travelling) or not arrivals:
-                # Somebody's position is unknown, so there is no arrival time to
-                # build a shared start from.
-                continue
-            # A shared event cannot begin before its last attendee gets there.
-            start = max(arrivals, key=core._slot_key)
-
-        slots = spread(start, event.duration_half_days)
-
-        for user in conflicted:
-            # The appointment is real and stays visible, but they cannot be in
-            # two places at once, so where they end up is no longer known.
-            record(event, user, slots, False)
-            states[user].route_known = False
-            totals[user]["route_complete"] = False
-
-        for user in travelling:
-            resolved = user in inbound
-            if resolved:
-                leg, elapsed = inbound[user]
-                lane_sequence[user] += 1
-                record_travel(user, leg, states[user].slot, elapsed)
-                result.legs.append(leg)
-                totals[user]["distance_km"] += float(leg["distance_km"])
-                totals[user]["travel_hours"] += float(leg["time_hours"])
-                arrival = core._after_slots(states[user].slot, elapsed)
-                if event.booked_slot and core._slot_key(arrival) > core._slot_key(
-                    start
-                ):
-                    result.risks.append(
-                        {
-                            "kind": "cannot_reach_booked_visit",
-                            "user_id": user,
-                            "stop_id": event.stop_id,
-                            "date": start[0].isoformat(),
-                            "period": start[1],
-                        }
-                    )
-            else:
-                totals[user]["route_complete"] = False
-            record(event, user, slots, resolved)
-            state = states[user]
-            state.location = event.point
-            state.slot = _next_slot(slots[-1])
-            state.route_known = True
-            previous_stop[user] = event.stop_id
-
-    # Home again: a trip is not complete until everybody has returned.
+    ctx = _initialize_team_context(team, events, origins, start_slot)
+    for event in ordered_events(events):
+        _schedule_team_event(core, ctx, event, priority, leg_settings)
     for user in team:
-        state = states[user]
-        home = (destinations or {}).get(user) or (destinations or {}).get(
-            "__default__"
+        _schedule_member_return(
+            core, ctx, user, destinations, priority, leg_settings
         )
-        if not home or not state.route_known or state.location is None:
-            if home:
-                totals[user]["route_complete"] = False
-            continue
-        if previous_stop[user] is None:
-            continue
-        leg, elapsed = build_member_leg(
-            core, user, state.location, home,
-            f"{previous_stop[user]}>destination", priority, leg_settings,
-            lane_sequence[user] + 1,
-        )
-        lane_sequence[user] += 1
-        record_travel(user, leg, state.slot, elapsed)
-        result.legs.append(leg)
-        totals[user]["distance_km"] += float(leg["distance_km"])
-        totals[user]["travel_hours"] += float(leg["time_hours"])
-        state.slot = core._after_slots(state.slot, elapsed)
-        state.location = home
-
-    for user in team:
-        reached = states[user].slot
-        last = _previous_slot(reached)
-        totals[user]["calculated_end_date"] = last[0].isoformat()
-        totals[user]["calculated_end_period"] = last[1]
-    result.member_totals = totals
-    return result
+    _finalize_member_totals(ctx)
+    return ctx.result

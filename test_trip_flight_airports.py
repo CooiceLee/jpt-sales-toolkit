@@ -329,14 +329,14 @@ def check_team_primitives() -> None:
     """Parallel visits are legitimate; unknown travellers are never guessed."""
     from datetime import date as _date
 
-    from backend.services.trip_team_schedule import (
-        TeamEvent,
+    from backend.services.trip_team_rules import (
         member_lanes,
         occupied_slots,
         resolve_participants,
         staffing_risks,
         unresolved_events,
     )
+    from backend.services.trip_team_schedule import TeamEvent
 
     team = ("zhang", "li")
     morning = (_date(2026, 9, 16), "AM")
