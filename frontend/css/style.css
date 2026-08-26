@@ -3841,3 +3841,6 @@ html, body {
 .trip-team-entry em { grid-column: 2; color: var(--warning); font-size: 12px; font-style: normal; }
 .trip-team-incomplete { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-md);
     background: var(--cream-100); color: var(--ink-700); font-size: 13px; line-height: 1.55; }
+.trip-map-lanes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.trip-map-notice { margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius-md);
+    background: var(--cream-100); color: var(--ink-700); font-size: 13px; }

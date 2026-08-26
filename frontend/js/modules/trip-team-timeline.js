@@ -60,10 +60,18 @@
         const stopId = !isLeg ? entry.source_id : '';
         const who = entry.members.length
             ? entry.members.join(' · ') : t('Unassigned');
+        // Choosing a line shows it on the map. A visit also opens its
+        // preparation, which is the thing there is to do with a visit.
+        const action = stopId
+            ? `TripTeamMap.focusStop('${h(stopId)}');`
+                + `TripBriefingActions.open('${h(stopId)}')`
+            : (entry.source_id ? `TripTeamMap.focusLeg('${
+                h(String(entry.source_id).split('#')[0])}','${
+                h(entry.selected_mode || '')}')` : '');
         return `<button type="button"
             class="trip-team-entry is-${h(isLeg ? 'leg' : entry.item_type)}${
                 entry.unresolved ? ' is-unresolved' : ''}"
-            ${stopId ? `onclick="TripBriefingActions.open('${h(stopId)}')"` : 'disabled'}>
+            ${action ? `onclick="${action}"` : 'disabled'}>
             <span class="trip-team-entry-who">${h(who)}</span>
             <strong>${h(entry.title || entry.source_id)}${
                 isLeg && entry.selected_mode

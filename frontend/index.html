@@ -690,7 +690,9 @@
                     </div>
                     <div class="trip-layout">
                         <div class="trip-main">
+                            <div id="trip-map-lanes" class="trip-map-lanes" role="group" aria-label="Map route view" hidden></div>
                             <div id="trip-map"></div>
+                            <p id="trip-map-notice" class="trip-map-notice" role="status" aria-live="polite" hidden></p>
                     <div id="trip-risk-bar" class="trip-risk-bar" role="status" aria-live="polite" hidden></div>
                     <section id="trip-schedule-panel" class="review-panel trip-schedule-panel" aria-labelledby="trip-schedule-title">
                         <div class="trip-schedule-heading">
@@ -1312,6 +1314,8 @@
     <script src="/static/js/modules/trip-team-timeline.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-journeys.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-map.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-schedule-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-export-actions.js?v=1.0"></script>

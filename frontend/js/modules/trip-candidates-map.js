@@ -47,6 +47,8 @@ function renderTripMap() {
     });
 
     const plan = State.currentTripPlan;
+    const isTeam = plan?.planning_mode === 'team';
+    window.TripTeamMap?.renderToolbar?.(plan);
     if (plan?.stops?.length) {
         const routePoints = [];
         const addPoint = (lat, lng, label, color) => {
@@ -62,8 +64,13 @@ function renderTripMap() {
                 fillOpacity: 0.95
             }).bindTooltip(escapeHtml(label)).addTo(State.tripMapLayer);
         };
-        addPoint(plan.origin_lat, plan.origin_lng, plan.origin_name || I18n.t('Origin'), '#2b6cb0');
-        (plan.stops || []).filter(Boolean).forEach(stop => {
+        if (!isTeam) {
+            addPoint(plan.origin_lat, plan.origin_lng,
+                plan.origin_name || I18n.t('Origin'), '#2b6cb0');
+        }
+        const stops = isTeam
+            ? window.TripTeamMap.visibleStops(plan) : (plan.stops || []);
+        stops.filter(Boolean).forEach(stop => {
             const location = window.TripVisitState?.visitLocation?.(stop) || stop;
             const point = MapSupport.coordinatePair(location.lat, location.lng);
             if (!point) return;
@@ -91,8 +98,16 @@ function renderTripMap() {
                 );
             }
         });
-        addPoint(plan.destination_lat, plan.destination_lng, plan.destination_name || I18n.t('Destination'), '#7c3aed');
-        if (routePoints.length >= 2) {
+        if (!isTeam) {
+            addPoint(plan.destination_lat, plan.destination_lng,
+                plan.destination_name || I18n.t('Destination'), '#7c3aed');
+        }
+        // A team plan has one route per member, so a single line through the
+        // stops in order would be a path nobody travels. The journeys the
+        // calculation produced are drawn instead, and nothing else is.
+        if (isTeam) {
+            window.TripTeamMap.draw(plan, State.tripMapLayer, bounds);
+        } else if (routePoints.length >= 2) {
             L.polyline(routePoints, {
                 color: '#1f5135',
                 weight: 3,

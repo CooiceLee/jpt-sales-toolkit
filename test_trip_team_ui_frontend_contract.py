@@ -143,11 +143,14 @@ def check_travel_shows_how_they_travel() -> None:
     }] }, nodes.get('t'));
     console.log(JSON.stringify({ html: nodes.get('t').innerHTML }));
     """)
-    assert "Drive" in data["html"], (
-        f"the travel line never says how they travel: {data['html']}"
+    # The visible text only: the raw mode also appears inside the onclick that
+    # focuses the map, which is a function argument rather than something read.
+    shown = re.sub(r"<[^>]+>", " ", data["html"])
+    assert "Drive" in shown, (
+        f"the travel line never says how they travel: {shown}"
     )
-    assert "drive" not in data["html"].replace("Drive", ""), (
-        "the raw mode leaked into the page instead of its label"
+    assert "drive" not in shown.replace("Drive", ""), (
+        "the raw mode is displayed instead of its label"
     )
 
 

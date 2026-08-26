@@ -731,6 +731,8 @@
         ['Error removing assignment: {error}', '移除分配失败：{error}'],
         ['Trip plan created', '出差计划已创建。'],
         // Team planning
+        ['All team', '全部成员'],
+        ['No route is drawn for {members} yet: the plan cannot say where they are.', '暂不绘制 {members} 的路线：当前计划无法确定其所在位置。'],
         ['Travel Team', '出差团队'], ['Planning mode', '规划模式'],
         ['One traveller', '单人出行'], ['Travel team', '团队出行'],
         ['Add to trip', '加入行程'], ['Team member to add', '选择要加入的成员'],
