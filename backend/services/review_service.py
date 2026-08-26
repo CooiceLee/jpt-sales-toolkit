@@ -683,7 +683,7 @@ class ReviewService:
                 base_points,
                 priority,
                 {
-                    **self.trip_plan_service.leg_repo.locked_overrides(plan["id"]),
+                    **self._shared_leg_settings(plan["id"]),
                     **(incoming_overrides if isinstance(incoming_overrides, dict) else {}),
                 },
                 lambda start, end: self._haversine_km(
@@ -709,14 +709,13 @@ class ReviewService:
                     "Ignored obsolete leg overrides after automatic route reorder: "
                     + ", ".join(obsolete_keys)
                 )
-        stored = self.trip_plan_service.leg_repo.locked_overrides(plan["id"])
-        for key, airports in self.trip_plan_service.leg_repo.saved_airports(
-            plan["id"]
-        ).items():
-            stored.setdefault(key, {}).update(airports)
+        stored = self._shared_leg_settings(plan["id"])
         dropped_airports = sorted(
-            key for key in self.trip_plan_service.leg_repo.saved_airports(plan["id"])
-            if key not in leg_keys
+            leg_key
+            for (member_id, leg_key) in self.trip_plan_service.leg_repo.saved_airports(
+                plan["id"]
+            )
+            if member_id is None and leg_key not in leg_keys
         )
         if dropped_airports:
             warnings.append(
@@ -735,6 +734,7 @@ class ReviewService:
         total_hours = 0.0
         total_travel_half_days = 0
         stop_updates = []
+        risks: list[dict] = []
         legs = []
         schedule_items = []
         last_occupied_slot = cursor
@@ -917,11 +917,24 @@ class ReviewService:
                     raise ValueError(
                         "Save a visit date and AM/PM period before locking this visit"
                     )
+                locked_slot = (locked_date, locked_period)
+                # A confirmed appointment is a fact, not a preference. Skipping
+                # weekends and holidays is how the planner arranges the visits it
+                # is free to move, and holiday_dates are Chinese dates that say
+                # nothing about when an overseas customer is at work.
                 if not self._is_workday(
                     locked_date, bool(avoid_weekends), holidays
                 ):
-                    raise ValueError("A locked stop cannot use a skipped day")
-                locked_slot = (locked_date, locked_period)
+                    # The message is emitted as a key plus its values so the
+                    # frontend can localise it; a pre-formatted sentence with the
+                    # date already inside can never be matched for translation.
+                    risks.append(
+                        {
+                            "kind": "booked_on_skipped_day",
+                            "stop_id": stop["id"],
+                            "date": locked_date.isoformat(),
+                        }
+                    )
                 if preferred_period != "auto" and preferred_period != locked_period:
                     raise ValueError(
                         "The locked visit time conflicts with its AM/PM preference"
@@ -932,12 +945,18 @@ class ReviewService:
                     )
                 visit_start_slot = locked_slot
 
-            if is_customer:
+            if is_customer and not schedule_locked:
                 visit_slots, cursor = self._allocate_work_slots(
                     visit_start_slot,
                     schedule_half_days,
                     bool(avoid_weekends),
                     holidays,
+                )
+            elif is_customer:
+                # Allocating work slots here would quietly move a Saturday
+                # appointment to Monday and undo the booking that was kept.
+                visit_slots, cursor = self._allocate_calendar_slots(
+                    visit_start_slot, schedule_half_days
                 )
             else:
                 visit_slots, cursor = self._allocate_calendar_slots(
@@ -1163,6 +1182,7 @@ class ReviewService:
             "overrun_days": overrun_days,
             "overrun_half_days": overrun_half_days,
             "within_date_window": within_date_window,
+            "risks": risks,
             "stop_count": len(ordered_stops),
             "leg_count": len(legs),
             "total_stay_half_days": sum(
@@ -1622,6 +1642,24 @@ class ReviewService:
         selected_mode = select_mode(distance_km, priority)
         estimate_mode = selected_mode if selected_mode != "other" else "drive"
         return self._estimate_travel_leg(start, end, estimate_mode)["time_hours"]
+
+    def _shared_leg_settings(self, plan_id: str) -> dict:
+        """Stored leg settings for the single-path calculation.
+
+        The repository keys everything by ``(member_id, leg_key)`` so two
+        colleagues covering the same pair of stops keep separate airports and
+        transport. This calculation is the shared path, whose legs belong to no
+        member, so it reads that slice and keeps its own plain leg keys.
+        """
+        repo = self.trip_plan_service.leg_repo
+        stored: dict = {}
+        for (member_id, leg_key), value in repo.locked_overrides(plan_id).items():
+            if member_id is None:
+                stored[leg_key] = dict(value)
+        for (member_id, leg_key), airports in repo.saved_airports(plan_id).items():
+            if member_id is None:
+                stored.setdefault(leg_key, {}).update(airports)
+        return stored
 
     def _expand_flight_leg(
         self, leg: dict, start_point: dict, end_point: dict, priority: list[str]

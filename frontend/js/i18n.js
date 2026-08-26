@@ -211,6 +211,7 @@
         ['Airport or city name', '城市名（如：巴黎）或机场名'],
         ['From visit preparation', '以下内容来自「拜访准备」'],
         ['Needs a new preview', '需要重新预览'],
+        ['This customer visit is booked for {date}, which the plan would otherwise skip. The booked time is kept.', '该客户拜访已约在 {date}（周末或节假日），系统将保留该预约时间。'],
         ['Visit topics', '拜访议题'],
         ['Preview route', '重新预览路线'],
         ['A saved visit location changed. Preview and save the route again.', '拜访地点已修改，请重新预览并保存路线。'],

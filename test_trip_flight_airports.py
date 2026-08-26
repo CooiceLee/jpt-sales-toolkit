@@ -161,7 +161,9 @@ def check_persistence(service: ReviewService, plan_id: str, stop_id: str, actor:
         plan_id, {"leg_overrides": {key: airports}}, actor, "leader"
     )
     saved = service.trip_plan_service.leg_repo.saved_airports(plan_id)
-    assert saved[key]["arrival_airport_name"] == "法兰克福机场"
+    # Keyed by (member_id, leg_key): the shared path belongs to no member, and
+    # two colleagues covering the same stops must not overwrite each other.
+    assert saved[(None, key)]["arrival_airport_name"] == "法兰克福机场"
     assert not any(
         leg.get("mode_locked")
         for leg in service.trip_plan_service.leg_repo.list_active(plan_id)
@@ -210,6 +212,78 @@ def check_calendar_deadline(service) -> None:
     assert service._calendar_slots_after(friday, friday) == 0
 
 
+def check_member_isolation(service, plan_id: str, stop_id: str, actor: str) -> None:
+    """Two members covering the same stops keep separate airports."""
+    repo = service.trip_plan_service.leg_repo
+    conn = get_db()
+    others = [
+        row[0]
+        for row in conn.execute("SELECT id FROM users WHERE id != ?", (actor,))
+    ]
+    mate = others[0] if others else generate_uuid()
+    if not others:
+        conn.execute(
+            "INSERT INTO users (id,username,display_name,role,password_hash,"
+            "is_active,created_at) VALUES (?,'mate','mate','sales','h',1,?)",
+            (mate, now_iso()),
+        )
+    for user in (actor, mate):
+        conn.execute(
+            "INSERT OR IGNORE INTO trip_plan_members (id,plan_id,user_id,"
+            "created_at,updated_at) VALUES (?,?,?,?,?)",
+            (generate_uuid(), plan_id, user, now_iso(), now_iso()),
+        )
+    conn.commit()
+
+    key = f"origin>{stop_id}"
+    stamp = now_iso()
+    repo.replace_active(
+        plan_id,
+        [
+            {
+                "leg_key": key, "member_id": actor, "sequence_no": 1,
+                "from_kind": "origin", "to_kind": "stop", "to_stop_id": stop_id,
+                "selected_mode": "flight", "distance_km": 100.0,
+                "time_hours": 1.0, "travel_days": 0, "travel_half_days": 0,
+                "arrival_airport_name": "法兰克福机场",
+                "arrival_airport_lat": 50.0379, "arrival_airport_lng": 8.5622,
+            },
+            {
+                "leg_key": key, "member_id": mate, "sequence_no": 1,
+                "from_kind": "origin", "to_kind": "stop", "to_stop_id": stop_id,
+                "selected_mode": "drive", "distance_km": 100.0,
+                "time_hours": 2.0, "travel_days": 0, "travel_half_days": 0,
+                "arrival_airport_name": "巴黎夏尔·戴高乐机场",
+                "arrival_airport_lat": 49.0097, "arrival_airport_lng": 2.5479,
+            },
+        ],
+        actor,
+        stamp,
+    )
+    saved = repo.saved_airports(plan_id)
+    assert saved[(actor, key)]["arrival_airport_name"] == "法兰克福机场"
+    assert saved[(mate, key)]["arrival_airport_name"] == "巴黎夏尔·戴高乐机场", (
+        "one member's airport overwrote the other's"
+    )
+
+    try:
+        repo.replace_active(
+            plan_id,
+            [{
+                "leg_key": key, "member_id": generate_uuid(), "sequence_no": 1,
+                "from_kind": "origin", "to_kind": "stop", "to_stop_id": stop_id,
+                "selected_mode": "drive", "distance_km": 1.0, "time_hours": 1.0,
+                "travel_days": 0, "travel_half_days": 0,
+            }],
+            actor,
+            now_iso(),
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a leg for a non-member was accepted")
+
+
 def check_schema() -> None:
     conn = sqlite3.connect(str(TEST_DIR / "database.sqlite"))
     columns = {row[1] for row in conn.execute("PRAGMA table_info(trip_plan_legs)")}
@@ -230,6 +304,7 @@ def main() -> None:
     plan_id, stop_id, actor = _seed(service)
     check_itinerary(service, plan_id, stop_id, actor)
     check_persistence(service, plan_id, stop_id, actor)
+    check_member_isolation(service, plan_id, stop_id, actor)
     check_calendar_deadline(service)
     check_weekend_departure(service, plan_id, actor)
     close_db()

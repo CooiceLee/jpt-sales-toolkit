@@ -35,6 +35,7 @@ class TripLegRepository:
                 "free" if item.get("to_free_stop_id") else
                 "customer" if item.get("to_stop_id") else None
             )
+            item["member_id"] = item.get("member_id")
             item["mode_locked"] = bool(item.get("mode_locked"))
             item["mode"] = item.get("selected_mode")
             item["from"] = item.get("from_label")
@@ -42,7 +43,7 @@ class TripLegRepository:
             result.append(item)
         return result
 
-    def saved_airports(self, plan_id: str) -> dict[str, dict]:
+    def saved_airports(self, plan_id: str) -> dict[tuple, dict]:
         """Return the most recent airports recorded for each leg key.
 
         Unlike locked overrides these survive a plain regeneration: choosing an
@@ -52,7 +53,7 @@ class TripLegRepository:
             """
             SELECT * FROM trip_plan_legs
             WHERE plan_id = ?
-            ORDER BY leg_key,
+            ORDER BY member_id, leg_key,
                      (archived_at IS NULL) DESC,
                      updated_at DESC, created_at DESC, id DESC
             """,
@@ -61,7 +62,7 @@ class TripLegRepository:
         result: dict[str, dict] = {}
         for row in rows:
             leg = dict(row)
-            key = leg["leg_key"]
+            key = (leg.get("member_id"), leg["leg_key"])
             if key in result:
                 continue
             saved = {
@@ -81,12 +82,12 @@ class TripLegRepository:
                 result[key] = saved
         return result
 
-    def locked_overrides(self, plan_id: str) -> dict[str, dict]:
+    def locked_overrides(self, plan_id: str) -> dict[tuple, dict]:
         rows = self.conn.execute(
             """
             SELECT * FROM trip_plan_legs
             WHERE plan_id = ?
-            ORDER BY leg_key,
+            ORDER BY member_id, leg_key,
                      (archived_at IS NULL) DESC,
                      updated_at DESC, created_at DESC, id DESC
             """,
@@ -96,7 +97,7 @@ class TripLegRepository:
         seen = set()
         for row in rows:
             leg = dict(row)
-            key = leg["leg_key"]
+            key = (leg.get("member_id"), leg["leg_key"])
             if key in seen:
                 continue
             seen.add(key)
@@ -125,6 +126,16 @@ class TripLegRepository:
             (timestamp, timestamp, actor_id, plan_id),
         )
 
+    def trip_member_ids(self, plan_id: str) -> set:
+        """User ids recorded as travelling on this plan."""
+        return {
+            row[0]
+            for row in self.conn.execute(
+                "SELECT user_id FROM trip_plan_members WHERE plan_id = ?",
+                (plan_id,),
+            )
+        }
+
     def replace_active(
         self,
         plan_id: str,
@@ -133,11 +144,22 @@ class TripLegRepository:
         timestamp: str,
     ) -> None:
         self.archive_active(plan_id, actor_id, timestamp)
+        # Foreign keys are not enforced in this database, so a leg attributed to
+        # somebody who is not on the trip has to be refused here or it would be
+        # stored and then read back as an unexplainable traveller.
+        members = self.trip_member_ids(plan_id)
+        for leg in legs:
+            member_id = leg.get("member_id")
+            if member_id is not None and member_id not in members:
+                raise ValueError(
+                    f"Leg {leg.get('leg_key')} is assigned to somebody who is "
+                    "not a member of this trip"
+                )
         for leg in legs:
             self.conn.execute(
                 """
                 INSERT INTO trip_plan_legs (
-                    id, plan_id, leg_key, sequence_no,
+                    id, plan_id, member_id, leg_key, sequence_no,
                     from_kind, from_stop_id, from_free_stop_id, from_label,
                     to_kind, to_stop_id, to_free_stop_id, to_label,
                     selected_mode, mode_locked,
@@ -154,11 +176,12 @@ class TripLegRepository:
                     created_at, created_by, updated_at, updated_by
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?)
+                          ?, ?, ?, ?)
                 """,
                 (
                     generate_uuid(),
                     plan_id,
+                    leg.get("member_id"),
                     leg["leg_key"],
                     leg["sequence_no"],
                     leg["from_kind"],
