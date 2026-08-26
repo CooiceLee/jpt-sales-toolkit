@@ -525,11 +525,116 @@ def check_team_itinerary(service) -> None:
     assert not any(key.endswith(">m") for key in keys), (
         "travel to Munich cannot be worked out and must not be invented"
     )
+    assert "origin>f" not in keys and "origin>p" not in keys, (
+        "a clash must clear the position, not route on from where they started"
+    )
+    kept = {
+        item["source_id"] for item in result.schedule_items
+        if item["member_id"] == "zhang"
+    }
+    assert kept == {"f", "p", "m", "d"}, (
+        f"every appointment stays visible, got {kept}"
+    )
     booked = [item for item in result.schedule_items if item["source_id"] == "m"]
     assert booked and booked[0]["date"] == "2026-09-17"
     assert booked[0]["inbound_travel_resolved"] is False
     assert "m>d" in keys, "the appointment says where they are, so travel resumes"
     assert result.member_totals["zhang"]["route_complete"] is False
+
+
+def check_team_travel_and_return(service) -> None:
+    """Travel time, real merges, outsiders and the journey home."""
+    from datetime import date as _date
+
+    from backend.services.trip_team_schedule import TeamEvent, plan_team_itinerary
+
+    team = ("zhang", "li")
+    priority = ["drive", "flight", "ground_public"]
+
+    def place(lat, lng, label, stop_id=None, kind="stop"):
+        return {"lat": lat, "lng": lng, "label": label, "kind": kind,
+                "stop_id": stop_id}
+
+    shanghai = place(31.14, 121.80, "Shanghai", None, "origin")
+    shenzhen = place(22.64, 113.81, "Shenzhen", None, "origin")
+    frankfurt = place(50.11, 8.68, "Frankfurt", "f")
+    paris = place(48.85, 2.35, "Paris", "p")
+    munich = place(48.13, 11.58, "Munich", "m")
+    stuttgart = place(48.78, 9.18, "Stuttgart", "s")
+    morning = (_date(2026, 9, 16), "AM")
+
+    def event(stop_id, point, attendees, slot=None, kind="customer"):
+        return TeamEvent(stop_id, kind, point, 1, tuple(attendees), slot,
+                         label=stop_id)
+
+    def plan(events, origins=None, destinations=None, leg_settings=None):
+        return plan_team_itinerary(
+            service, team, events, origins or {"__default__": shanghai},
+            (_date(2026, 9, 15), "AM"), priority, destinations=destinations,
+            leg_settings=leg_settings,
+        )
+
+    # Naming somebody who left the trip says nothing about where the real
+    # members are, so their journeys must carry on.
+    result = plan([event("x", frankfurt, ["wang"], morning),
+                   event("m", munich, ["zhang"], (_date(2026, 9, 17), "AM"))])
+    assert "participant_not_in_trip_team" in [r["kind"] for r in result.risks]
+    assert result.member_totals["zhang"]["route_complete"] is True, (
+        "an outsider's visit must not stop the team's own routing"
+    )
+    assert any(leg["leg_key"] == "origin>m" for leg in result.legs)
+    assert any(
+        item["source_id"] == "x" and item["member_id"] is None
+        for item in result.schedule_items
+    ), "the visit itself stays visible"
+
+    # A visit with no booked time starts after the journey to it, not before.
+    result = plan([event("f", frankfurt, ["zhang"], morning),
+                   event("m", munich, ["zhang"])])
+    first = [i for i in result.schedule_items if i["source_id"] == "f"][0]
+    second = [i for i in result.schedule_items if i["source_id"] == "m"][0]
+    assert (second["date"], second["period"]) > (first["date"], first["period"])
+
+    # A shared event cannot begin before its last attendee arrives.
+    result = plan([event("f", frankfurt, ["zhang"], morning),
+                   event("p", paris, ["li"], morning),
+                   event("s", stuttgart, ["zhang", "li"], None, "free")])
+    shared = [i for i in result.schedule_items if i["source_id"] == "s"]
+    assert len(shared) == 2
+    assert shared[0]["date"] == shared[1]["date"]
+    assert shared[0]["period"] == shared[1]["period"], (
+        "one event cannot start at two different times"
+    )
+
+    # Everybody goes home, each to their own return point.
+    result = plan(
+        [event("f", frankfurt, ["zhang"], morning),
+         event("p", paris, ["li"], morning)],
+        origins={"__default__": shanghai, "li": shenzhen},
+        destinations={"__default__": shanghai, "li": shenzhen},
+    )
+    homes = {
+        leg["member_id"]: leg["to_label"]
+        for leg in result.legs if leg["leg_key"].endswith(">destination")
+    }
+    assert homes == {"zhang": "Shanghai", "li": "Shenzhen"}, homes
+    assert all(t["route_complete"] for t in result.member_totals.values())
+
+    # Team mode keeps the airport handling that single-path planning has.
+    result = plan(
+        [event("f", frankfurt, ["zhang"], (_date(2026, 9, 20), "AM"))],
+        leg_settings={("zhang", "origin>f"): {
+            "selected_mode": "flight",
+            "departure_airport_name": "PVG",
+            "departure_airport_lat": 31.1443, "departure_airport_lng": 121.8083,
+            "arrival_airport_name": "FRA",
+            "arrival_airport_lat": 50.0379, "arrival_airport_lng": 8.5622,
+        }},
+    )
+    flown = [leg for leg in result.legs if leg["leg_key"] == "origin>f"][0]
+    assert [item["role"] for item in flown.get("segments") or []] == [
+        "to_airport", "flight", "from_airport"
+    ], "a flown member leg must still expand into its ground transfers"
 
 
 def check_schema() -> None:
@@ -556,6 +661,7 @@ def main() -> None:
     check_booked_time_beats_preferences(service, plan_id, actor)
     check_team_primitives()
     check_team_itinerary(service)
+    check_team_travel_and_return(service)
     check_calendar_deadline(service)
     check_weekend_departure(service, plan_id, actor)
     close_db()

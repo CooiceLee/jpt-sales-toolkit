@@ -122,19 +122,27 @@ def double_booked_stop_ids(events: list, team: tuple) -> dict:
     return clashing
 
 
-def unresolved_events(events: list, team: tuple) -> set:
-    """Events whose traveller is not yet known, so no route can be drawn.
+def invalid_assignment_events(events: list, team: tuple) -> set:
+    """Events naming only people who are not on this trip.
 
-    Two visits in the same half-day with nobody named cannot both be attended by
-    the whole team, and an event naming only outsiders has no traveller at all.
-    Routing either of them would invent a journey nobody makes.
+    Nobody travels to them, but that says nothing about where the actual team
+    members are, so their journeys carry on unaffected.
+    """
+    return {
+        event.stop_id
+        for event in events
+        if event.participants
+        and not resolve_participants(event.participants, team)
+    }
+
+
+def unassigned_parallel_events(events: list, team: tuple) -> set:
+    """Simultaneous visits nobody has been assigned to.
+
+    They cannot all be attended by the whole team, and until somebody is named
+    there is no way to say which member ended up where.
     """
     unresolved = set()
-    for event in events:
-        if event.participants and not resolve_participants(
-            event.participants, team
-        ):
-            unresolved.add(event.stop_id)
     for group in group_by_slot(events).values():
         if len(group) < 2:
             continue
@@ -142,6 +150,13 @@ def unresolved_events(events: list, team: tuple) -> set:
             if not event.participants:
                 unresolved.add(event.stop_id)
     return unresolved
+
+
+def unresolved_events(events: list, team: tuple) -> set:
+    """Every event that cannot be routed, whatever the reason."""
+    return invalid_assignment_events(events, team) | unassigned_parallel_events(
+        events, team
+    )
 
 
 def group_by_slot(events: list[TeamEvent]) -> dict:
@@ -193,8 +208,8 @@ def staffing_risks(events: list, team: tuple) -> list[dict]:
                 }
             )
 
-    unassigned_dates = {
-        risk["date"]
+    unassigned_slots = {
+        (risk["date"], risk["period"])
         for risk in risks
         if risk["kind"] == "parallel_visits_unassigned"
     }
@@ -206,7 +221,7 @@ def staffing_risks(events: list, team: tuple) -> list[dict]:
             ),
         )
         first = clashing[0].booked_slot
-        if first[0].isoformat() in unassigned_dates:
+        if (first[0].isoformat(), first[1]) in unassigned_slots:
             continue
         risks.append(
             {
@@ -255,9 +270,39 @@ def _ordered_events(events: list) -> list:
     return [*booked, *(event for event in events if not event.booked_slot)]
 
 
+def build_member_leg(core, member_id, from_point, to_point, leg_key,
+                     priority, leg_settings) -> tuple:
+    """One member's journey between two places, with everything v0.12 learned.
+
+    Reuses the stored transport choice and the airports recorded for this
+    member's own leg, and expands a flown connection into its ground transfers,
+    so team planning does not quietly lose the airport handling that single-path
+    planning already has.
+    """
+    override = (leg_settings or {}).get((member_id, leg_key))
+    leg = build_leg(core, 1, from_point, to_point, priority, override)
+    leg["member_id"] = member_id
+    leg["leg_key"] = leg_key
+    segments = core._expand_flight_leg(leg, from_point, to_point, priority)
+    if segments:
+        leg["segments"] = segments
+        leg["distance_km"] = round(
+            sum(item["distance_km"] for item in segments), 1
+        )
+        leg["time_hours"] = round(sum(item["time_hours"] for item in segments), 1)
+        elapsed = sum(
+            int(item["travel_half_days"]) + int(item["stay_half_days"] or 0)
+            for item in segments
+        )
+        leg["travel_half_days"] = min(60, elapsed)
+    return leg, int(leg["travel_half_days"])
+
+
 def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
-                        start_slot: tuple, priority: list) -> TeamPlanResult:
-    """Walk every member through the events they attend.
+                        start_slot: tuple, priority: list,
+                        destinations: dict | None = None,
+                        leg_settings: dict | None = None) -> TeamPlanResult:
+    """Walk every member through the events they attend, and home again.
 
     A booked appointment is a fact: it says where somebody is at a given hour
     whatever the travel estimate says, and it puts a member whose position had
@@ -266,7 +311,8 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
     """
     result = TeamPlanResult()
     result.risks.extend(staffing_risks(events, team))
-    skip = unresolved_events(events, team)
+    invalid = invalid_assignment_events(events, team)
+    unassigned = unassigned_parallel_events(events, team)
     clashing = double_booked_stop_ids(events, team)
 
     states = {
@@ -280,93 +326,153 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
         for user in team
     }
 
+    def record(event, user, slots, inbound_resolved):
+        result.schedule_items.append(
+            {
+                "member_id": user,
+                "source_id": event.stop_id,
+                "date": slots[0][0].isoformat(),
+                "period": slots[0][1],
+                "item_type": event.kind,
+                "title": event.label or event.stop_id,
+                "inbound_travel_resolved": inbound_resolved,
+            }
+        )
+        result.stop_updates.append(
+            {
+                "member_id": user,
+                "id": event.stop_id,
+                "planned_date": slots[0][0].isoformat(),
+                "planned_start_period": slots[0][1],
+                "planned_end_date": slots[-1][0].isoformat(),
+                "planned_end_period": slots[-1][1],
+            }
+        )
+
+    def spread(start, half_days):
+        slots = [start]
+        for _ in range(max(1, int(half_days or 1)) - 1):
+            slots.append(_next_slot(slots[-1]))
+        return slots
+
     for event in _ordered_events(events):
         attendees = resolve_participants(event.participants, team)
-        if event.stop_id in skip:
-            # Nobody knows who went, so nobody's position can be trusted after it.
+
+        if event.stop_id in invalid:
+            # Nobody on this trip goes, but that says nothing about where the
+            # real members are, so their journeys are untouched.
+            if event.booked_slot:
+                record(event, None, spread(event.booked_slot,
+                                           event.duration_half_days), False)
+            continue
+
+        if event.stop_id in unassigned:
+            # Any member might have gone, so none of their positions can be
+            # trusted afterwards. The appointment itself is still real.
             for user in team:
                 states[user].route_known = False
                 totals[user]["route_complete"] = False
+            if event.booked_slot:
+                record(event, None, spread(event.booked_slot,
+                                           event.duration_half_days), False)
             continue
+
         if not attendees:
             continue
 
-        for user in attendees:
-            state = states[user]
-            if event.stop_id in clashing.get(user, set()):
-                # They cannot be at both, and picking one would invent the rest
-                # of their trip from a place they may never have been.
-                state.route_known = False
-                totals[user]["route_complete"] = False
-                continue
+        # Members who cannot be at this event and another at the same hour keep
+        # the appointment but lose their position: choosing one of the two would
+        # invent the rest of their trip from a place they may never have been.
+        conflicted = [
+            user for user in attendees
+            if event.stop_id in clashing.get(user, set())
+        ]
+        travelling = [user for user in attendees if user not in conflicted]
 
-            inbound_resolved = state.route_known and state.location is not None
-            if inbound_resolved:
-                leg = build_leg(
-                    core, len(result.legs) + 1, state.location, event.point,
-                    priority, None,
-                )
-                leg["member_id"] = user
-                leg["leg_key"] = (
-                    f"{previous_stop[user] or 'origin'}>{event.stop_id}"
-                )
+        inbound: dict = {}
+        for user in travelling:
+            state = states[user]
+            if not (state.route_known and state.location is not None):
+                continue
+            leg_key = f"{previous_stop[user] or 'origin'}>{event.stop_id}"
+            inbound[user] = build_member_leg(
+                core, user, state.location, event.point, leg_key, priority,
+                leg_settings,
+            )
+
+        if event.booked_slot:
+            start = event.booked_slot
+        else:
+            arrivals = [
+                core._after_slots(states[user].slot, elapsed)
+                for user, (_, elapsed) in inbound.items()
+            ]
+            if len(inbound) < len(travelling) or not arrivals:
+                # Somebody's position is unknown, so there is no arrival time to
+                # build a shared start from.
+                continue
+            # A shared event cannot begin before its last attendee gets there.
+            start = max(arrivals, key=core._slot_key)
+
+        slots = spread(start, event.duration_half_days)
+
+        for user in conflicted:
+            # The appointment is real and stays visible, but they cannot be in
+            # two places at once, so where they end up is no longer known.
+            record(event, user, slots, False)
+            states[user].route_known = False
+            totals[user]["route_complete"] = False
+
+        for user in travelling:
+            resolved = user in inbound
+            if resolved:
+                leg, elapsed = inbound[user]
                 result.legs.append(leg)
                 totals[user]["distance_km"] += float(leg["distance_km"])
                 totals[user]["travel_hours"] += float(leg["time_hours"])
+                arrival = core._after_slots(states[user].slot, elapsed)
+                if event.booked_slot and core._slot_key(arrival) > core._slot_key(
+                    start
+                ):
+                    result.risks.append(
+                        {
+                            "kind": "cannot_reach_booked_visit",
+                            "user_id": user,
+                            "stop_id": event.stop_id,
+                            "date": start[0].isoformat(),
+                            "period": start[1],
+                        }
+                    )
             else:
                 totals[user]["route_complete"] = False
-
-            if event.booked_slot:
-                start = event.booked_slot
-                if inbound_resolved:
-                    arrival = core._after_slots(
-                        state.slot, int(leg["travel_half_days"])
-                    )
-                    if core._slot_key(arrival) > core._slot_key(start):
-                        result.risks.append(
-                            {
-                                "kind": "cannot_reach_booked_visit",
-                                "user_id": user,
-                                "stop_id": event.stop_id,
-                                "date": start[0].isoformat(),
-                                "period": start[1],
-                            }
-                        )
-            elif state.route_known:
-                start = state.slot
-            else:
-                continue
-
-            slots = [start]
-            for _ in range(max(1, int(event.duration_half_days or 1)) - 1):
-                slots.append(_next_slot(slots[-1]))
-            result.schedule_items.append(
-                {
-                    "member_id": user,
-                    "source_id": event.stop_id,
-                    "date": slots[0][0].isoformat(),
-                    "period": slots[0][1],
-                    "item_type": event.kind,
-                    "title": event.label or event.stop_id,
-                    "inbound_travel_resolved": inbound_resolved,
-                }
-            )
-            result.stop_updates.append(
-                {
-                    "member_id": user,
-                    "id": event.stop_id,
-                    "planned_date": slots[0][0].isoformat(),
-                    "planned_start_period": slots[0][1],
-                    "planned_end_date": slots[-1][0].isoformat(),
-                    "planned_end_period": slots[-1][1],
-                }
-            )
-            # The visit itself re-anchors the member, whether or not the journey
-            # to it could be worked out.
+            record(event, user, slots, resolved)
+            state = states[user]
             state.location = event.point
             state.slot = _next_slot(slots[-1])
             state.route_known = True
             previous_stop[user] = event.stop_id
+
+    # Home again: a trip is not complete until everybody has returned.
+    for user in team:
+        state = states[user]
+        home = (destinations or {}).get(user) or (destinations or {}).get(
+            "__default__"
+        )
+        if not home or not state.route_known or state.location is None:
+            if home:
+                totals[user]["route_complete"] = False
+            continue
+        if previous_stop[user] is None:
+            continue
+        leg, elapsed = build_member_leg(
+            core, user, state.location, home,
+            f"{previous_stop[user]}>destination", priority, leg_settings,
+        )
+        result.legs.append(leg)
+        totals[user]["distance_km"] += float(leg["distance_km"])
+        totals[user]["travel_hours"] += float(leg["time_hours"])
+        state.slot = core._after_slots(state.slot, elapsed)
+        state.location = home
 
     result.member_totals = totals
     return result
