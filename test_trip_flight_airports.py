@@ -326,28 +326,41 @@ def check_booked_time_beats_preferences(service, plan_id: str, actor: str) -> No
 
 
 def check_team_primitives() -> None:
-    """Parallel visits are legitimate; only one actionable risk per situation."""
+    """Parallel visits are legitimate; unknown travellers are never guessed."""
     from datetime import date as _date
 
     from backend.services.trip_team_schedule import (
         TeamEvent,
         member_lanes,
+        occupied_slots,
         resolve_participants,
         staffing_risks,
+        unresolved_events,
     )
 
     team = ("zhang", "li")
-    slot = (_date(2026, 9, 16), "AM")
+    morning = (_date(2026, 9, 16), "AM")
+    afternoon = (_date(2026, 9, 16), "PM")
 
-    def visit(stop_id, attendees):
+    def visit(stop_id, attendees, slot=morning, half_days=1):
         return TeamEvent(
             stop_id=stop_id, kind="customer", point={"lat": 0.0, "lng": 0.0},
-            duration_half_days=1, participants=tuple(attendees), booked_slot=slot,
+            duration_half_days=half_days, participants=tuple(attendees),
+            booked_slot=slot,
         )
 
     assert resolve_participants((), team) == team, "silence means the whole team"
     assert resolve_participants(("zhang",), team) == ("zhang",)
-    assert resolve_participants(("nobody",), team) == team, "unknown ids ignored"
+    # Naming somebody who left the team must not silently become "everyone goes".
+    assert resolve_participants(("wang",), team) == ()
+    assert resolve_participants(("zhang", "wang"), team) == ("zhang",)
+    outsider = [visit("frankfurt", ["wang"])]
+    assert [item["kind"] for item in staffing_risks(outsider, team)] == [
+        "participant_not_in_trip_team"
+    ]
+    assert all(not lane for lane in member_lanes(outsider, team).values()), (
+        "a visit with no valid traveller must not be routed for anyone"
+    )
 
     for attendees, expected in (
         ((["zhang"], ["li"]), []),
@@ -359,18 +372,56 @@ def check_team_primitives() -> None:
         kinds = [item["kind"] for item in staffing_risks(events, team)]
         assert kinds == expected, f"{attendees} -> {kinds}, expected {expected}"
 
-    events = [visit("frankfurt", ["zhang"]), visit("paris", ["zhang"])]
-    lanes = member_lanes(events, team)
-    assert len(lanes["zhang"]) == 2, "a conflicting visit must not be dropped"
+    # Two unassigned visits at the same hour cannot both be the whole team, so
+    # neither may enter a lane and become a journey nobody makes.
+    unassigned = [visit("frankfurt", []), visit("paris", [])]
+    assert unresolved_events(unassigned, team) == {"frankfurt", "paris"}
+    assert all(not lane for lane in member_lanes(unassigned, team).values())
+    alone = [visit("frankfurt", [])]
+    assert unresolved_events(alone, team) == set(), "travelling together is normal"
+    assert [event.stop_id for event in member_lanes(alone, team)["zhang"]] == [
+        "frankfurt"
+    ]
+
+    # A day-long visit booked for the morning still runs into the afternoon.
+    assert occupied_slots(visit("a", ["zhang"], morning, 2)) == (morning, afternoon)
+    spanning = [
+        visit("a", ["zhang"], morning, 2), visit("b", ["zhang"], afternoon, 1)
+    ]
+    assert "member_double_booked" in [
+        item["kind"] for item in staffing_risks(spanning, team)
+    ], "an overlap hidden by duration was missed"
+    sequential = [
+        visit("a", ["zhang"], morning, 1), visit("b", ["zhang"], afternoon, 1)
+    ]
+    assert staffing_risks(sequential, team) == []
+
+    conflicting = [visit("frankfurt", ["zhang"]), visit("paris", ["zhang"])]
+    assert len(member_lanes(conflicting, team)["zhang"]) == 2, (
+        "a conflicting visit must not be dropped"
+    )
 
     shared = TeamEvent(
         stop_id="stuttgart", kind="free", point={"lat": 0.0, "lng": 0.0},
         duration_half_days=1, participants=("zhang", "li"),
         booked_slot=(_date(2026, 9, 17), "AM"),
     )
-    lanes = member_lanes([*events, shared], team)
+    lanes = member_lanes(
+        [visit("frankfurt", ["zhang"]), visit("paris", ["li"]), shared], team
+    )
     assert lanes["zhang"][-1].stop_id == "stuttgart"
     assert lanes["li"][-1].stop_id == "stuttgart", "a shared event is the merge"
+
+    ordered = member_lanes(
+        [
+            visit("late", ["zhang"], (_date(2026, 9, 18), "AM")),
+            visit("early", ["zhang"], (_date(2026, 9, 15), "PM")),
+        ],
+        team,
+    )
+    assert [event.stop_id for event in ordered["zhang"]] == ["early", "late"], (
+        "a lane follows the booked times, not the order it was handed"
+    )
 
 
 def check_schema() -> None:

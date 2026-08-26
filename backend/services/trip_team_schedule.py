@@ -16,7 +16,7 @@ leg, airport and slot helpers still do the arithmetic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 
 @dataclass
@@ -51,15 +51,64 @@ class TeamPlanResult:
     member_totals: dict = field(default_factory=dict)
 
 
+def _next_slot(slot: tuple) -> tuple:
+    day, period = slot
+    if period == "AM":
+        return day, "PM"
+    return day + timedelta(days=1), "AM"
+
+
+def occupied_slots(event: "TeamEvent") -> tuple:
+    """The half-days a booked event actually takes up.
+
+    A visit that starts in the morning and lasts a day still occupies the
+    afternoon, so comparing start times alone would miss a real clash.
+    """
+    if not event.booked_slot:
+        return ()
+    slots = []
+    slot = event.booked_slot
+    for _ in range(max(1, int(event.duration_half_days or 1))):
+        slots.append(slot)
+        slot = _next_slot(slot)
+    return tuple(slots)
+
+
 def resolve_participants(event_participants, team: tuple) -> tuple:
     """Who travels to an event.
 
-    An event with nobody named is attended by the whole team: a plan in team
-    mode has already said who is travelling, so silence means everyone rather
-    than nobody.
+    Nobody named means the whole team: a plan in team mode has already said who
+    is travelling, so silence means everyone rather than nobody.
+
+    Naming somebody who is not on the trip is a different thing entirely, and
+    must not quietly become "everyone goes" - that is the opposite of what was
+    asked for. It resolves to nobody, and the caller reports it.
     """
-    named = tuple(user for user in event_participants or () if user in team)
-    return named or team
+    if not event_participants:
+        return team
+    return tuple(user for user in event_participants if user in team)
+
+
+def unresolved_events(events: list, team: tuple) -> set:
+    """Events whose traveller is not yet known, so no route can be drawn.
+
+    Two visits in the same half-day with nobody named cannot both be attended by
+    the whole team, and an event naming only outsiders has no traveller at all.
+    Routing either of them would invent a journey nobody makes.
+    """
+    unresolved = set()
+    for event in events:
+        if event.participants and not resolve_participants(
+            event.participants, team
+        ):
+            unresolved.add(event.stop_id)
+    for group in group_by_slot(events).values():
+        if len(group) < 2:
+            continue
+        for event in group:
+            if not event.participants:
+                unresolved.add(event.stop_id)
+    return unresolved
 
 
 def group_by_slot(events: list[TeamEvent]) -> dict:
@@ -71,13 +120,26 @@ def group_by_slot(events: list[TeamEvent]) -> dict:
     return groups
 
 
-def staffing_risks(events: list[TeamEvent], team: tuple) -> list[dict]:
+def staffing_risks(events: list, team: tuple) -> list[dict]:
     """Report who cannot be in two places at once, and what is unstaffed.
 
     Two visits in the same half-day are legitimate when different colleagues
     cover them, so this reports rather than refuses.
     """
     risks: list[dict] = []
+
+    for event in events:
+        if event.participants and not resolve_participants(
+            event.participants, team
+        ):
+            risks.append(
+                {
+                    "kind": "participant_not_in_trip_team",
+                    "stop_id": event.stop_id,
+                    "user_ids": sorted(str(user) for user in event.participants),
+                }
+            )
+
     for slot, group in sorted(group_by_slot(events).items()):
         if len(group) < 2:
             continue
@@ -97,29 +159,60 @@ def staffing_risks(events: list[TeamEvent], team: tuple) -> list[dict]:
                     "stop_ids": sorted(unstaffed),
                 }
             )
+
+    # Overlap is measured across the half-days each visit occupies, not just the
+    # one it starts in: a day-long visit booked for the morning still runs into
+    # the afternoon appointment that follows it.
+    booked: dict = {}
+    for event in events:
+        if not event.booked_slot:
             continue
-        seen: dict = {}
-        for event in group:
-            for user in resolve_participants(event.participants, team):
-                seen.setdefault(user, []).append(event.stop_id)
-        for user, stop_ids in sorted(seen.items()):
+        for user in resolve_participants(event.participants, team):
+            for slot in occupied_slots(event):
+                booked.setdefault(user, {}).setdefault(slot, set()).add(event.stop_id)
+    for user in sorted(booked):
+        clashing: dict = {}
+        for slot, stop_ids in booked[user].items():
             if len(stop_ids) > 1:
-                risks.append(
-                    {
-                        "kind": "member_double_booked",
-                        "user_id": user,
-                        "date": slot[0].isoformat(),
-                        "period": slot[1],
-                        "stop_ids": sorted(stop_ids),
-                    }
-                )
+                clashing.setdefault(tuple(sorted(stop_ids)), []).append(slot)
+        for stop_ids, slots in sorted(clashing.items()):
+            first = min(slots)
+            if any(
+                risk["kind"] == "parallel_visits_unassigned"
+                and risk["date"] == first[0].isoformat()
+                for risk in risks
+            ):
+                continue
+            risks.append(
+                {
+                    "kind": "member_double_booked",
+                    "user_id": user,
+                    "date": first[0].isoformat(),
+                    "period": first[1],
+                    "stop_ids": list(stop_ids),
+                }
+            )
     return risks
 
 
-def member_lanes(events: list[TeamEvent], team: tuple) -> dict:
-    """The events each member has to attend, in the order they were given."""
+def member_lanes(events: list, team: tuple) -> dict:
+    """The events each member attends, ordered by when they happen.
+
+    Events whose traveller is still unknown are left out: a lane is a sequence
+    of places one person actually goes to, and guessing here would produce a
+    route nobody travels.
+    """
+    skip = unresolved_events(events, team)
     lanes: dict = {user: [] for user in team}
     for event in events:
+        if event.stop_id in skip:
+            continue
         for user in resolve_participants(event.participants, team):
             lanes.setdefault(user, []).append(event)
+    for user, lane in lanes.items():
+        lane.sort(key=lambda item: (
+            item.booked_slot is None,
+            item.booked_slot[0].isoformat() if item.booked_slot else "",
+            0 if (item.booked_slot or ("", "AM"))[1] == "AM" else 1,
+        ))
     return lanes
