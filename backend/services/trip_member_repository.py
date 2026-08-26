@@ -24,13 +24,20 @@ class TripMemberRepository:
         self.conn = conn
 
     def list_active(self, plan_id: str) -> list[dict]:
+        """The trip's members, in an order that does not move between reads.
+
+        This order reaches the frontend as the order of the timeline lanes, so
+        two members added in the same moment must not swap places on a refresh.
+        The membership row id is random, so ``user_id`` breaks the tie instead;
+        a display name would be worse, because names get edited and localised.
+        """
         rows = self.conn.execute(
             """
             SELECT m.*, u.display_name AS display_name, u.role AS role
             FROM trip_plan_members m
             JOIN users u ON m.user_id = u.id
             WHERE m.plan_id = ?
-            ORDER BY m.created_at, m.id
+            ORDER BY m.created_at, m.user_id
             """,
             (plan_id,),
         ).fetchall()

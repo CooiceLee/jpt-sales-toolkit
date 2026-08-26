@@ -149,6 +149,33 @@ def check_missing_endpoints_are_rejected(service, seed) -> None:
         raise AssertionError("accepted a team trip with nobody on it")
 
 
+def check_member_order_is_stable(service, seed) -> None:
+    """Lane order must not depend on a random id.
+
+    Two members added in the same moment reach the frontend as the order of the
+    timeline lanes. If that came down to the random membership row id, the lanes
+    would swap places on a refresh and the frontend would need a sorting rule of
+    its own.
+    """
+    conn = get_db()
+    plan_id = seed["plan_id"]
+    stamp = now_iso()
+    users = sorted(seed["people"].values())
+    # Same created_at, and row ids deliberately in the opposite order.
+    for row_id, user_id in zip(("zzzz-row", "aaaa-row"), users):
+        conn.execute(
+            "UPDATE trip_plan_members SET id = ?, created_at = ? "
+            "WHERE plan_id = ? AND user_id = ?",
+            (row_id, stamp, plan_id, user_id),
+        )
+    conn.commit()
+    repo = service.trip_plan_service.member_repo
+    assert list(repo.member_ids(plan_id)) == users, (
+        "member order must be decided by user_id, not the random row id"
+    )
+    assert [item["user_id"] for item in repo.list_active(plan_id)] == users
+
+
 def check_round_trip(service, seed) -> None:
     plan_id, actor, people = seed["plan_id"], seed["actor"], seed["people"]
     preview = service.preview_trip_itinerary(plan_id, {}, actor, "leader")
@@ -245,6 +272,7 @@ def main() -> None:
     seed = _seed(service)
     check_members_are_team_accounts(service, seed)
     check_missing_endpoints_are_rejected(service, seed)
+    check_member_order_is_stable(service, seed)
     check_round_trip(service, seed)
     check_overrun_is_a_risk_not_a_refusal(service, seed)
     close_db()
