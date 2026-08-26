@@ -69,15 +69,34 @@
         return points.some(item => !item) ? [] : points;
     }
 
-    // The same rule the timeline uses, so a journey never counts as shared in
-    // one view and separate in the other.
-    function identityOf(leg) {
+    /**
+     * The same rule the timeline uses, plus the airports the map draws through.
+     *
+     * The timeline sees a flight as its separate ground transfers, whose titles
+     * name the airports, so it already tells two colleagues apart when one flies
+     * from Pudong and the other from Hongqiao. The map draws the whole leg as
+     * one line, so it has to say the same thing here or those two are merged and
+     * one of them is shown leaving from an airport they never went to.
+     *
+     * Airports are identified by where they are rather than what they are
+     * called: a renamed airport is the same airport.
+     */
+    function travelFactOf(leg) {
         return window.TripTeamTimeline.identityOf({
             item_type: 'leg',
             source_id: leg.leg_key,
             title: `${leg.from_label || ''} → ${leg.to_label || ''}`,
             selected_mode: leg.selected_mode,
         });
+    }
+
+    function identityOf(leg) {
+        const airports = [
+            leg.departure_airport_lat, leg.departure_airport_lng,
+            leg.arrival_airport_lat, leg.arrival_airport_lng,
+        ];
+        return airports.some(value => value != null)
+            ? `${travelFactOf(leg)}|${airports.join(',')}` : travelFactOf(leg);
     }
 
     /**
@@ -95,12 +114,15 @@
             if (points.length < 2) return;
             const key = identityOf(leg);
             const entry = merged.get(key) || {
-                key, points, members: [],
+                key, points, members: [], memberIds: [],
                 mode: leg.selected_mode,
                 label: `${leg.from_label || ''} → ${leg.to_label || ''}`,
                 legKey: leg.leg_key,
             };
-            if (leg.member_id) entry.members.push(memberName(plan, leg.member_id));
+            if (leg.member_id) {
+                entry.members.push(memberName(plan, leg.member_id));
+                entry.memberIds.push(leg.member_id);
+            }
             merged.set(key, entry);
         });
         return [...merged.values()];

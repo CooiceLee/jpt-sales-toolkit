@@ -39,7 +39,10 @@
             const entry = merged.get(key) || {
                 ...item, members: [], unresolved: false,
             };
-            if (item.member_id) entry.members.push(memberName(plan, item.member_id));
+            if (item.member_id) {
+                entry.members.push(memberName(plan, item.member_id));
+                entry.memberIds = [...(entry.memberIds || []), item.member_id];
+            }
             if (item.inbound_travel_resolved === false) entry.unresolved = true;
             // A shared event sits where its earliest attendee puts it, so the
             // order within a half-day follows the journeys that led to it.
@@ -67,7 +70,8 @@
                 + `TripBriefingActions.open('${h(stopId)}')`
             : (entry.source_id ? `TripTeamMap.focusLeg('${
                 h(String(entry.source_id).split('#')[0])}','${
-                h(entry.selected_mode || '')}')` : '');
+                h(entry.selected_mode || '')}','${
+                h((entry.memberIds || [])[0] || '')}')` : '');
         return `<button type="button"
             class="trip-team-entry is-${h(isLeg ? 'leg' : entry.item_type)}${
                 entry.unresolved ? ' is-unresolved' : ''}"

@@ -169,6 +169,67 @@ def check_endpoints_come_from_the_leg_not_the_stop_order() -> None:
     )
 
 
+def check_flights_through_different_airports_are_two_routes() -> None:
+    """Same customer, same flight leg, different airports is not one journey.
+
+    The timeline sees a flight as its ground transfers, whose titles name the
+    airports, so it already tells these apart. The map draws the whole leg as
+    one line, so without the airports in its identity the two merge and one
+    member is shown leaving from an airport they never went to.
+    """
+    data = run_js(PLAN + """
+    const flight = (member, depLat, depLng, depName) => ({
+        member_id: member, leg_key: 'origin>fra', selected_mode: 'flight',
+        from_kind: 'origin', from_label: 'Shanghai',
+        to_kind: 'stop', to_stop_id: 'fra', to_label: 'Frankfurt',
+        departure_airport_lat: depLat, departure_airport_lng: depLng,
+        departure_airport_name: depName,
+        arrival_airport_lat: 50.04, arrival_airport_lng: 8.56,
+    });
+    const home = { ...plan, origin_lat: 31.23, origin_lng: 121.47 };
+    const apart = TripTeamJourneys.journeys({ ...home, legs: [
+        flight('z', 31.14, 121.81, 'PVG'),
+        flight('l', 31.20, 121.34, 'SHA')] }, 'all');
+    const together = TripTeamJourneys.journeys({ ...home, legs: [
+        flight('z', 31.14, 121.81, 'PVG'),
+        flight('l', 31.14, 121.81, 'PVG')] }, 'all');
+    console.log(JSON.stringify({
+        apartRoutes: apart.length,
+        apartAirports: apart.map(item => item.points[1]).sort(),
+        apartWho: apart.map(item => item.members.join('')).sort(),
+        togetherRoutes: together.length,
+        togetherWho: together[0].members,
+        memberIds: apart.map(item => item.memberIds.join('')).sort(),
+    }));
+    """)
+    assert data["apartRoutes"] == 2, (
+        "flying from different airports is not travelling together"
+    )
+    assert data["apartAirports"] == [[31.14, 121.81], [31.2, 121.34]], (
+        f"each member must be drawn through their own airport: "
+        f"{data['apartAirports']}"
+    )
+    assert data["apartWho"] == ["Li", "Zhang"], data["apartWho"]
+    assert data["togetherRoutes"] == 1, (
+        "the same flight through the same airports is still one journey"
+    )
+    assert data["togetherWho"] == ["Zhang", "Li"], data["togetherWho"]
+    # Choosing a line has to be able to say which of the two it was.
+    assert data["memberIds"] == ["l", "z"], data["memberIds"]
+
+
+def check_focus_picks_the_chosen_members_journey() -> None:
+    """Two journeys sharing a leg key and mode are told apart by whose it is."""
+    module = (MODULES / "trip-team-map.js").read_text(encoding="utf-8")
+    assert "item.memberIds.includes(memberId)" in module, (
+        "focusing a leg must disambiguate by member, not leg key and mode alone"
+    )
+    timeline = (MODULES / "trip-team-timeline.js").read_text(encoding="utf-8")
+    assert "entry.memberIds" in timeline, (
+        "the timeline has to pass on whose line was chosen"
+    )
+
+
 def check_flown_legs_pass_through_their_airports() -> None:
     """A flight goes via its airports, because that is where it goes."""
     data = run_js(PLAN + """
@@ -221,6 +282,8 @@ def main() -> None:
     check_same_journey_is_one_route()
     check_no_leg_means_no_line()
     check_endpoints_come_from_the_leg_not_the_stop_order()
+    check_flights_through_different_airports_are_two_routes()
+    check_focus_picks_the_chosen_members_journey()
     check_flown_legs_pass_through_their_airports()
     check_one_rule_for_both_views()
     print("PASS: team map lanes, shared journeys and unresolved routes")

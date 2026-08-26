@@ -88,11 +88,19 @@
         if (point) State.tripMap?.setView(point, 8);
     }
 
-    function focusLeg(legKey, mode) {
+    /**
+     * Show one journey on the map.
+     *
+     * Two members can hold the same leg key and the same mode and still be on
+     * different journeys - two flights to the same customer through different
+     * airports - so whose line was chosen decides which one is shown.
+     */
+    function focusLeg(legKey, mode, memberId) {
         const plan = State.currentTripPlan;
         const journey = window.TripTeamJourneys.journeys(plan, view())
             .find(item => item.legKey === legKey
-                && (!mode || item.mode === mode));
+                && (!mode || item.mode === mode)
+                && (!memberId || item.memberIds.includes(memberId)));
         if (journey?.points?.length && State.tripMap) {
             State.tripMap.fitBounds(journey.points, { padding: [40, 40] });
         }
