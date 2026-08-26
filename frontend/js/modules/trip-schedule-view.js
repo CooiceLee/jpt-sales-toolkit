@@ -101,6 +101,7 @@
 
     function renderPlan(plan) {
         window.TripTeamView?.render?.(plan);
+        window.TripExportActions?.refresh?.(plan);
         // Team planning has its own timeline: a plan with several travellers
         // cannot be read as one column of half-days.
         if (plan?.planning_mode === 'team') {

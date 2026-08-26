@@ -209,6 +209,55 @@ def check_legacy_export_is_untouched(service, seed) -> None:
         assert column not in header, f"legacy CSV gained a team column: {column}"
 
 
+def check_formats_without_a_team_dimension_are_refused(service, seed) -> None:
+    """Excel, HTML and calendar files are refused rather than quietly wrong.
+
+    They are built from a model whose timeline looks a leg up by its key alone.
+    Two colleagues travelling between the same pair of places share that key, so
+    one overwrites the other and the file would state one member's journey as
+    both of theirs. Refusing says so; producing the file does not.
+    """
+    plan_id, actor = seed["plan_id"], seed["actor"]
+    plan = service.get_trip_plan(plan_id, actor, "leader")
+
+    # The collision this protects against is real in an ordinary team trip.
+    keys = [leg["leg_key"] for leg in plan["legs"]]
+    assert len(keys) != len(set(keys)), (
+        "this plan no longer has two members sharing a leg key, so the test is "
+        "not exercising what it claims"
+    )
+
+    for export in (service.export_trip_plan_xlsx, service.export_trip_plan_html,
+                   service.export_trip_plan_ics):
+        try:
+            export(plan_id, actor, "leader")
+        except ValueError as exc:
+            assert "team" in str(exc).lower(), exc
+            assert "Markdown" in str(exc), (
+                "the refusal has to say which exports do work"
+            )
+        else:
+            raise AssertionError(
+                f"{export.__name__} produced a file with no member dimension"
+            )
+
+    # And the ones that carry the team still work.
+    assert service.export_trip_plan_markdown(plan_id, actor, "leader")
+    assert service.export_trip_plan_csv(plan_id, actor, "leader")
+
+
+def check_legacy_keeps_every_format(service, seed) -> None:
+    """A single-traveller plan still downloads in all five formats."""
+    actor = seed["actor"]
+    plan_id = _legacy_plan(service, actor)
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    for export in (service.export_trip_plan_xlsx, service.export_trip_plan_html,
+                   service.export_trip_plan_ics,
+                   service.export_trip_plan_markdown,
+                   service.export_trip_plan_csv):
+        assert export(plan_id, actor, "leader"), export.__name__
+
+
 def main() -> None:
     initialize_database_safely(init_settings(ROOT))
     service = ReviewService()
@@ -216,6 +265,8 @@ def main() -> None:
     check_team_markdown(service, seed)
     check_team_csv(service, seed)
     check_daily_execution(service, seed)
+    check_formats_without_a_team_dimension_are_refused(service, seed)
+    check_legacy_keeps_every_format(service, seed)
     check_legacy_export_is_untouched(service, seed)
     close_db()
     print("PASS: team-aware markdown, CSV and daily execution exports")

@@ -2254,6 +2254,18 @@ class TripPlanService:
         if not plan:
             return None, None
         self._assert_itinerary_exportable(plan)
+        if team_export.is_team(plan):
+            # These three are built from a model with no member dimension, and
+            # its timeline looks legs up by their key alone - two colleagues
+            # travelling the same pair of places overwrite each other, and the
+            # file would state one member's journey as both of theirs. Refusing
+            # is better than a document that is quietly wrong; Markdown, CSV and
+            # the daily report carry the team correctly.
+            raise ValueError(
+                "Excel, offline HTML and calendar files do not carry the "
+                "travel team yet. Use the Markdown, CSV or daily report export "
+                "for a team trip."
+            )
         model = build_trip_export_model(
             plan, self._trip_leg_confirmation
         )

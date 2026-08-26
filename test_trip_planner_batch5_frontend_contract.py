@@ -59,7 +59,12 @@ const panel={attrs:{},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){retu
 let alerts=[],downloads=[],requests=[],messages=[],resolveRequest;
 const context={console:{error(){}},State:{currentTripPlan:{id:'p1',itinerary_summary:{valid:true}}},
  document:{getElementById:id=>id==='trip-export-status'?status:null,
-  querySelector:selector=>selector==='.trip-export-panel'?panel:null},
+  querySelector:selector=>selector==='.trip-export-panel'?panel:null,
+  // The formats a team plan cannot use are switched off by attribute, so the
+  // stand-in document has to answer the same query a browser would.
+  querySelectorAll:()=>buttons.map(button=>({...button,
+    getAttribute:()=>'xlsx',set disabled(v){button.disabled=v},
+    get disabled(){return button.disabled},set title(v){button.title=v}}))},
  I18n:{t:(text,params={})=>Object.entries(params).reduce((value,[key,item])=>value.replace(`{${key}}`,item),text)},
  TripBriefingDraft:{guard(){return false}},TripVisitDraft:{guard(){return false}},
  TripFreeStopDraft:{guardRouteAction(){return false}},TripPlanningDraft:{get(){return{dirty:false}}},

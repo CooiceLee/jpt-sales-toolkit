@@ -15,6 +15,25 @@
         target.className = `trip-export-status${tone ? ` ${tone}` : ''}`;
     }
 
+    // These three are built from a model that has no member dimension, so a
+    // team plan would download a file stating one colleague's journey as
+    // everybody's. They are turned off rather than allowed to fail on click.
+    const TEAM_UNSUPPORTED = Object.freeze(['xlsx', 'html', 'ics']);
+
+    function refresh(plan) {
+        const team = plan?.planning_mode === 'team';
+        document.querySelectorAll('[data-trip-export-format]').forEach(button => {
+            const format = button.getAttribute('data-trip-export-format');
+            if (!TEAM_UNSUPPORTED.includes(format)) return;
+            button.disabled = team;
+            button.title = team
+                ? I18n.t('Not available for a team trip yet. Use Markdown, CSV or the daily report.')
+                : '';
+        });
+        const note = document.getElementById('trip-export-team-note');
+        if (note) note.hidden = !team;
+    }
+
     function setBusy(busy) {
         const panel = document.querySelector('.trip-export-panel');
         if (!panel) return;
@@ -22,6 +41,7 @@
         panel.querySelectorAll('[data-trip-export-format]').forEach(button => {
             button.disabled = busy;
         });
+        if (!busy) refresh(State.currentTripPlan);
     }
 
     function canDownload() {
@@ -67,6 +87,6 @@
         }
     }
 
-    window.TripExportActions = { download, setStatus };
+    window.TripExportActions = { download, setStatus, refresh };
     window.exportCurrentTripPlan = download;
 })();

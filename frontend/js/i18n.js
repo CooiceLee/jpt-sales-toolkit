@@ -731,6 +731,8 @@
         ['Error removing assignment: {error}', '移除分配失败：{error}'],
         ['Trip plan created', '出差计划已创建。'],
         // Team planning
+        ['Not available for a team trip yet. Use Markdown, CSV or the daily report.', '团队行程暂不支持该格式。请使用 Markdown、CSV 或每日报告。'],
+        ['Excel, offline HTML and calendar files do not carry the travel team yet. Use the Markdown, CSV or daily report export for a team trip.', 'Excel、离线 HTML 和日历文件暂不包含出差团队信息。团队行程请使用 Markdown、CSV 或每日报告导出。'],
         ['Flexible visits', '待定拜访'], ['Suggest times', '推荐时间'],
         ['Apply', '采用'], ['Arrange manually', '手动安排'],
         ['Planned', '已暂定'], ['Confirmed', '已确认'],
