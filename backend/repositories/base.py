@@ -126,6 +126,7 @@ _RUNTIME_REQUIRED_INDEXES = {
     "idx_tech_exchange_batches_recipient",
     "idx_tech_exchange_bindings_local",
     "idx_trip_legs_active_member_key",
+    "idx_trip_legs_active_shared_key",
     "idx_trip_legs_plan_sequence",
     "idx_trip_free_stops_plan",
     "idx_trip_visit_briefings_stop",

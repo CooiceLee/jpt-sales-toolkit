@@ -313,9 +313,11 @@ def apply_trip_planning_schema_v8(conn: sqlite3.Connection) -> None:
     colleagues can cover the same pair of stops by different transport, which
     the old ``(plan_id, leg_key)`` unique index could not represent.
 
-    ``member_id`` defaults to the empty string rather than NULL: SQLite treats
-    NULLs as distinct in a unique index, so a nullable column would silently
-    stop protecting legacy single-path plans from duplicate legs.
+    ``member_id`` holds a ``users.id``, not a ``trip_plan_members.id``: a leg
+    records who travelled, and that has to stay readable after the team list is
+    edited. It is NULL on a legacy single-path leg, so two partial unique
+    indexes are needed - SQLite treats NULLs as distinct, and one combined index
+    would stop protecting legacy plans from duplicate legs.
     """
     conn.execute(TRIP_PLAN_MEMBERS_DDL)
     conn.execute(
@@ -329,10 +331,27 @@ def apply_trip_planning_schema_v8(conn: sqlite3.Connection) -> None:
         )
     if "member_id" not in _column_names(conn, "trip_plan_legs"):
         conn.execute(
-            "ALTER TABLE trip_plan_legs ADD COLUMN member_id TEXT NOT NULL DEFAULT ''"
+            "ALTER TABLE trip_plan_legs ADD COLUMN member_id TEXT "
+            "REFERENCES users(id)"
+        )
+    # A stop that is not a customer visit can belong to the whole team or to
+    # some of its members: NULL means everyone, so ordinary trips store nothing.
+    if "participant_user_ids_json" not in _column_names(
+        conn, "trip_plan_free_stops"
+    ):
+        conn.execute(
+            "ALTER TABLE trip_plan_free_stops ADD COLUMN "
+            "participant_user_ids_json TEXT"
         )
     conn.execute("DROP INDEX IF EXISTS idx_trip_legs_active_key")
+    conn.execute("DROP INDEX IF EXISTS idx_trip_legs_active_member_key")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_legs_active_shared_key "
+        "ON trip_plan_legs(plan_id, leg_key) "
+        "WHERE archived_at IS NULL AND member_id IS NULL"
+    )
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_trip_legs_active_member_key "
-        "ON trip_plan_legs(plan_id, member_id, leg_key) WHERE archived_at IS NULL"
+        "ON trip_plan_legs(plan_id, member_id, leg_key) "
+        "WHERE archived_at IS NULL AND member_id IS NOT NULL"
     )
