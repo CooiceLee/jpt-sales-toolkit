@@ -10,6 +10,7 @@ from ..repositories.base import generate_uuid, now_iso
 from .trip_leg_contract import normalize_priority, validate_time_windows
 from .trip_leg_repository import TripLegRepository
 from .trip_member_repository import TripMemberRepository
+from . import trip_team_export as team_export
 from .trip_team_adapter import (
     calculate_team_itinerary,
     persist_team_itinerary,
@@ -59,6 +60,13 @@ def _planning_mode(value) -> str:
     """The mode is a deliberate choice, never guessed from who is on the trip."""
     text = (value or "").strip().lower()
     return text if text in PLANNING_MODES else "legacy"
+
+
+def _md_separator(headers: list, right_align=frozenset()) -> str:
+    """The rule under a Markdown header, always the same width as the header."""
+    return "|" + "|".join(
+        "---:" if header in right_align else "---" for header in headers
+    ) + "|"
 
 
 class TripPlanService:
@@ -1733,27 +1741,54 @@ class TripPlanService:
             "",
             "## Customer Visit Schedule",
             "",
-            "| " + " | ".join(self._visit_export_headers()) + " |",
-            "|---:|---|---|---|---|---|---|---|---|---|",
+            "| " + " | ".join(
+                self._visit_export_headers(team_export.is_team(plan))
+            ) + " |",
+            _md_separator(self._visit_export_headers(team_export.is_team(plan)),
+                          right_align={"No."}),
         ]
         summary = plan.get("itinerary_summary") or {}
-        if summary:
+        team = team_export.is_team(plan)
+        if summary and team:
+            # Named as an aggregate: two colleagues on one flight count it
+            # twice, which is right for how much travelling was done and wrong
+            # for how long the route is.
+            lines[7:7] = [
+                f"- Team Aggregate Travel Distance: "
+                f"{summary.get('total_distance_km') or '-'} km",
+                f"- Team Aggregate Travel Hours: "
+                f"{summary.get('total_travel_hours') or '-'}",
+                f"- Route Complete: "
+                f"{'yes' if summary.get('route_complete') else 'no'}",
+            ]
+        elif summary:
             lines[7:7] = [
                 f"- Calculated End: {summary.get('calculated_end_date') or '-'}",
                 f"- Business Days: {summary.get('total_business_days') or '-'}",
                 f"- Travel Distance: {summary.get('total_distance_km') or '-'} km",
                 f"- Travel Hours: {summary.get('total_travel_hours') or '-'}",
             ]
+
+        if team:
+            # The team block is written before the visits, after the plan's own
+            # details, so the bullets above stay one list.
+            head = lines[:lines.index("## Customer Visit Schedule")]
+            rest = lines[lines.index("## Customer Visit Schedule"):]
+            lines = head + team_export.header_lines(plan) \
+                + team_export.risk_lines(plan) + [""] + rest
         customer_stops = [
             stop for stop in plan.get("stops", [])
             if stop.get("stop_kind") != "free"
         ]
         for number, stop in enumerate(customer_stops, start=1):
-            row = self._visit_export_row(stop, number)
+            row = (
+                self._team_visit_row(plan, stop, number) if team
+                else self._visit_export_row(stop, number)
+            )
             lines.append(
                 "| " + " | ".join(
                     self.core._md_cell(row[header])
-                    for header in self._visit_export_headers()
+                    for header in self._visit_export_headers(team)
                 ) + " |"
             )
         free_stops = [
@@ -1761,47 +1796,58 @@ class TripPlanService:
             if stop.get("stop_kind") == "free"
         ]
         if free_stops:
-            lines.extend(
-                [
-                    "",
-                    "## Non-customer Schedule",
-                    "",
-                    "| # | Place | Category | Date / Period | Duration | Purpose | Notes |",
-                    "|---:|---|---|---|---:|---|---|",
-                ]
-            )
+            headers = [
+                "#", "Place", "Category", "Date / Period", "Duration",
+                *(["Attendees"] if team else []), "Purpose", "Notes",
+            ]
+            lines.extend([
+                "", "## Non-customer Schedule", "",
+                "| " + " | ".join(headers) + " |",
+                _md_separator(headers, right_align={"#", "Duration"}),
+            ])
             for stop in free_stops:
                 date_text = " ".join(
                     str(value) for value in (
                         stop.get("planned_date"), stop.get("planned_start_period")
                     ) if value
                 )
+                cells = [
+                    stop.get("sequence_no") or "",
+                    self.core._md_cell(stop.get("location_name")),
+                    self.core._md_cell(stop.get("category")),
+                    self.core._md_cell(date_text),
+                    (stop.get("duration_half_days") or 2) / 2,
+                    *([self.core._md_cell(
+                        team_export.attendee_names(plan, stop)
+                    )] if team else []),
+                    self.core._md_cell(stop.get("visit_purpose")),
+                    self.core._md_cell(stop.get("notes")),
+                ]
                 lines.append(
-                    "| {seq} | {place} | {category} | {date} | {duration} | {purpose} | {notes} |".format(
-                        seq=stop.get("sequence_no") or "",
-                        place=self.core._md_cell(stop.get("location_name")),
-                        category=self.core._md_cell(stop.get("category")),
-                        date=self.core._md_cell(date_text),
-                        duration=(stop.get("duration_half_days") or 2) / 2,
-                        purpose=self.core._md_cell(stop.get("visit_purpose")),
-                        notes=self.core._md_cell(stop.get("notes")),
-                    )
+                    "| " + " | ".join(str(cell) for cell in cells) + " |"
                 )
         lines.extend(
             [
                 "",
                 "## Route Legs",
                 "",
-                "| # | From | To | Mode | Distance km | Time hours | Start | End | Travel half-days | Travel days | Planning basis | Notes |",
-                "|---|---|---|---|---:|---:|---|---|---:|---:|---|---|",
+                "|" + (" Member |" if team else "")
+                + " # | From | To | Mode | Distance km | Time hours | Start | End | Travel half-days | Travel days | Planning basis | Notes |",
+                "|" + ("---|" if team else "")
+                + "---|---|---|---|---:|---:|---|---|---:|---:|---|---|",
             ]
         )
         legs = plan.get("legs") or []
         if not legs:
-            lines.append("| - | - | - | - | - | - | - | - | - | - | No saved route legs | - |")
+            lines.append(
+                ("| - " if team else "")
+                + "| - | - | - | - | - | - | - | - | - | - | No saved route legs | - |"
+            )
         for leg in legs:
             lines.append(
-                "| {seq} | {from_label} | {to_label} | {mode} | {distance} | {hours} | {start} | {end} | {half_days} | {days} | {basis} | {notes} |".format(
+                (f"| {team_export.member_name(plan, leg.get('member_id')) or '-'} "
+                 if team else "")
+                + "| {seq} | {from_label} | {to_label} | {mode} | {distance} | {hours} | {start} | {end} | {half_days} | {days} | {basis} | {notes} |".format(
                     seq=leg.get("sequence_no") or "",
                     from_label=self.core._md_cell(leg.get("from_label") or leg.get("from")),
                     to_label=self.core._md_cell(leg.get("to_label") or leg.get("to")),
@@ -1828,8 +1874,11 @@ class TripPlanService:
         return "\n".join(lines) + "\n"
 
     @staticmethod
-    def _visit_export_headers() -> list[str]:
+    def _visit_export_headers(team: bool = False) -> list[str]:
+        # Two extra columns in team planning: a visit exported without who went
+        # and how its time was decided cannot be read back.
         return [
+            *(["Attendees", "Schedule State"] if team else []),
             "No.",
             "Company Name",
             "Full Address",
@@ -1841,6 +1890,13 @@ class TripPlanService:
             CHANNEL_PARTNER_COMPANIONS_HEADER,
             "Visiting topic",
         ]
+
+    def _team_visit_row(self, plan: dict, stop: dict, number: int) -> dict:
+        return {
+            **self._visit_export_row(stop, number),
+            "Attendees": team_export.attendee_names(plan, stop),
+            "Schedule State": team_export.schedule_state(stop),
+        }
 
     def _visit_export_row(self, stop: dict, number: int) -> dict:
         return formal_visit_row(stop, number)
@@ -1900,12 +1956,16 @@ class TripPlanService:
             "",
             "## Daily Timeline",
             "",
-            "| Order | Date | Period | Type | Item | Mode | Distance km | Time hours |",
-            "|---:|---|---|---|---|---|---:|---:|",
+            "|" + (" Member |" if team_export.is_team(plan) else "")
+            + " Order | Date | Period | Type | Item | Mode | Distance km | Time hours |",
+            "|" + ("---|" if team_export.is_team(plan) else "")
+            + "---:|---|---|---|---|---|---:|---:|",
         ]
         for item in execution.get("schedule_items", []):
             lines.append(
-                "| {order} | {date} | {period} | {kind} | {title} | {mode} | {distance} | {hours} |".format(
+                (f"| {team_export.member_name(plan, item.get('member_id')) or '-'} "
+                 if team_export.is_team(plan) else "")
+                + "| {order} | {date} | {period} | {kind} | {title} | {mode} | {distance} | {hours} |".format(
                     order=item.get("schedule_index") or "",
                     date=self.core._md_cell(item.get("date")),
                     period=self.core._md_cell(item.get("period")),
@@ -2042,6 +2102,13 @@ class TripPlanService:
             "customer_needs", "competitor", "budget", "decision_maker",
             "next_action", "sample_needed", "quote_needed", "notes",
         ]
+        # In team planning a stop without who attended it and how its time was
+        # decided is not a usable record.
+        team = team_export.is_team(plan)
+        if team:
+            stop_headers += [
+                "attendee_user_ids", "attendee_names", "schedule_state",
+            ]
         leg_headers = [
             "leg_sequence", "leg_key", "leg_from", "leg_to", "leg_mode",
             "leg_distance_km", "leg_time_hours", "leg_travel_half_days",
@@ -2049,6 +2116,8 @@ class TripPlanService:
             "leg_planned_start_period", "leg_planned_end_date",
             "leg_planned_end_period", "leg_notes", "leg_confirmation",
         ]
+        if team:
+            leg_headers = ["leg_member_id", "leg_member_name", *leg_headers]
         plan_headers = [
             "plan_title", "plan_description", "plan_start_date", "plan_end_date",
             "plan_origin", "plan_destination", "departure_window_start",
@@ -2087,10 +2156,20 @@ class TripPlanService:
             else:
                 example = {key: "" for key in self._visit_export_headers()}
             location = stop.get("visit_location") or {}
+            attendees = (
+                {
+                    "attendee_user_ids": " ".join(
+                        team_export.attendee_ids(stop)
+                    ),
+                    "attendee_names": team_export.attendee_names(plan, stop),
+                    "schedule_state": team_export.schedule_state(stop),
+                } if team else {}
+            )
             write_row(
                 {
                     "record_type": "customer_stop" if is_customer else "free_stop",
                     **example,
+                    **attendees,
                     "sequence": stop.get("sequence_no"),
                     "stop_kind": stop.get("stop_kind") or "customer",
                     "category": stop.get("category"),
@@ -2144,6 +2223,12 @@ class TripPlanService:
             write_row(
                 {
                     "record_type": "leg",
+                    **({
+                        "leg_member_id": leg.get("member_id"),
+                        "leg_member_name": team_export.member_name(
+                            plan, leg.get("member_id")
+                        ),
+                    } if team else {}),
                     "leg_sequence": leg.get("sequence_no"),
                     "leg_key": leg.get("leg_key"),
                     "leg_from": leg.get("from_label") or leg.get("from"),
