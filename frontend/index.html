@@ -713,7 +713,7 @@
                                 <div class="trip-free-stop-tools">
                                     <button type="button" class="btn btn-secondary btn-sm" id="trip-add-free-stop"
                                         aria-controls="trip-free-stop-editor" aria-expanded="false" onclick="TripFreeStopForm.open()">+ Add personal stop</button>
-                                    <small>Rest, hotel, airport, transit, meal, or another non-customer stop.</small>
+                                    <small>Rest, hotel, transit, meal, or another non-customer stop. Airports belong to the flight leg that uses them.</small>
                                 </div>
                                 <section id="trip-free-stop-editor" class="trip-free-stop-editor" hidden aria-labelledby="trip-free-stop-editor-title">
                                     <div class="trip-free-stop-editor-head">
@@ -725,7 +725,7 @@
                                     <div class="trip-free-stop-grid">
                                         <label class="trip-field-label"><span>Stop type</span><select class="form-input" id="trip-free-stop-category">
                                             <option value="rest">Rest</option><option value="hotel">Hotel</option>
-                                            <option value="airport">Airport</option><option value="transit">Transit</option>
+                                            <option value="transit">Transit</option>
                                             <option value="meal">Meal</option><option value="other">Other</option>
                                         </select></label>
                                         <label class="trip-field-label" id="trip-free-stop-stay-field"><span>Stop duration (days)</span><input type="number" min="0.5" max="30" step="0.5" value="1" class="form-input" id="trip-free-stop-stay" data-stop-duration-half-days></label>

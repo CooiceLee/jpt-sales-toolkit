@@ -175,6 +175,7 @@
         ['Stay days · submitted with Save route', '停留天数 · 随“保存路线”提交'],
         ['+ Add personal stop', '+ 添加个人停靠点'],
         ['Rest, hotel, airport, transit, meal, or another non-customer stop.', '可添加休息、酒店、机场、中转、用餐或其他非客户停靠点。'],
+        ['Rest, hotel, transit, meal, or another non-customer stop. Airports belong to the flight leg that uses them.', '可添加休息、酒店、中转、用餐或其他非客户停靠点。机场请在使用它的航班段上设置。'],
         ['Add personal stop', '添加个人停靠点'], ['Edit personal stop', '编辑个人停靠点'],
         ['Personal stop', '个人停靠点'], ['Stop type', '停靠类型'], ['Rest', '休息'], ['Hotel', '酒店'],
         ['Airport', '机场'], ['Transit', '中转'], ['Meal', '用餐'], ['Other', '其他'], ['Stay days', '停留天数'],

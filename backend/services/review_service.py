@@ -727,7 +727,10 @@ class ReviewService:
 
         current_point = origin
         initial_slot = departure_start_slot or (start, "AM")
-        cursor = self._next_work_slot(initial_slot, bool(avoid_weekends), holidays)
+        # Leaving on a Saturday to meet a customer on Monday is ordinary. Only
+        # the customer visit needs a working day, so the trip starts when the
+        # traveller says it does.
+        cursor = initial_slot
         total_distance = 0.0
         total_hours = 0.0
         total_travel_half_days = 0
@@ -1122,12 +1125,7 @@ class ReviewService:
             if boundary_candidates else None
         )
         overrun_half_days = (
-            self._work_slots_after(
-                requested_boundary,
-                last_occupied_slot,
-                bool(avoid_weekends),
-                holidays,
-            )
+            self._calendar_slots_after(requested_boundary, last_occupied_slot)
             if requested_boundary
             else 0
         )
@@ -1513,6 +1511,25 @@ class ReviewService:
         if calendar_only:
             return self._after_calendar_slot(cursor)
         return self._after_work_slot(cursor, avoid_weekends, holidays)
+
+    def _calendar_slots_after(
+        self,
+        boundary: tuple[date, str],
+        actual: tuple[date, str],
+    ) -> int:
+        """Half-days by which ``actual`` passes ``boundary`` on the calendar.
+
+        The requested end date is a calendar deadline: a return that lands on a
+        Saturday is late even though Saturday is not a working day.
+        """
+        if self._slot_key(actual) <= self._slot_key(boundary):
+            return 0
+        count = 0
+        cursor = self._after_calendar_slot(boundary)
+        while self._slot_key(cursor) <= self._slot_key(actual):
+            count += 1
+            cursor = self._after_calendar_slot(cursor)
+        return count
 
     def _work_slots_after(
         self,

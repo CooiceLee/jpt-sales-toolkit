@@ -10,6 +10,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -174,6 +175,41 @@ def check_persistence(service: ReviewService, plan_id: str, stop_id: str, actor:
     )
 
 
+def check_weekend_departure(service, plan_id: str, actor: str) -> None:
+    """Leaving on a Saturday is normal; only the customer visit needs a workday."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE trip_plans SET start_date='2026-09-19', end_date='2026-10-10' WHERE id=?",
+        (plan_id,),
+    )
+    conn.commit()
+    plan = service.get_trip_plan(plan_id, actor, "leader")
+    calc = service._calculate_trip_itinerary(plan, {})
+    first = calc["legs"][0]
+    assert first["planned_start_date"] == "2026-09-19", (
+        f"travel must start on the Saturday the trip starts, got {first['planned_start_date']}"
+    )
+    visit = calc["stop_updates"][0]
+    assert visit["planned_date"] >= "2026-09-21", (
+        f"the customer visit must still wait for a workday, got {visit['planned_date']}"
+    )
+
+
+def check_calendar_deadline(service) -> None:
+    """A return that lands on a weekend is late, even though it is not a workday."""
+    friday = (date(2026, 10, 2), "PM")
+    for actual, label in (
+        ((date(2026, 10, 3), "AM"), "Saturday"),
+        ((date(2026, 10, 4), "PM"), "Sunday"),
+        ((date(2026, 10, 5), "AM"), "Monday"),
+    ):
+        assert service._calendar_slots_after(friday, actual) > 0, (
+            f"a return on {label} after a Friday deadline must count as overrun"
+        )
+    assert service._calendar_slots_after(friday, (date(2026, 10, 2), "AM")) == 0
+    assert service._calendar_slots_after(friday, friday) == 0
+
+
 def check_schema() -> None:
     conn = sqlite3.connect(str(TEST_DIR / "database.sqlite"))
     columns = {row[1] for row in conn.execute("PRAGMA table_info(trip_plan_legs)")}
@@ -194,8 +230,10 @@ def main() -> None:
     plan_id, stop_id, actor = _seed(service)
     check_itinerary(service, plan_id, stop_id, actor)
     check_persistence(service, plan_id, stop_id, actor)
+    check_calendar_deadline(service)
+    check_weekend_departure(service, plan_id, actor)
     close_db()
-    print("PASS: flight airports stay on the leg, expand only when flown, and persist")
+    print("PASS: flight airports, weekend departure and calendar deadline")
 
 
 if __name__ == "__main__":
