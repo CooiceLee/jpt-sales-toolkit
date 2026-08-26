@@ -174,6 +174,8 @@ class TripStopUpdate(BaseModel):
     visit_followup_due_date: Optional[str] = None
     visit_sample_needed: Optional[bool] = None
     visit_quote_needed: Optional[bool] = None
+    plan_row_version: Optional[int] = Field(None, ge=1)
+    planned_time_accepted: Optional[bool] = None
 
 
 class TripStopReorder(BaseModel):
@@ -776,6 +778,28 @@ async def archive_trip_stop(
     if not plan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip stop not found")
     return plan
+
+
+@router.post("/trip-plans/{plan_id}/flexible-suggestions")
+async def suggest_trip_flexible_visits(
+    plan_id: str,
+    request: TripItineraryGenerate,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Propose a time for each customer visit with none agreed. Writes nothing."""
+    try:
+        result = service.suggest_trip_flexible_visits(
+            plan_id,
+            request.model_dump(exclude_unset=True),
+            user["id"],
+            user["role"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
+    return result
 
 
 @router.put("/trip-plans/{plan_id}/members")

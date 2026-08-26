@@ -99,7 +99,7 @@ def _drop_v6_contract(conn: sqlite3.Connection) -> None:
 
 
 def check_schema5_to_current_upgrade() -> None:
-    assert APP_SCHEMA_VERSION == 8
+    assert APP_SCHEMA_VERSION == 9
     with tempfile.TemporaryDirectory(prefix="jpt_trip_schema5_to_6_") as temp:
         data_dir = Path(temp) / "data"
         data_dir.mkdir()

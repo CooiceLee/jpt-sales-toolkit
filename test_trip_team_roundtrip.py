@@ -18,6 +18,7 @@ os.environ["JPT_DATA_DIR"] = str(TEST_DIR)
 
 from backend.config import init_settings  # noqa: E402
 from backend.repositories import close_db  # noqa: E402
+from backend.repositories.base import ConflictError  # noqa: E402
 from backend.repositories.base import generate_uuid, get_db, now_iso  # noqa: E402
 from backend.services.review_service import ReviewService  # noqa: E402
 from backend.services.trip_visit_briefing_repository import (  # noqa: E402
@@ -321,6 +322,239 @@ def check_changing_a_free_stop_scope_invalidates_the_route(service, seed) -> Non
     )
 
 
+def _flexible_stop(service, seed):
+    """Add a customer visit with no agreed time, and return its stop id."""
+    conn = get_db()
+    stamp = now_iso()
+    customer_id = generate_uuid()
+    conn.execute(
+        "INSERT INTO customers (id,display_name,normalized_name,lat,lng,"
+        "created_at,updated_at,row_version) VALUES (?,?,?,?,?,?,?,1)",
+        (customer_id, "Stuttgart Customer", "stuttgart customer",
+         48.7758, 9.1829, stamp, stamp),
+    )
+    stop_id = generate_uuid()
+    conn.execute(
+        """INSERT INTO trip_plan_stops (id,plan_id,customer_id,sequence_no,
+           duration_half_days,stay_days,preferred_period,schedule_locked,
+           confirmation_status,created_at,created_by,updated_at,updated_by,
+           row_version) VALUES (?,?,?,9,1,1,'auto',0,'unconfirmed',?,?,?,?,1)""",
+        (stop_id, seed["plan_id"], customer_id, stamp, seed["actor"], stamp,
+         seed["actor"]),
+    )
+    conn.commit()
+    service.trip_plan_service.briefing_repo.replace(
+        stop_id,
+        normalize_payload({"participants": [{"user_id": seed["people"]["zhang"]}]}),
+        seed["actor"], stamp, None,
+    )
+    return stop_id
+
+
+def _solo_team_plan(service):
+    """A team plan with one member and one visit with no agreed time."""
+    conn = get_db()
+    stamp = now_iso()
+    actor = generate_uuid()
+    conn.execute(
+        "INSERT INTO users (id,username,display_name,role,password_hash,"
+        "is_active,created_at) VALUES (?,?,'Solo','sales','h',1,?)",
+        (actor, f"solo-{actor[:8]}", stamp),
+    )
+    plan_id, customer_id, stop_id = (generate_uuid() for _ in range(3))
+    conn.execute(
+        """INSERT INTO trip_plans (id,title,owner_id,start_date,end_date,
+           travel_mode,route_order_mode,transport_mode_priority,origin_name,
+           origin_lat,origin_lng,destination_name,destination_lat,
+           destination_lng,avoid_weekends,status,planning_mode,created_at,
+           created_by,updated_at,updated_by,row_version)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Draft','team',?,?,?,?,1)""",
+        (plan_id, "Solo trip", actor, "2026-09-14", "2026-10-10", "flight",
+         "manual", '["flight","drive"]', "Shanghai", 31.2304, 121.4737,
+         "Shanghai", 31.2304, 121.4737, 1, stamp, actor, stamp, actor),
+    )
+    conn.execute(
+        "INSERT INTO customers (id,display_name,normalized_name,lat,lng,"
+        "created_at,updated_at,row_version) VALUES (?,?,?,?,?,?,?,1)",
+        (customer_id, "Frankfurt Solo", "frankfurt solo", 50.1109, 8.6821,
+         stamp, stamp),
+    )
+    conn.execute(
+        """INSERT INTO trip_plan_stops (id,plan_id,customer_id,sequence_no,
+           duration_half_days,stay_days,preferred_period,schedule_locked,
+           confirmation_status,created_at,created_by,updated_at,updated_by,
+           row_version) VALUES (?,?,?,1,1,1,'auto',0,'unconfirmed',?,?,?,?,1)""",
+        (stop_id, plan_id, customer_id, stamp, actor, stamp, actor),
+    )
+    conn.commit()
+    service.trip_plan_service.member_repo.add(plan_id, actor, {}, actor)
+    service.trip_plan_service.briefing_repo.replace(
+        stop_id, normalize_payload({"participants": [{"user_id": actor}]}),
+        actor, stamp, None,
+    )
+    return plan_id, stop_id, actor
+
+
+def _planned(service, plan_id, stop_id, actor):
+    stop = [item for item in service.get_trip_plan(plan_id, actor, "leader")["stops"]
+            if item["id"] == stop_id][0]
+    return stop["planned_date"], bool(stop.get("planned_time_accepted"))
+
+
+def check_a_calculated_time_is_not_an_anchor(service, seed) -> None:
+    """The calculation's own result must not constrain the next run.
+
+    Generate writes the time it worked out back to the stop. If that counted as
+    a time somebody accepted, the first run would pin the visit: move the trip a
+    week earlier and it would stay on the date the first run happened to give
+    it, which is a route the plan no longer describes.
+    """
+    plan_id, stop_id, actor = _solo_team_plan(service)
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    first, accepted = _planned(service, plan_id, stop_id, actor)
+    assert first == "2026-09-15", first
+    assert accepted is False, "the calculation must not mark its own output"
+
+    service.update_trip_plan(
+        plan_id,
+        {"start_date": "2026-09-07", "departure_window_start": "2026-09-07"},
+        actor, "leader",
+    )
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    second, _ = _planned(service, plan_id, stop_id, actor)
+    assert second == "2026-09-08", (
+        f"the visit is frozen on the first run's date instead of moving with "
+        f"the trip: {first} -> {second}"
+    )
+
+
+def check_an_accepted_time_is_an_anchor(service, seed) -> None:
+    """A time somebody accepted does hold, even when the trip could start sooner."""
+    plan_id, stop_id, actor = _solo_team_plan(service)
+    stop = [item for item in service.get_trip_plan(plan_id, actor, "leader")["stops"]
+            if item["id"] == stop_id][0]
+    service.update_trip_stop(
+        plan_id, stop_id,
+        {"planned_date": "2026-09-25", "planned_start_period": "AM",
+         "schedule_locked": False, "planned_time_accepted": True,
+         "row_version": stop["row_version"]},
+        actor, "leader",
+    )
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    kept, accepted = _planned(service, plan_id, stop_id, actor)
+    assert accepted is True
+    assert kept == "2026-09-25", (
+        f"an accepted time must hold its place, but moved to {kept}"
+    )
+    # And it is no longer offered a suggestion, because it is arranged.
+    offered = service.suggest_trip_flexible_visits(plan_id, {}, actor, "leader")
+    assert not [
+        item for item in offered["suggestions"] if item["stop_id"] == stop_id
+    ], offered
+
+
+def check_generate_does_not_end_flexible_planning(service, seed) -> None:
+    """A visit with no agreed time is still suggestible after a Generate."""
+    plan_id, stop_id, actor = _solo_team_plan(service)
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    offered = service.suggest_trip_flexible_visits(plan_id, {}, actor, "leader")
+    assert [item for item in offered["suggestions"] if item["stop_id"] == stop_id], (
+        "generating a route must not make every visit look already arranged: "
+        f"{offered}"
+    )
+
+
+def check_apply_a_suggestion(service, seed) -> None:
+    """Applying a suggestion plans the visit without agreeing it with anybody."""
+    plan_id, actor = seed["plan_id"], seed["actor"]
+    stop_id = _flexible_stop(service, seed)
+
+    first = service.suggest_trip_flexible_visits(plan_id, {}, actor, "leader")
+    proposed = [
+        item for item in first["suggestions"] if item["stop_id"] == stop_id
+    ]
+    assert proposed, f"the flexible visit was not offered a time: {first}"
+    suggestion = proposed[0]
+    assert suggestion["date"], suggestion
+    assert suggestion["label"] == "Stuttgart Customer"
+    assert suggestion["participants"] == [seed["people"]["zhang"]]
+
+    stop = [item for item in service.get_trip_plan(plan_id, actor, "leader")["stops"]
+            if item["id"] == stop_id][0]
+    plan = service.update_trip_stop(
+        plan_id, stop_id,
+        {
+            "planned_date": suggestion["date"],
+            "planned_start_period": suggestion["period"],
+            "schedule_locked": False,
+            "planned_time_accepted": True,
+            "row_version": stop["row_version"],
+            "plan_row_version": first["plan_row_version"],
+        },
+        actor, "leader",
+    )
+    assert plan, "applying the suggestion did not return the plan"
+
+    applied = [item for item in plan["stops"] if item["id"] == stop_id][0]
+    assert applied["planned_date"] == suggestion["date"]
+    assert applied["planned_start_period"] == suggestion["period"]
+    assert not applied["schedule_locked"], (
+        "a time we suggested is not a time the customer agreed to"
+    )
+
+    # It is arranged now, so it is not offered again.
+    second = service.suggest_trip_flexible_visits(plan_id, {}, actor, "leader")
+    assert not [
+        item for item in second["suggestions"] if item["stop_id"] == stop_id
+    ], f"an applied visit must not be suggested again: {second}"
+    # And the next round is worked out from the plan as it now stands.
+    assert second["plan_row_version"] > first["plan_row_version"], (
+        "the second round must be based on the plan after the first Apply"
+    )
+
+
+def check_a_stale_suggestion_cannot_be_applied(service, seed) -> None:
+    """A suggestion from before the plan changed is not quietly applied."""
+    plan_id, actor = seed["plan_id"], seed["actor"]
+    stop_id = _flexible_stop(service, seed)
+    offered = service.suggest_trip_flexible_visits(plan_id, {}, actor, "leader")
+    suggestion = [item for item in offered["suggestions"]
+                  if item["stop_id"] == stop_id][0]
+
+    # Something else about the plan changes: the suggestion was worked out from
+    # the whole plan, so it is no longer the plan being changed.
+    service.update_trip_plan(
+        plan_id, {"title": "Team Europe (revised)"}, actor, "leader"
+    )
+    stop = [item for item in service.get_trip_plan(plan_id, actor, "leader")["stops"]
+            if item["id"] == stop_id][0]
+    try:
+        service.update_trip_stop(
+            plan_id, stop_id,
+            {
+                "planned_date": suggestion["date"],
+                "planned_start_period": suggestion["period"],
+                "schedule_locked": False,
+                "planned_time_accepted": True,
+                "row_version": stop["row_version"],
+                "plan_row_version": offered["plan_row_version"],
+            },
+            actor, "leader",
+        )
+    except ConflictError:
+        pass
+    else:
+        raise AssertionError(
+            "a suggestion worked out from an older plan must not be applied"
+        )
+    # An ordinary stop edit does not send a plan version and is unaffected.
+    assert service.update_trip_stop(
+        plan_id, stop_id, {"visit_purpose": "Ordinary edit",
+                           "row_version": stop["row_version"]},
+        actor, "leader",
+    )
+
+
 def check_overrun_is_a_risk_not_a_refusal(service, seed) -> None:
     """With fixed appointments the dates are what gives, so say it and save it."""
     plan_id, actor = seed["plan_id"], seed["actor"]
@@ -344,6 +578,11 @@ def main() -> None:
     check_round_trip(service, seed)
     check_changing_who_attends_invalidates_the_route(service, seed)
     check_changing_a_free_stop_scope_invalidates_the_route(service, seed)
+    check_a_calculated_time_is_not_an_anchor(service, seed)
+    check_an_accepted_time_is_an_anchor(service, seed)
+    check_generate_does_not_end_flexible_planning(service, seed)
+    check_apply_a_suggestion(service, seed)
+    check_a_stale_suggestion_cannot_be_applied(service, seed)
     check_overrun_is_a_risk_not_a_refusal(service, seed)
     close_db()
     print("PASS: team itinerary survives preview, generate and reload")

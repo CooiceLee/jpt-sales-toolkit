@@ -245,31 +245,38 @@ def check_an_applied_suggestion_holds_its_place(service) -> None:
 
 
 def check_saved_times_reach_the_calculation(service) -> None:
-    """A saved time becomes an appointment or a plan, depending on the lock.
+    """A saved time is an appointment, a plan, or only the last run's output.
 
-    This is the step Apply depends on: without it the date the user applied is
-    read off the stop and thrown away, and the visit comes back as unscheduled.
+    This is the step Apply depends on. It is also what keeps the calculation
+    from pinning itself: Generate writes the time it worked out back to the
+    stop, and only a person's decision marks it as one to keep.
     """
     from backend.services.trip_team_adapter import build_team_events
 
-    def stop(stop_id, locked):
+    def stop(stop_id, locked, accepted=0):
         return {
             "id": stop_id, "stop_kind": "customer", "customer_name": stop_id,
             "lat": 48.7758, "lng": 9.1829, "duration_half_days": 1,
             "planned_date": "2026-09-21", "planned_start_period": "AM",
-            "schedule_locked": locked, "briefing": {"participants": []},
+            "schedule_locked": locked, "planned_time_accepted": accepted,
+            "briefing": {"participants": []},
         }
 
     events = {
         event.stop_id: event for event in build_team_events(
             service,
-            {"stops": [stop("locked", 1), stop("applied", 0),
-                       {**stop("open", 0), "planned_date": None,
-                        "planned_start_period": None}]},
+            {"stops": [
+                stop("agreed", 1),
+                stop("applied", 0, accepted=1),
+                stop("calculated", 0),
+                {**stop("open", 0), "planned_date": None,
+                 "planned_start_period": None},
+            ]},
             {},
         )
     }
-    agreed = events["locked"]
+
+    agreed = events["agreed"]
     assert agreed.booked_slot == (date(2026, 9, 21), "AM"), agreed
     assert agreed.planned_slot is None
 
@@ -279,6 +286,12 @@ def check_saved_times_reach_the_calculation(service) -> None:
     )
     assert applied.planned_slot == (date(2026, 9, 21), "AM"), (
         f"an applied suggestion must reach the calculation: {applied}"
+    )
+
+    calculated = events["calculated"]
+    assert calculated.planned_slot is None, (
+        "a time the last run produced is output, not a decision to keep: "
+        f"{calculated}"
     )
 
     assert events["open"].booked_slot is None

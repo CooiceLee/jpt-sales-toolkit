@@ -693,6 +693,16 @@
                             <div id="trip-map-lanes" class="trip-map-lanes" role="group" aria-label="Map route view" hidden></div>
                             <div id="trip-map"></div>
                             <p id="trip-map-notice" class="trip-map-notice" role="status" aria-live="polite" hidden></p>
+                    <section id="trip-suggestions-panel" class="review-panel trip-suggestions-panel" aria-labelledby="trip-suggestions-title" hidden>
+                        <div class="trip-schedule-heading">
+                            <div>
+                                <div class="card-title" id="trip-suggestions-title">Flexible visits</div>
+                                <small>Customer visits with no agreed time yet.</small>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="TripFlexibleSuggestions.load()">Suggest times</button>
+                        </div>
+                        <div id="trip-suggestions-body"></div>
+                    </section>
                     <div id="trip-risk-bar" class="trip-risk-bar" role="status" aria-live="polite" hidden></div>
                     <section id="trip-schedule-panel" class="review-panel trip-schedule-panel" aria-labelledby="trip-schedule-title">
                         <div class="trip-schedule-heading">
@@ -1316,6 +1326,8 @@
     <script src="/static/js/modules/trip-team-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-journeys.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-map.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-timeline-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-flexible-suggestions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-schedule-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-export-actions.js?v=1.0"></script>

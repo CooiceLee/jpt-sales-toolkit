@@ -28,7 +28,8 @@ globalThis.State = {};
 """
 
 MODULE_FILES = (
-    "trip-schedule-view.js", "trip-team-risks.js", "trip-team-timeline.js",
+    "trip-schedule-view.js", "trip-team-risks.js",
+    "trip-team-timeline-view.js", "trip-team-timeline.js",
     "trip-team-journeys.js",
 )
 
@@ -271,7 +272,10 @@ def check_one_rule_for_both_views() -> None:
         assert f'id="{element}"' in index, f"missing element: {element}"
     for name in ("trip-team-journeys.js", "trip-team-map.js"):
         assert name in index, f"module never loaded: {name}"
-    timeline = (MODULES / "trip-team-timeline.js").read_text(encoding="utf-8")
+    timeline = "".join(
+        (MODULES / name).read_text(encoding="utf-8")
+        for name in ("trip-team-timeline.js", "trip-team-timeline-view.js")
+    )
     assert "TripTeamMap.focusStop" in timeline and "TripTeamMap.focusLeg" in timeline, (
         "choosing a timeline line must show it on the map"
     )

@@ -3844,3 +3844,16 @@ html, body {
 .trip-map-lanes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 .trip-map-notice { margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius-md);
     background: var(--cream-100); color: var(--ink-700); font-size: 13px; }
+.trip-suggestions-panel { margin: 0 0 12px; }
+.trip-suggestion-list { list-style: none; margin: 0; padding: 0; }
+.trip-suggestion { display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border-color); }
+.trip-suggestion > div { min-width: 0; }
+.trip-suggestion strong, .trip-suggestion small { display: block; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+.trip-suggestion small { color: var(--ink-500); font-size: 12px; }
+.trip-suggestion .btn { flex: 0 0 auto; }
+.trip-suggestion.is-none strong { color: var(--ink-600); }
+.trip-team-state { grid-column: 2; justify-self: start; padding: 1px 7px;
+    border-radius: 10px; background: var(--cream-200); color: var(--ink-600);
+    font-size: 11px; }

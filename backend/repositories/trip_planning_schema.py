@@ -355,3 +355,22 @@ def apply_trip_planning_schema_v8(conn: sqlite3.Connection) -> None:
         "ON trip_plan_legs(plan_id, member_id, leg_key) "
         "WHERE archived_at IS NULL AND member_id IS NOT NULL"
     )
+
+
+def apply_trip_planning_schema_v9(conn: sqlite3.Connection) -> None:
+    """Record whether a planned time was accepted or merely calculated.
+
+    A stop's planned time had two meanings at once: a time somebody chose to
+    accept, and wherever the last calculation happened to put the visit. The
+    calculation writes its result back, so its own output became an anchor for
+    the next run: move the trip a week earlier and an unscheduled visit stayed
+    on the date the first run gave it. This flag is the difference, and only a
+    person's decision sets it.
+    """
+    for table in ("trip_plan_stops", "trip_plan_free_stops"):
+        if "planned_time_accepted" not in _column_names(conn, table):
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN planned_time_accepted "
+                "INTEGER NOT NULL DEFAULT 0 "
+                "CHECK (planned_time_accepted IN (0, 1))"
+            )

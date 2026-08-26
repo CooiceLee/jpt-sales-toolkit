@@ -9,9 +9,6 @@
         return member?.display_name || userId || t('Unassigned');
     }
 
-    const modeLabel = value =>
-        window.TripScheduleView?.transportModeLabel?.(value) || value || '';
-
     /**
      * What makes two members' items the same thing.
      *
@@ -58,44 +55,6 @@
             || String(left.title).localeCompare(String(right.title)));
     }
 
-    function renderEntry(entry) {
-        const isLeg = entry.item_type === 'leg';
-        const stopId = !isLeg ? entry.source_id : '';
-        const who = entry.members.length
-            ? entry.members.join(' · ') : t('Unassigned');
-        // Choosing a line shows it on the map. A visit also opens its
-        // preparation, which is the thing there is to do with a visit.
-        const action = stopId
-            ? `TripTeamMap.focusStop('${h(stopId)}');`
-                + `TripBriefingActions.open('${h(stopId)}')`
-            : (entry.source_id ? `TripTeamMap.focusLeg('${
-                h(String(entry.source_id).split('#')[0])}','${
-                h(entry.selected_mode || '')}','${
-                h((entry.memberIds || [])[0] || '')}')` : '');
-        return `<button type="button"
-            class="trip-team-entry is-${h(isLeg ? 'leg' : entry.item_type)}${
-                entry.unresolved ? ' is-unresolved' : ''}"
-            ${action ? `onclick="${action}"` : 'disabled'}>
-            <span class="trip-team-entry-who">${h(who)}</span>
-            <strong>${h(entry.title || entry.source_id)}${
-                isLeg && entry.selected_mode
-                    ? ` · ${modeLabel(entry.selected_mode)}` : ''}${
-                entry.half_day_count > 1
-                    ? ` · ${t('Half-day {index} of {count}', {
-                        index: entry.half_day_index, count: entry.half_day_count,
-                    })}` : ''}</strong>
-            ${entry.unresolved
-                ? `<em>${h(t('Travel to this visit is not worked out'))}</em>` : ''}
-        </button>`;
-    }
-
-    function renderSlot(slot, entries) {
-        const [date, period] = slot.split('|');
-        return `<section class="trip-team-slot">
-            <h4>${h(date)} · ${h(t(period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'))}</h4>
-            <div class="trip-team-slot-body">${entries.map(renderEntry).join('')}</div>
-        </section>`;
-    }
 
     function incompleteNotice(plan) {
         // A member whose position the plan cannot work out has no route to draw.
@@ -127,13 +86,18 @@
         });
         const ordered = [...slots.keys()].sort();
         target.innerHTML = incompleteNotice(plan) + ordered
-            .map(slot => renderSlot(slot, groupSlot(slots.get(slot), plan)))
+            .map(slot => TripTeamTimelineView.renderSlot(
+                slot, groupSlot(slots.get(slot), plan).map(entry => ({
+                    ...entry,
+                    commitment: TripTeamTimelineView.commitment(plan, entry),
+                }))))
             .join('');
     }
 
     function renderPlan(plan) {
         render(plan);
         window.TripTeamRisks?.render?.(plan);
+        window.TripFlexibleSuggestions?.render?.(plan);
         const status = document.getElementById('trip-schedule-status');
         if (status) {
             status.textContent = t('{count} people travelling', {

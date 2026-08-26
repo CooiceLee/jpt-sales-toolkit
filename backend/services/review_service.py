@@ -240,6 +240,13 @@ class ReviewService:
     ) -> Optional[dict]:
         return self.trip_plan_service.archive_trip_stop(plan_id, stop_id, actor_id, actor_role, row_version)
 
+    def suggest_trip_flexible_visits(
+        self, plan_id: str, data: dict, actor_id: str, actor_role: str
+    ) -> Optional[dict]:
+        return self.trip_plan_service.suggest_trip_flexible_visits(
+            plan_id, data, actor_id, actor_role
+        )
+
     def set_trip_member(
         self, plan_id: str, data: dict, actor_id: str, actor_role: str
     ) -> Optional[dict]:

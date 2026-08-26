@@ -666,7 +666,7 @@ def check_reassigned_plan_revokes_creator_access(client: TestClient, ctx: dict) 
 
 
 def check_schema3_to_current_upgrade() -> None:
-    assert APP_SCHEMA_VERSION == 8
+    assert APP_SCHEMA_VERSION == 9
     with tempfile.TemporaryDirectory(prefix="jpt_trip_schema3_to_current_") as temp:
         data_dir = Path(temp) / "data"
         data_dir.mkdir()

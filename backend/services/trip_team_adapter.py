@@ -35,13 +35,17 @@ def _slots_of(core, stop: dict) -> tuple:
     """What is agreed with the customer, and what we merely decided.
 
     A locked visit is an appointment and becomes a fact the plan is built
-    around. An unlocked visit that still has a saved time is a plan of ours -
-    a suggestion somebody accepted - and it has to be honoured, or applying one
-    would appear to work and then be forgotten by the next calculation.
+    around. An unlocked visit whose time somebody accepted is a plan of ours and
+    has to be honoured, or applying a suggestion would appear to work and then
+    be forgotten by the next calculation. A time the last calculation merely
+    produced is neither: it is output, and must not constrain the next run.
     """
     saved = _saved_slot(core, stop)
     if not stop.get("schedule_locked"):
-        return None, saved
+        # Only a time somebody chose to accept holds its place. The calculation
+        # writes its own result back to the stop, and treating that as a
+        # decision would make every run an anchor for the next one.
+        return None, saved if stop.get("planned_time_accepted") else None
     if saved is None:
         raise ValueError(
             "Save a visit date and AM/PM period before locking this visit"
@@ -232,3 +236,49 @@ def persist_team_itinerary(service, plan_id: str, summary: dict,
             ),
         )
     service.leg_repo.replace_active(plan_id, summary["legs"], actor_id, now)
+
+
+def suggest_team_visits(core, member_repo, plan: dict, data: dict) -> list:
+    """The saved plan's flexible visits, with a time proposed for each."""
+    from .trip_team_suggestions import suggest_flexible_visits
+
+    plan_id = plan["id"]
+    team = member_repo.member_ids(plan_id)
+    origins, destinations = member_repo.points(plan_id, plan)
+    validate_team_inputs(team, origins, destinations)
+
+    settings = core._team_plan_settings(plan, data)
+    events = build_team_events(core, plan, data.get("stop_durations") or {})
+    holidays, _ = core._parse_holiday_dates(
+        data.get("holiday_dates") if "holiday_dates" in data
+        else plan.get("holiday_dates")
+    )
+    avoid_weekends = data.get("avoid_weekends")
+    if avoid_weekends is None:
+        avoid_weekends = bool(plan.get("avoid_weekends", True))
+
+    found = suggest_flexible_visits(core, team, events, {
+        **settings,
+        "origins": origins,
+        "destinations": destinations,
+        "leg_settings": core._team_leg_settings(plan_id, team),
+        "avoid_weekends": bool(avoid_weekends),
+        "holidays": tuple(holidays),
+    })
+    labels = {
+        stop["id"]: stop.get("customer_name") or stop.get("location_name")
+        for stop in plan.get("stops") or []
+    }
+    return [
+        {
+            "stop_id": item.stop_id,
+            "label": labels.get(item.stop_id),
+            "date": item.date,
+            "period": item.period,
+            "participants": list(item.participants),
+            "added_travel_hours": item.added_travel_hours,
+            "added_distance_km": item.added_distance_km,
+            "reason": item.reason,
+        }
+        for item in found
+    ]

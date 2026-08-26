@@ -565,6 +565,7 @@ CREATE TABLE IF NOT EXISTS trip_plan_stops (
     planned_start_period TEXT CHECK (planned_start_period IN ('AM', 'PM')),
     planned_end_period TEXT CHECK (planned_end_period IN ('AM', 'PM')),
     schedule_locked INTEGER NOT NULL DEFAULT 0 CHECK (schedule_locked IN (0, 1)),
+    planned_time_accepted INTEGER NOT NULL DEFAULT 0 CHECK (planned_time_accepted IN (0, 1)),
     confirmation_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
         confirmation_status IN (
             'unconfirmed', 'tentative', 'confirmed',
@@ -629,6 +630,7 @@ CREATE TABLE IF NOT EXISTS trip_plan_free_stops (
     planned_start_period TEXT CHECK (planned_start_period IN ('AM', 'PM')),
     planned_end_period TEXT CHECK (planned_end_period IN ('AM', 'PM')),
     schedule_locked INTEGER NOT NULL DEFAULT 0 CHECK (schedule_locked IN (0, 1)),
+    planned_time_accepted INTEGER NOT NULL DEFAULT 0 CHECK (planned_time_accepted IN (0, 1)),
     confirmation_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
         confirmation_status IN (
             'unconfirmed', 'tentative', 'confirmed',

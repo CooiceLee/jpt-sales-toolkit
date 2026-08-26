@@ -747,7 +747,7 @@ def check_schema() -> None:
     for side in ("departure", "arrival"):
         for suffix in ("name", "lat", "lng", "stay_half_days"):
             assert f"{side}_airport_{suffix}" in columns
-    assert APP_SCHEMA_VERSION == 8
+    assert APP_SCHEMA_VERSION == 9
 
 
 def main() -> None:

@@ -34,7 +34,7 @@ def run_js(body: str) -> dict:
     sources = "\n".join(
         (MODULES / name).read_text(encoding="utf-8")
         for name in ("trip-schedule-view.js", "trip-team-risks.js",
-                     "trip-team-timeline.js")
+                     "trip-team-timeline-view.js", "trip-team-timeline.js")
     )
     script = f"{HARNESS}\n{sources}\n{body}"
     result = subprocess.run(
@@ -402,6 +402,36 @@ def check_slot_order_follows_the_journey() -> None:
     )
 
 
+def check_only_a_decision_reads_as_planned() -> None:
+    """A time the calculation produced is not labelled as a plan somebody made."""
+    data = run_js("""
+    const stops = [
+        { id: 'agreed', schedule_locked: true, planned_date: '2026-09-16',
+          planned_time_accepted: 0 },
+        { id: 'applied', schedule_locked: false, planned_date: '2026-09-17',
+          planned_time_accepted: 1 },
+        { id: 'calculated', schedule_locked: false, planned_date: '2026-09-18',
+          planned_time_accepted: 0 },
+    ];
+    const label = id => TripTeamTimelineView.commitment({ stops },
+        { item_type: 'customer', source_id: id });
+    console.log(JSON.stringify({
+        agreed: label('agreed'),
+        applied: label('applied'),
+        calculated: label('calculated'),
+        leg: TripTeamTimelineView.commitment({ stops },
+            { item_type: 'leg', source_id: 'agreed' }),
+    }));
+    """)
+    assert data["agreed"] == "Confirmed", data
+    assert data["applied"] == "Planned", data
+    assert data["calculated"] == "", (
+        "a time only the calculation produced must not read as a plan somebody "
+        f"made: {data}"
+    )
+    assert data["leg"] == "", data
+
+
 def check_module_wiring() -> None:
     """The modules load, and the schedule view sends team plans to the timeline."""
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
@@ -432,6 +462,7 @@ def main() -> None:
     check_narrow_column_and_long_names()
     check_slot_order_follows_the_journey()
     check_real_backend_output_renders()
+    check_only_a_decision_reads_as_planned()
     check_module_wiring()
     print("PASS: team risk bar, travel team card and team timeline contracts")
 

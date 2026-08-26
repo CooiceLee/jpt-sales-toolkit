@@ -710,6 +710,13 @@ const ApiClient = (function() {
         });
     }
 
+    async function getTripFlexibleSuggestions(planId, data = {}) {
+        return request(`/review/trip-plans/${planId}/flexible-suggestions`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }
+
     async function setTripMember(planId, data) {
         return request(`/review/trip-plans/${planId}/members`, {
             method: 'PUT',
@@ -1181,6 +1188,7 @@ const ApiClient = (function() {
         addTripFreeStop,
         updateTripFreeStop,
         archiveTripFreeStop,
+        getTripFlexibleSuggestions,
         setTripMember,
         removeTripMember,
         getTripTransportSuggestions,

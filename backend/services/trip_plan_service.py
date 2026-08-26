@@ -10,7 +10,11 @@ from ..repositories.base import generate_uuid, now_iso
 from .trip_leg_contract import normalize_priority, validate_time_windows
 from .trip_leg_repository import TripLegRepository
 from .trip_member_repository import TripMemberRepository
-from .trip_team_adapter import calculate_team_itinerary, persist_team_itinerary
+from .trip_team_adapter import (
+    calculate_team_itinerary,
+    persist_team_itinerary,
+    suggest_team_visits,
+)
 from .trip_free_stop_repository import FREE_STOP_CATEGORIES, TripFreeStopRepository
 from .trip_plan_invalidation import (
     clear_locked_overrides_for_stops,
@@ -1152,6 +1156,13 @@ class TripPlanService:
             return None
         expected_version = data.pop("row_version", None)
         self.core._assert_row_version(current, expected_version)
+        # A suggestion is worked out from the whole plan, so applying one has to
+        # check the plan has not moved on - another visit's time, who is
+        # travelling, or who attends what would all make it wrong. Ordinary stop
+        # edits do not send this and are unaffected.
+        expected_plan_version = data.pop("plan_row_version", None)
+        if expected_plan_version is not None:
+            self.core._assert_row_version(plan, expected_plan_version)
 
         requested_sequence = data.pop("sequence_no", None)
         ordered_refs = self.free_stop_repo.active_references(plan_id)
@@ -1171,6 +1182,7 @@ class TripPlanService:
             "duration_half_days",
             "preferred_period",
             "schedule_locked",
+            "planned_time_accepted",
             "confirmation_status",
             "visit_purpose",
             "notes",
@@ -1202,6 +1214,10 @@ class TripPlanService:
             update_data["duration_half_days"] = update_data["stay_days"] * 2
         if "schedule_locked" in update_data:
             update_data["schedule_locked"] = 1 if update_data["schedule_locked"] else 0
+        if "planned_time_accepted" in update_data:
+            update_data["planned_time_accepted"] = (
+                1 if update_data["planned_time_accepted"] else 0
+            )
         for bool_key in ("visit_sample_needed", "visit_quote_needed"):
             if bool_key in update_data:
                 update_data[bool_key] = 1 if update_data[bool_key] else 0
@@ -1452,6 +1468,29 @@ class TripPlanService:
             raise
 
         return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
+    def suggest_trip_flexible_visits(
+        self, plan_id: str, data: dict, actor_id: str, actor_role: str
+    ) -> Optional[dict]:
+        """Propose a time for each customer visit with none agreed.
+
+        Nothing is written. The plan's version comes back with the suggestions
+        so applying one can check the plan it was worked out from is still the
+        plan being changed.
+        """
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None
+        if plan.get("planning_mode") != "team":
+            raise ValueError(
+                "Flexible visit suggestions are part of team planning"
+            )
+        suggestions = suggest_team_visits(self.core, self.member_repo, plan, data)
+        return {
+            "plan_id": plan_id,
+            "plan_row_version": int(plan.get("row_version") or 1),
+            "suggestions": suggestions,
+        }
 
     def set_trip_member(self, plan_id: str, data: dict, actor_id: str,
                         actor_role: str) -> Optional[dict]:

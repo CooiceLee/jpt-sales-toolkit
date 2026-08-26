@@ -28,6 +28,7 @@ from .trip_planning_schema import (
     apply_trip_planning_schema_v6,
     apply_trip_planning_schema_v7,
     apply_trip_planning_schema_v8,
+    apply_trip_planning_schema_v9,
 )
 
 # Database connection singleton
@@ -35,7 +36,7 @@ _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
 _connection_init_lock = threading.RLock()
 _SQLITE_BUSY_TIMEOUT_MS = 5000
-APP_SCHEMA_VERSION = 8
+APP_SCHEMA_VERSION = 9
 APP_SCHEMA_MIGRATIONS = (
     # Historical migration numbers are immutable. Future schema versions must
     # append a new explicit tuple instead of rebinding the v1 record.
@@ -47,6 +48,7 @@ APP_SCHEMA_MIGRATIONS = (
     (6, "trip_plan_half_day_schedule_v1"),
     (7, "trip_plan_flight_airports_v1"),
     (8, "trip_plan_team_members_v1"),
+    (9, "trip_plan_accepted_times_v1"),
 )
 _APP_SCHEMA_LEDGER_DDL = """
 CREATE TABLE IF NOT EXISTS app_schema_migrations (
@@ -320,6 +322,11 @@ def _apply_runtime_schema_v8(conn: sqlite3.Connection) -> None:
     apply_trip_planning_schema_v8(conn)
 
 
+def _apply_runtime_schema_v9(conn: sqlite3.Connection) -> None:
+    """Tell a time somebody accepted from one the calculation produced."""
+    apply_trip_planning_schema_v9(conn)
+
+
 def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     """Reapply every idempotent runtime step when drift is detected."""
     _apply_runtime_schema_v1(conn)
@@ -330,6 +337,7 @@ def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     _apply_runtime_schema_v6(conn)
     _apply_runtime_schema_v7(conn)
     _apply_runtime_schema_v8(conn)
+    _apply_runtime_schema_v9(conn)
 
 
 def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> None:
@@ -348,6 +356,7 @@ def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> Non
             6: _apply_runtime_schema_v6,
             7: _apply_runtime_schema_v7,
             8: _apply_runtime_schema_v8,
+            9: _apply_runtime_schema_v9,
         }
         for version, name in APP_SCHEMA_MIGRATIONS:
             if version <= current:
