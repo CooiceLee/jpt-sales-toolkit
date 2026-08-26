@@ -732,6 +732,8 @@
         ['Trip plan created', '出差计划已创建。'],
         // Team planning
         ['All team', '全部成员'],
+        ['This visit', '该拜访'],
+        ['{stop} was planned for {plannedDate} but moved to {date} {period}: the team cannot get there earlier. Confirm the new time, or change the plan.', '{stop}原定 {plannedDate}，已调整为 {date} {period}：团队无法更早到达。请确认新时间，或调整计划。'],
         ['No route is drawn for {members} yet: the plan cannot say where they are.', '暂不绘制 {members} 的路线：当前计划无法确定其所在位置。'],
         ['Travel Team', '出差团队'], ['Planning mode', '规划模式'],
         ['One traveller', '单人出行'], ['Travel team', '团队出行'],

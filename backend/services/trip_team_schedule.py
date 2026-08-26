@@ -56,7 +56,11 @@ class TeamEvent:
     point: dict
     duration_half_days: int
     participants: tuple
+    # What the customer agreed to. A fact: the plan is built around it.
     booked_slot: tuple | None = None
+    # What we decided, and have not asked the customer about. A plan: it holds
+    # its place, but travel can push it later without anything being wrong.
+    planned_slot: tuple | None = None
     preferred_period: str = "auto"
     label: str = ""
 
@@ -276,9 +280,11 @@ def _event_start_slot(core, ctx: TeamScheduleContext, event, travelling,
                       inbound):
     """When this event begins, or None if there is no way to say.
 
-    A booked appointment is a fact and needs no arrival time. An event with no
-    booked time starts once its last attendee has got there, which cannot be
-    worked out while somebody's position is unknown.
+    A booked appointment is a fact and needs no arrival time. Anything else
+    starts once its last attendee has got there, which cannot be worked out
+    while somebody's position is unknown. A time we planned ourselves holds that
+    place if the team can be there by then, and otherwise gives way to when they
+    actually arrive - it was our decision, not the customer's.
     """
     if event.booked_slot:
         return event.booked_slot
@@ -288,7 +294,22 @@ def _event_start_slot(core, ctx: TeamScheduleContext, event, travelling,
     ]
     if len(inbound) < len(travelling) or not arrivals:
         return None
-    return max(arrivals, key=core._slot_key)
+    earliest = max(arrivals, key=core._slot_key)
+    if not event.planned_slot:
+        return earliest
+    if core._slot_key(event.planned_slot) >= core._slot_key(earliest):
+        return event.planned_slot
+    ctx.result.risks.append(
+        {
+            "kind": "planned_visit_moved",
+            "stop_id": event.stop_id,
+            "planned_date": event.planned_slot[0].isoformat(),
+            "planned_period": event.planned_slot[1],
+            "date": earliest[0].isoformat(),
+            "period": earliest[1],
+        }
+    )
+    return earliest
 
 
 def _record_unattended_event(ctx: TeamScheduleContext, event) -> None:

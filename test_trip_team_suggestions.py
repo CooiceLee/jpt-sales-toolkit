@@ -211,6 +211,171 @@ def check_the_scarce_slot_goes_to_the_visit_with_no_alternative(service) -> None
     assert found["stu"].date is None
 
 
+def check_an_applied_suggestion_holds_its_place(service) -> None:
+    """A time we decided is honoured, and is not suggested all over again.
+
+    Applying a suggestion saves the date and period without locking the visit,
+    because the customer has not agreed to anything. If the calculation only
+    looked at locked visits, the button would appear to work and the next
+    preview would treat the visit as unscheduled.
+    """
+    team = ("zhang",)
+    events = [
+        visit("fra", FRANKFURT, ["zhang"], (date(2026, 9, 16), "AM")),
+        TeamEvent("stu", "customer", STUTTGART, 1, ("zhang",), None,
+                  (date(2026, 9, 21), "AM"), label="stu"),
+    ]
+    # Already arranged, so there is nothing left to suggest.
+    assert suggest_flexible_visits(service, team, events, settings(team)) == []
+
+    from backend.services.trip_team_schedule import plan_team_itinerary
+    result = plan_team_itinerary(
+        service, team, events, {"__default__": SHANGHAI},
+        (date(2026, 9, 14), "AM"), ["flight", "drive", "ground_public"],
+        destinations={"__default__": SHANGHAI}, leg_settings={},
+    )
+    placed = [
+        item for item in result.schedule_items
+        if item["source_id"] == "stu" and item["item_type"] != "leg"
+    ]
+    assert placed, "the visit never reached the schedule"
+    assert (placed[0]["date"], placed[0]["period"]) == ("2026-09-21", "AM"), (
+        f"an applied suggestion must hold its place: {placed[0]}"
+    )
+
+
+def check_saved_times_reach_the_calculation(service) -> None:
+    """A saved time becomes an appointment or a plan, depending on the lock.
+
+    This is the step Apply depends on: without it the date the user applied is
+    read off the stop and thrown away, and the visit comes back as unscheduled.
+    """
+    from backend.services.trip_team_adapter import build_team_events
+
+    def stop(stop_id, locked):
+        return {
+            "id": stop_id, "stop_kind": "customer", "customer_name": stop_id,
+            "lat": 48.7758, "lng": 9.1829, "duration_half_days": 1,
+            "planned_date": "2026-09-21", "planned_start_period": "AM",
+            "schedule_locked": locked, "briefing": {"participants": []},
+        }
+
+    events = {
+        event.stop_id: event for event in build_team_events(
+            service,
+            {"stops": [stop("locked", 1), stop("applied", 0),
+                       {**stop("open", 0), "planned_date": None,
+                        "planned_start_period": None}]},
+            {},
+        )
+    }
+    agreed = events["locked"]
+    assert agreed.booked_slot == (date(2026, 9, 21), "AM"), agreed
+    assert agreed.planned_slot is None
+
+    applied = events["applied"]
+    assert applied.booked_slot is None, (
+        "an unlocked visit is not an appointment: the customer agreed nothing"
+    )
+    assert applied.planned_slot == (date(2026, 9, 21), "AM"), (
+        f"an applied suggestion must reach the calculation: {applied}"
+    )
+
+    assert events["open"].booked_slot is None
+    assert events["open"].planned_slot is None
+
+
+def check_a_planned_time_gives_way_to_travel(service) -> None:
+    """Our own plan moves if the team cannot be there; an appointment does not."""
+    from backend.services.trip_team_schedule import plan_team_itinerary
+
+    team = ("zhang",)
+    # Frankfurt on the 16th, then Stuttgart planned for the same morning, which
+    # nobody can be in two places for.
+    events = [
+        visit("fra", FRANKFURT, ["zhang"], (date(2026, 9, 16), "AM")),
+        TeamEvent("stu", "customer", STUTTGART, 1, ("zhang",), None,
+                  (date(2026, 9, 16), "AM"), label="stu"),
+    ]
+    result = plan_team_itinerary(
+        service, team, events, {"__default__": SHANGHAI},
+        (date(2026, 9, 14), "AM"), ["drive"],
+        destinations={"__default__": SHANGHAI}, leg_settings={},
+    )
+    moved = [risk for risk in result.risks if risk["kind"] == "planned_visit_moved"]
+    assert moved, f"a planned time that slipped must be reported: {result.risks}"
+    assert moved[0]["stop_id"] == "stu"
+    assert moved[0]["planned_date"] == "2026-09-16"
+    assert (moved[0]["date"], moved[0]["period"]) > ("2026-09-16", "AM"), moved[0]
+    # And it is not reported as an appointment that could not be reached: it was
+    # never an appointment.
+    assert not [
+        risk for risk in result.risks
+        if risk["kind"] == "cannot_reach_booked_visit"
+        and risk.get("stop_id") == "stu"
+    ]
+
+
+def check_a_bigger_clash_is_not_the_old_clash(service) -> None:
+    """A candidate that makes an existing clash worse is not offered.
+
+    The plan already has two visits booked over each other. A flexible visit put
+    in the same half-day makes it a three-way clash - a different risk, and one
+    the candidate caused. Comparing only kind, member and half-day would read it
+    as the risk that was already there and offer the candidate anyway.
+    """
+    team = ("zhang",)
+    events = [
+        visit("fra", FRANKFURT, ["zhang"], (date(2026, 9, 16), "AM")),
+        visit("par", PARIS, ["zhang"], (date(2026, 9, 16), "AM")),
+        visit("stu", STUTTGART, ["zhang"]),
+    ]
+    found = suggest_flexible_visits(service, team, events, settings(team))
+    suggestion = [item for item in found if item.stop_id == "stu"][0]
+    assert suggestion.date != "2026-09-16" or suggestion.period != "AM", (
+        "a candidate that joins an existing clash must not be suggested: "
+        f"{suggestion}"
+    )
+
+
+def check_a_long_visit_does_not_run_into_a_weekend(service) -> None:
+    """A visit over several half-days sits inside working days for all of them."""
+    # 2026-09-18 is a Friday. A whole-day visit starting Friday PM would take
+    # Saturday morning, and the calculation does not step a fixed time over a
+    # weekend, so that half-day must not be offered as a start at all.
+    starts = candidate_slots((date(2026, 9, 18), "AM"), date(2026, 9, 22),
+                             True, (), half_days=2)
+    assert (date(2026, 9, 18), "AM") in starts, starts
+    assert (date(2026, 9, 18), "PM") not in starts, (
+        f"a whole-day visit cannot start on Friday afternoon: {starts}"
+    )
+    single = candidate_slots((date(2026, 9, 18), "AM"), date(2026, 9, 22),
+                             True, (), half_days=1)
+    assert (date(2026, 9, 18), "PM") in single, (
+        "a half-day visit on Friday afternoon is fine"
+    )
+    # A holiday in the middle of a long visit rules its start out too.
+    over_holiday = candidate_slots((date(2026, 9, 21), "AM"), date(2026, 9, 25),
+                                   True, ("2026-09-22",), half_days=4)
+    assert not any(day == date(2026, 9, 21) for day, _ in over_holiday), (
+        f"a two-day visit cannot run through a holiday: {over_holiday}"
+    )
+
+
+def check_only_customer_visits_are_suggested(service) -> None:
+    """Hotels and airports are not customer visits and are left alone."""
+    team = ("zhang",)
+    events = [
+        visit("fra", FRANKFURT, ["zhang"], (date(2026, 9, 16), "AM")),
+        TeamEvent("hotel", "free", STUTTGART, 2, ("zhang",), label="hotel"),
+        visit("muc", MUNICH, ["zhang"]),
+    ]
+    found = suggest_flexible_visits(service, team, events, settings(team))
+    assert {item.stop_id for item in found} == {"muc"}, (
+        f"only customer visits belong in this suggestion: {found}"
+    )
+
+
 def check_suggesting_writes_nothing(service) -> None:
     """A suggestion is a proposal: the database is untouched until Apply."""
     conn = service.lead_repo.conn
@@ -236,6 +401,12 @@ def main() -> None:
     check_weekends_are_not_suggested(service)
     check_no_workable_time_is_an_answer(service)
     check_the_scarce_slot_goes_to_the_visit_with_no_alternative(service)
+    check_an_applied_suggestion_holds_its_place(service)
+    check_saved_times_reach_the_calculation(service)
+    check_a_planned_time_gives_way_to_travel(service)
+    check_a_bigger_clash_is_not_the_old_clash(service)
+    check_a_long_visit_does_not_run_into_a_weekend(service)
+    check_only_customer_visits_are_suggested(service)
     check_suggesting_writes_nothing(service)
     close_db()
     print("PASS: flexible visit suggestions")

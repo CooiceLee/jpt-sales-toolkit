@@ -36,17 +36,34 @@ class Suggestion:
     reason: str = "suggested"
 
 
+def _workday(day: date, avoid_weekends: bool, holidays: set) -> bool:
+    if avoid_weekends and day.weekday() >= 5:
+        return False
+    return day.isoformat() not in holidays
+
+
 def candidate_slots(start: tuple, end: date | None, avoid_weekends: bool,
-                    holidays, limit: int = 60) -> list:
-    """Every half-day the visit could be given, in order."""
+                    holidays, limit: int = 60, half_days: int = 1) -> list:
+    """Every half-day the visit could start in, in order.
+
+    A visit lasting more than one half-day has to sit inside working days for
+    all of them: once it is being tried it behaves like an appointment, and the
+    calculation does not step an appointment over a Saturday. Checking only the
+    half-day it starts in would let a Friday afternoon visit run into one.
+    """
+    excluded = set(holidays or ())
+    span = max(1, int(half_days or 1))
     slots = []
     slot = start
     while len(slots) < limit:
-        day, period = slot
+        day, _ = slot
         if end and day > end:
             break
-        if not avoid_weekends or day.weekday() < 5:
-            if day.isoformat() not in set(holidays or ()):
+        occupied = [slot]
+        for _ in range(span - 1):
+            occupied.append(next_slot(occupied[-1]))
+        if all(_workday(item[0], avoid_weekends, excluded) for item in occupied):
+            if not (end and occupied[-1][0] > end):
                 slots.append(slot)
         slot = next_slot(slot)
     return slots
@@ -71,9 +88,19 @@ def _blocked(result, baseline_risks: set) -> bool:
 
 
 def _risk_key(risk: dict) -> tuple:
+    """What makes two risks the same risk.
+
+    A clash between two visits and a clash between the same two plus a third
+    share their kind, member and half-day. Without the stops in the key the
+    bigger one looks like the one the plan already had, and the candidate that
+    caused it is offered as though it changed nothing.
+    """
     return (
         risk["kind"], risk.get("user_id") or risk.get("member_id"),
-        risk.get("stop_id"), risk.get("date"), risk.get("period"),
+        risk.get("stop_id"),
+        tuple(sorted(risk.get("stop_ids") or ())),
+        tuple(sorted(risk.get("user_ids") or ())),
+        risk.get("date"), risk.get("period"),
     )
 
 
@@ -112,8 +139,13 @@ def suggest_flexible_visits(core, team, events, settings) -> list:
     already names, and a visit naming nobody is the whole team, which is what
     the rest of team planning already means by it.
     """
+    # Customer visits only. A hotel or an airport also has no agreed time, but
+    # deciding when to sleep somewhere is a different question from deciding
+    # when to see a customer, and mixing them here would answer neither well.
     flexible = [
-        index for index, event in enumerate(events) if not event.booked_slot
+        index for index, event in enumerate(events)
+        if event.kind == "customer"
+        and not event.booked_slot and not event.planned_slot
     ]
     if not flexible:
         return []
@@ -127,17 +159,21 @@ def suggest_flexible_visits(core, team, events, settings) -> list:
     baseline_risks = {_risk_key(risk) for risk in baseline.risks}
     baseline_cost = _cost(baseline)
 
-    slots = candidate_slots(
-        settings["initial_slot"], settings.get("end"),
-        settings.get("avoid_weekends", True), settings.get("holidays") or (),
-    )
+    def slots_for(event):
+        return candidate_slots(
+            settings["initial_slot"], settings.get("end"),
+            settings.get("avoid_weekends", True),
+            settings.get("holidays") or (),
+            half_days=event.duration_half_days,
+        )
     working = list(events)
     suggestions = []
     remaining = list(flexible)
     while remaining:
         options = {
             index: _feasible(
-                core, team, working, settings, index, slots, baseline_risks
+                core, team, working, settings, index,
+                slots_for(working[index]), baseline_risks
             )
             for index in remaining
         }

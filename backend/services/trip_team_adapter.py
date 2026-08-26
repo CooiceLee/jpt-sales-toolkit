@@ -22,17 +22,31 @@ def _attendees(core, stop: dict) -> tuple:
     )
 
 
-def _booked_slot(core, stop: dict) -> tuple | None:
-    """A locked visit is an appointment: a fact the plan has to be built around."""
-    if not stop.get("schedule_locked"):
-        return None
+def _saved_slot(core, stop: dict) -> tuple | None:
+    """The time saved on this stop, whatever it means."""
     day = core._parse_date(stop.get("planned_date"))
     period = stop.get("planned_start_period")
     if not day or period not in ("AM", "PM"):
+        return None
+    return day, period
+
+
+def _slots_of(core, stop: dict) -> tuple:
+    """What is agreed with the customer, and what we merely decided.
+
+    A locked visit is an appointment and becomes a fact the plan is built
+    around. An unlocked visit that still has a saved time is a plan of ours -
+    a suggestion somebody accepted - and it has to be honoured, or applying one
+    would appear to work and then be forgotten by the next calculation.
+    """
+    saved = _saved_slot(core, stop)
+    if not stop.get("schedule_locked"):
+        return None, saved
+    if saved is None:
         raise ValueError(
             "Save a visit date and AM/PM period before locking this visit"
         )
-    return day, period
+    return saved, None
 
 
 def build_team_events(core, plan: dict, stop_durations: dict) -> list:
@@ -59,6 +73,7 @@ def build_team_events(core, plan: dict, stop_durations: dict) -> list:
         )
         if kind == "free" and stop.get("category") in core.WAYPOINT_CATEGORIES:
             half_days = 0
+        booked, planned = _slots_of(core, stop)
         events.append(
             TeamEvent(
                 stop["id"], kind,
@@ -66,7 +81,8 @@ def build_team_events(core, plan: dict, stop_durations: dict) -> list:
                  "stop_kind": kind},
                 max(1, int(half_days)) if kind != "free" else int(half_days),
                 _attendees(core, stop),
-                _booked_slot(core, stop),
+                booked,
+                planned,
                 label=(
                     stop.get("customer_name") or stop.get("location_name")
                     or stop["id"]

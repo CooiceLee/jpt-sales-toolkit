@@ -22,6 +22,10 @@
             '{member} is not expected to reach the visit booked for {date} {period}. Confirm the travel, or move the appointment.',
             risk
         ),
+        planned_visit_moved: risk => t(
+            '{stop} was planned for {plannedDate} but moved to {date} {period}: the team cannot get there earlier. Confirm the new time, or change the plan.',
+            risk
+        ),
         member_return_overrun: risk => t(
             '{member} is expected back on {date}, after the planned end of the trip on {deadline}. Confirm the return arrangement.',
             risk
@@ -34,12 +38,19 @@
         return member?.display_name || userId;
     }
 
+    function stopName(plan, stopId) {
+        const stop = (plan?.stops || []).find(item => item.id === stopId);
+        return stop?.customer_name || stop?.location_name || t('This visit');
+    }
+
     function describe(plan, risk) {
         const build = SENTENCES[risk?.kind];
         if (!build) return '';
         return build({
             ...risk,
             member: memberName(plan, risk.member_id || risk.user_id),
+            stop: stopName(plan, risk.stop_id),
+            plannedDate: risk.planned_date,
             period: t(risk.period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),
             count: risk.visit_count || (risk.stop_ids || []).length,
         });
