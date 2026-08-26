@@ -9,6 +9,8 @@ from typing import Optional
 from ..repositories.base import generate_uuid, now_iso
 from .trip_leg_contract import normalize_priority, validate_time_windows
 from .trip_leg_repository import TripLegRepository
+from .trip_member_repository import TripMemberRepository
+from .trip_team_adapter import calculate_team_itinerary, persist_team_itinerary
 from .trip_free_stop_repository import FREE_STOP_CATEGORIES, TripFreeStopRepository
 from .trip_plan_invalidation import (
     clear_locked_overrides_for_stops,
@@ -33,6 +35,21 @@ from .trip_export_visit import (
 )
 from .trip_export_xlsx import render_trip_xlsx
 
+def _participant_ids_json(value) -> str:
+    """Which team members attend a free stop. Empty means everybody on the trip."""
+    ids = [str(item).strip() for item in (value or []) if str(item).strip()]
+    return json.dumps(list(dict.fromkeys(ids)), ensure_ascii=False)
+
+
+PLANNING_MODES = ("legacy", "team")
+
+
+def _planning_mode(value) -> str:
+    """The mode is a deliberate choice, never guessed from who is on the trip."""
+    text = (value or "").strip().lower()
+    return text if text in PLANNING_MODES else "legacy"
+
+
 class TripPlanService:
     """Extracted ReviewService component."""
 
@@ -41,6 +58,7 @@ class TripPlanService:
         self.leg_repo = TripLegRepository(core.lead_repo.conn)
         self.free_stop_repo = TripFreeStopRepository(core.lead_repo.conn)
         self.briefing_repo = TripVisitBriefingRepository(core.lead_repo.conn)
+        self.member_repo = TripMemberRepository(core.lead_repo.conn)
         self.transport_suggestions = get_transport_suggestion_service()
 
     @staticmethod
@@ -204,10 +222,11 @@ class TripPlanService:
                 departure_window_start, departure_window_end,
                 return_window_start, return_window_end,
                 avoid_weekends, holiday_dates, description, status,
+                planning_mode,
                 created_at, created_by, updated_at, updated_by
             ) VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -235,6 +254,7 @@ class TripPlanService:
                 prepared.get("holiday_dates"),
                 prepared.get("description"),
                 data.get("status") or "Draft",
+                _planning_mode(data.get("planning_mode")),
                 now,
                 actor_id,
                 now,
@@ -334,6 +354,7 @@ class TripPlanService:
         )
         summary = plan_data.get("itinerary_summary") or {}
         is_stale = summary.get("stale") is True or summary.get("valid") is False
+        plan_data["members"] = self.member_repo.list_active(plan_id)
         plan_data["legs"] = [] if is_stale else self.leg_repo.list_active(plan_id)
         plan_data["schedule_items"] = (
             [] if is_stale else list(summary.get("schedule_items") or [])
@@ -392,6 +413,7 @@ class TripPlanService:
             "return_window_end",
             "avoid_weekends",
             "holiday_dates",
+            "planning_mode",
         }
         update_data = self.core._prepare_trip_plan_data({key: value for key, value in data.items() if key in allowed})
         if not update_data:
@@ -419,6 +441,7 @@ class TripPlanService:
             "return_window_end",
             "avoid_weekends",
             "holiday_dates",
+            "planning_mode",
         }
         route_stale = bool(route_fields.intersection(update_data))
         if route_stale and (
@@ -876,9 +899,10 @@ class TripPlanService:
                     planned_start_period, planned_end_period,
                     duration_half_days, stay_days, preferred_period, schedule_locked,
                     confirmation_status, visit_purpose, notes,
+                    participant_user_ids_json,
                     created_at, created_by, updated_at, updated_by
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     free_stop_id,
@@ -902,6 +926,7 @@ class TripPlanService:
                     data.get("confirmation_status") or "unconfirmed",
                     data.get("visit_purpose"),
                     data.get("notes"),
+                    _participant_ids_json(data.get("participant_user_ids")),
                     now,
                     actor_id,
                     now,
@@ -948,8 +973,13 @@ class TripPlanService:
             "planned_start_period", "planned_end_period",
             "stay_days", "duration_half_days", "preferred_period",
             "schedule_locked", "confirmation_status", "visit_purpose", "notes",
+            "participant_user_ids",
         }
         update_data = {key: value for key, value in data.items() if key in allowed}
+        if "participant_user_ids" in update_data:
+            update_data["participant_user_ids_json"] = _participant_ids_json(
+                update_data.pop("participant_user_ids")
+            )
         for required_key in (
             "category", "location_name", "lat", "lng", "stay_days",
             "duration_half_days", "preferred_period", "schedule_locked",
@@ -1308,6 +1338,10 @@ class TripPlanService:
             if not title:
                 raise ValueError("title cannot be empty")
             data["title"] = title
+        if (plan.get("planning_mode") or "legacy") == "team":
+            return self._generate_team_itinerary(
+                plan, data, actor_id, actor_role, expected_version
+            )
         calculation = self.core._calculate_trip_itinerary(plan, data)
         summary = calculation["summary"]
         if not summary["within_date_window"]:
@@ -1393,6 +1427,74 @@ class TripPlanService:
 
         return self.core.get_trip_plan(plan_id, actor_id, actor_role)
 
+    def set_trip_member(self, plan_id: str, data: dict, actor_id: str,
+                        actor_role: str) -> Optional[dict]:
+        """Put a team account on the trip, or change where they travel from."""
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None
+        user_id = str(data.get("user_id") or "").strip()
+        if not user_id:
+            raise ValueError("user_id is required")
+        member = self.member_repo.add(plan_id, user_id, data, actor_id)
+        if member is None:
+            raise ValueError(
+                "Trip members must be active team accounts"
+            )
+        self._invalidate_trip_itinerary(
+            plan_id, actor_id, "trip_team_changed", now_iso()
+        )
+        return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
+    def remove_trip_member(self, plan_id: str, user_id: str, actor_id: str,
+                           actor_role: str) -> Optional[dict]:
+        """Take somebody off the trip; their calculated route goes with them."""
+        plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        if not plan:
+            return None
+        if not self.member_repo.remove(plan_id, user_id):
+            return None
+        self._invalidate_trip_itinerary(
+            plan_id, actor_id, "trip_team_changed", now_iso()
+        )
+        return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
+    def _generate_team_itinerary(
+        self, plan: dict, data: dict, actor_id: str, actor_role: str,
+        expected_version,
+    ) -> Optional[dict]:
+        """Save a team itinerary.
+
+        A trip that runs past its end date is reported as a risk, not refused:
+        with fixed appointments the dates are often the thing that has to give,
+        and the planner's job is to show that, not to hide it.
+        """
+        plan_id = plan["id"]
+        summary = calculate_team_itinerary(self.core, self.member_repo, plan, data)
+        conn = self.core.lead_repo.conn
+        now = now_iso()
+        try:
+            persist_team_itinerary(self, plan_id, summary, actor_id, now)
+            conn.execute(
+                """
+                UPDATE trip_plans
+                SET itinerary_summary = ?, itinerary_generated_at = ?,
+                    updated_at = ?, updated_by = ?, row_version = row_version + 1
+                WHERE id = ?
+                """
+                + (" AND row_version = ?" if expected_version is not None else ""),
+                (
+                    json.dumps(summary, ensure_ascii=False), now, now, actor_id,
+                    plan_id,
+                    *([expected_version] if expected_version is not None else []),
+                ),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+
     def preview_trip_itinerary(
         self,
         plan_id: str,
@@ -1404,6 +1506,13 @@ class TripPlanService:
         plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
         if not plan:
             return None
+        if (plan.get("planning_mode") or "legacy") == "team":
+            return {
+                **plan,
+                "itinerary_summary": calculate_team_itinerary(
+                    self.core, self.member_repo, plan, data
+                ),
+            }
         calculation = self.core._calculate_trip_itinerary(plan, data)
         return self.core._trip_itinerary_preview_plan(plan, calculation)
 

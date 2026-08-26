@@ -67,6 +67,13 @@ def _next_slot(slot: tuple) -> tuple:
     return day + timedelta(days=1), "AM"
 
 
+def _previous_slot(slot: tuple) -> tuple:
+    day, period = slot
+    if period == "PM":
+        return day, "AM"
+    return day - timedelta(days=1), "PM"
+
+
 def occupied_slots(event: "TeamEvent") -> tuple:
     """The half-days a booked event actually takes up.
 
@@ -271,7 +278,7 @@ def _ordered_events(events: list) -> list:
 
 
 def build_member_leg(core, member_id, from_point, to_point, leg_key,
-                     priority, leg_settings) -> tuple:
+                     priority, leg_settings, sequence_no: int = 1) -> tuple:
     """One member's journey between two places, with everything v0.12 learned.
 
     Reuses the stored transport choice and the airports recorded for this
@@ -280,7 +287,9 @@ def build_member_leg(core, member_id, from_point, to_point, leg_key,
     planning already has.
     """
     override = (leg_settings or {}).get((member_id, leg_key))
-    leg = build_leg(core, 1, from_point, to_point, priority, override)
+    # The sequence is the member's own lane order: legs are read back sorted by
+    # it, so leaving every leg at 1 would lose each person's route order.
+    leg = build_leg(core, sequence_no, from_point, to_point, priority, override)
     leg["member_id"] = member_id
     leg["leg_key"] = leg_key
     segments = core._expand_flight_leg(leg, from_point, to_point, priority)
@@ -321,10 +330,45 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
         for user in team
     }
     previous_stop: dict = {user: None for user in team}
+    lane_sequence: dict = {user: 0 for user in team}
     totals = {
-        user: {"distance_km": 0.0, "travel_hours": 0.0, "route_complete": True}
+        user: {
+            "distance_km": 0.0, "travel_hours": 0.0, "route_complete": True,
+            "calculated_end_date": None, "calculated_end_period": None,
+        }
         for user in team
     }
+
+    def record_travel(user, leg, from_slot, elapsed):
+        slots = [from_slot]
+        for _ in range(max(0, int(elapsed)) - 1):
+            slots.append(_next_slot(slots[-1]))
+        leg["planned_start_date"] = slots[0][0].isoformat() if elapsed else None
+        leg["planned_start_period"] = slots[0][1] if elapsed else None
+        leg["planned_end_date"] = slots[-1][0].isoformat() if elapsed else None
+        leg["planned_end_period"] = slots[-1][1] if elapsed else None
+        if not elapsed:
+            return
+        for segment in leg.get("segments") or [None]:
+            result.schedule_items.append(
+                {
+                    "member_id": user,
+                    "source_id": leg["leg_key"] if segment is None
+                    else f"{leg['leg_key']}#{segment['role']}",
+                    "date": slots[0][0].isoformat(),
+                    "period": slots[0][1],
+                    "item_type": "leg",
+                    "title": (
+                        f"{leg.get('from_label') or '-'} \u2192 "
+                        f"{leg.get('to_label') or '-'}"
+                    ) if segment is None else (
+                        f"{segment.get('from_label') or '-'} \u2192 "
+                        f"{segment.get('to_label') or '-'}"
+                    ),
+                    "selected_mode": (segment or leg).get("selected_mode"),
+                    "inbound_travel_resolved": True,
+                }
+            )
 
     def record(event, user, slots, inbound_resolved):
         result.schedule_items.append(
@@ -342,6 +386,7 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
             {
                 "member_id": user,
                 "id": event.stop_id,
+                "stop_kind": event.kind,
                 "planned_date": slots[0][0].isoformat(),
                 "planned_start_period": slots[0][1],
                 "planned_end_date": slots[-1][0].isoformat(),
@@ -397,7 +442,7 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
             leg_key = f"{previous_stop[user] or 'origin'}>{event.stop_id}"
             inbound[user] = build_member_leg(
                 core, user, state.location, event.point, leg_key, priority,
-                leg_settings,
+                leg_settings, lane_sequence[user] + 1,
             )
 
         if event.booked_slot:
@@ -427,6 +472,8 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
             resolved = user in inbound
             if resolved:
                 leg, elapsed = inbound[user]
+                lane_sequence[user] += 1
+                record_travel(user, leg, states[user].slot, elapsed)
                 result.legs.append(leg)
                 totals[user]["distance_km"] += float(leg["distance_km"])
                 totals[user]["travel_hours"] += float(leg["time_hours"])
@@ -467,12 +514,20 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
         leg, elapsed = build_member_leg(
             core, user, state.location, home,
             f"{previous_stop[user]}>destination", priority, leg_settings,
+            lane_sequence[user] + 1,
         )
+        lane_sequence[user] += 1
+        record_travel(user, leg, state.slot, elapsed)
         result.legs.append(leg)
         totals[user]["distance_km"] += float(leg["distance_km"])
         totals[user]["travel_hours"] += float(leg["time_hours"])
         state.slot = core._after_slots(state.slot, elapsed)
         state.location = home
 
+    for user in team:
+        reached = states[user].slot
+        last = _previous_slot(reached)
+        totals[user]["calculated_end_date"] = last[0].isoformat()
+        totals[user]["calculated_end_period"] = last[1]
     result.member_totals = totals
     return result

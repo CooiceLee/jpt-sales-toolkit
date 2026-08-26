@@ -110,6 +110,7 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_trip_export_renderers.py
 "$PYTHON_BIN" test_trip_planner_batch5_exports.py
 "$PYTHON_BIN" test_trip_flight_airports.py
+"$PYTHON_BIN" test_trip_team_roundtrip.py
 "$PYTHON_BIN" test_trip_planner_batch5_frontend_contract.py
 "$PYTHON_BIN" test_v09_filters_merge.py
 "$PYTHON_BIN" test_business_region_filters.py

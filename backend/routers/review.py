@@ -75,6 +75,9 @@ def _conflict_http(exc: ConflictError) -> HTTPException:
     )
 
 
+TripPlanningMode = Literal["legacy", "team"]
+
+
 class TripPlanCreate(BaseModel):
     title: str
     owner_id: Optional[str] = None
@@ -98,6 +101,7 @@ class TripPlanCreate(BaseModel):
     holiday_dates: Optional[list[str]] = None
     description: Optional[str] = None
     status: TripStatus = "Draft"
+    planning_mode: TripPlanningMode = "legacy"
 
 
 class TripPlanUpdate(BaseModel):
@@ -124,6 +128,7 @@ class TripPlanUpdate(BaseModel):
     holiday_dates: Optional[list[str]] = None
     description: Optional[str] = None
     status: Optional[TripStatus] = None
+    planning_mode: Optional[TripPlanningMode] = None
 
 
 class TripStopCreate(BaseModel):
@@ -180,6 +185,18 @@ class TripStopArchive(BaseModel):
     row_version: Optional[int] = Field(None, ge=1)
 
 
+class TripMemberUpsert(BaseModel):
+    """A team account travelling on this plan, with optional own endpoints."""
+
+    user_id: str
+    origin_name_override: Optional[str] = None
+    origin_lat_override: Optional[float] = None
+    origin_lng_override: Optional[float] = None
+    destination_name_override: Optional[str] = None
+    destination_lat_override: Optional[float] = None
+    destination_lng_override: Optional[float] = None
+
+
 class TripFreeStopCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -200,6 +217,7 @@ class TripFreeStopCreate(BaseModel):
     visit_purpose: Optional[str] = None
     notes: Optional[str] = None
     sequence_no: Optional[int] = Field(None, ge=1)
+    participant_user_ids: Optional[list[str]] = None
 
 
 class TripFreeStopUpdate(BaseModel):
@@ -223,6 +241,7 @@ class TripFreeStopUpdate(BaseModel):
     visit_purpose: Optional[str] = None
     notes: Optional[str] = None
     sequence_no: Optional[int] = Field(None, ge=1)
+    participant_user_ids: Optional[list[str]] = None
 
 
 class TripFreeStopArchive(BaseModel):
@@ -756,6 +775,47 @@ async def archive_trip_stop(
         raise _conflict_http(exc)
     if not plan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip stop not found")
+    return plan
+
+
+@router.put("/trip-plans/{plan_id}/members")
+async def set_trip_member(
+    plan_id: str,
+    request: TripMemberUpsert,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Add a team member to the trip, or change where they travel from."""
+    try:
+        plan = service.set_trip_member(
+            plan_id,
+            request.model_dump(exclude_unset=True),
+            user["id"],
+            user["role"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
+    return plan
+
+
+@router.delete("/trip-plans/{plan_id}/members/{user_id}")
+async def remove_trip_member(
+    plan_id: str,
+    user_id: str,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Take a team member off the trip."""
+    try:
+        plan = service.remove_trip_member(
+            plan_id, user_id, user["id"], user["role"]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip member not found")
     return plan
 
 

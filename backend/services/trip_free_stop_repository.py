@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 
 FREE_STOP_CATEGORIES = {"rest", "hotel", "airport", "transit", "meal", "other"}
 
@@ -38,6 +40,9 @@ class TripFreeStopRepository:
         item["result_notes"] = None
         item["lead_id"] = None
         item["customer_id"] = None
+        item["participant_user_ids"] = json.loads(
+            item.get("participant_user_ids_json") or "[]"
+        )
         return item
 
     def next_sequence(self, plan_id: str) -> int:

@@ -530,12 +530,15 @@ def check_team_itinerary(service) -> None:
     )
     kept = {
         item["source_id"] for item in result.schedule_items
-        if item["member_id"] == "zhang"
+        if item["member_id"] == "zhang" and item["item_type"] != "leg"
     }
     assert kept == {"f", "p", "m", "d"}, (
         f"every appointment stays visible, got {kept}"
     )
-    booked = [item for item in result.schedule_items if item["source_id"] == "m"]
+    booked = [
+        item for item in result.schedule_items
+        if item["source_id"] == "m" and item["item_type"] != "leg"
+    ]
     assert booked and booked[0]["date"] == "2026-09-17"
     assert booked[0]["inbound_travel_resolved"] is False
     assert "m>d" in keys, "the appointment says where they are, so travel resumes"
@@ -637,6 +640,55 @@ def check_team_travel_and_return(service) -> None:
     ], "a flown member leg must still expand into its ground transfers"
 
 
+def check_team_lanes_and_timeline(service) -> None:
+    """Each lane keeps its own order, and travel shows on the timeline."""
+    from datetime import date as _date
+
+    from backend.services.trip_team_schedule import TeamEvent, plan_team_itinerary
+
+    team = ("zhang", "li")
+
+    def place(lat, lng, label, stop_id=None, kind="stop"):
+        return {"lat": lat, "lng": lng, "label": label, "kind": kind,
+                "stop_id": stop_id}
+
+    shanghai = place(31.14, 121.80, "Shanghai", None, "origin")
+    result = plan_team_itinerary(
+        service, team,
+        [TeamEvent("f", "customer", place(50.11, 8.68, "Frankfurt", "f"), 1,
+                   ("zhang",), (_date(2026, 9, 16), "AM"), label="f"),
+         TeamEvent("m", "customer", place(48.13, 11.58, "Munich", "m"), 1,
+                   ("zhang",), (_date(2026, 9, 18), "AM"), label="m"),
+         TeamEvent("p", "customer", place(48.85, 2.35, "Paris", "p"), 1,
+                   ("li",), (_date(2026, 9, 16), "AM"), label="p")],
+        {"__default__": shanghai}, (_date(2026, 9, 15), "AM"),
+        ["flight", "drive"], destinations={"__default__": shanghai},
+    )
+
+    # Legs are read back ordered by sequence_no, so each member's own lane has
+    # to be numbered from 1 upwards or their route order is lost on reload.
+    for member in team:
+        lane = [leg for leg in result.legs if leg["member_id"] == member]
+        assert [leg["sequence_no"] for leg in lane] == list(
+            range(1, len(lane) + 1)
+        ), f"{member} lane must be numbered within its own lane, got {lane}"
+
+    # Travel has to appear on the timeline, or customers look teleported.
+    travel = [i for i in result.schedule_items if i["item_type"] == "leg"]
+    assert travel, "team travel must reach the timeline"
+    assert all(i["member_id"] in team for i in travel)
+    assert all(i["date"] and i["period"] for i in travel)
+    for leg in result.legs:
+        assert leg["planned_start_date"] and leg["planned_end_date"], (
+            f"a leg on the timeline needs its own planned time: {leg['leg_key']}"
+        )
+
+    # Each member's finish is what a return overrun can later be measured from.
+    for member in team:
+        total = result.member_totals[member]
+        assert total["calculated_end_date"] and total["calculated_end_period"]
+
+
 def check_schema() -> None:
     conn = sqlite3.connect(str(TEST_DIR / "database.sqlite"))
     columns = {row[1] for row in conn.execute("PRAGMA table_info(trip_plan_legs)")}
@@ -662,6 +714,7 @@ def main() -> None:
     check_team_primitives()
     check_team_itinerary(service)
     check_team_travel_and_return(service)
+    check_team_lanes_and_timeline(service)
     check_calendar_deadline(service)
     check_weekend_departure(service, plan_id, actor)
     close_db()

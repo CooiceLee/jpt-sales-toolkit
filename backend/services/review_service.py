@@ -240,6 +240,20 @@ class ReviewService:
     ) -> Optional[dict]:
         return self.trip_plan_service.archive_trip_stop(plan_id, stop_id, actor_id, actor_role, row_version)
 
+    def set_trip_member(
+        self, plan_id: str, data: dict, actor_id: str, actor_role: str
+    ) -> Optional[dict]:
+        return self.trip_plan_service.set_trip_member(
+            plan_id, data, actor_id, actor_role
+        )
+
+    def remove_trip_member(
+        self, plan_id: str, user_id: str, actor_id: str, actor_role: str
+    ) -> Optional[dict]:
+        return self.trip_plan_service.remove_trip_member(
+            plan_id, user_id, actor_id, actor_role
+        )
+
     def add_trip_free_stop(
         self, plan_id: str, data: dict, actor_id: str, actor_role: str
     ) -> Optional[dict]:
@@ -1328,6 +1342,7 @@ class ReviewService:
             "return_window_end",
             "avoid_weekends",
             "holiday_dates",
+            "planning_mode",
         }
         if include_system_fields:
             allowed.update({"itinerary_generated_at", "itinerary_summary"})
@@ -1336,6 +1351,10 @@ class ReviewService:
         for key in ["origin_lat", "origin_lng", "destination_lat", "destination_lng"]:
             if key in prepared:
                 prepared[key] = self._finite_float(prepared[key])
+
+        if "planning_mode" in prepared:
+            text = str(prepared["planning_mode"] or "").strip().lower()
+            prepared["planning_mode"] = text if text in ("legacy", "team") else "legacy"
 
         if "travel_mode" in prepared:
             mode = prepared["travel_mode"] or "auto"
@@ -1675,6 +1694,62 @@ class ReviewService:
             if member_id is None:
                 stored.setdefault(leg_key, {}).update(airports)
         return stored
+
+    def _team_leg_settings(self, plan_id: str, team: tuple) -> dict:
+        """Stored leg settings keyed by member, for the team calculation."""
+        repo = self.trip_plan_service.leg_repo
+        stored: dict = {}
+        for key, value in repo.locked_overrides(plan_id).items():
+            if key[0] in team:
+                stored[key] = dict(value)
+        for key, airports in repo.saved_airports(plan_id).items():
+            if key[0] in team:
+                stored.setdefault(key, {}).update(airports)
+        return stored
+
+    def _team_plan_settings(self, plan: dict, data: dict) -> dict:
+        """When the trip starts, how people travel, and when it has to be over."""
+        windows = {
+            key: data[key] if key in data else plan.get(key)
+            for key in (
+                "departure_window_start", "departure_window_end",
+                "return_window_start", "return_window_end",
+            )
+        }
+        validate_time_windows(windows)
+        start = self._parse_date(
+            data.get("start_date") or plan.get("start_date")
+            or windows.get("departure_window_start")
+        )
+        if not start:
+            raise ValueError(
+                "start_date is required before generating an itinerary"
+            )
+        end_value = (
+            data.get("end_date") if "end_date" in data else plan.get("end_date")
+        )
+        travel_mode = data.get("travel_mode") or plan.get("travel_mode") or "auto"
+        if travel_mode not in TRIP_TRAVEL_MODES:
+            raise ValueError("Unsupported travel mode")
+        if "transport_mode_priority" in data:
+            priority = normalize_priority(
+                data.get("transport_mode_priority"), travel_mode
+            )
+        elif "travel_mode" in data:
+            priority = normalize_priority(None, travel_mode)
+        else:
+            priority = normalize_priority(
+                plan.get("transport_mode_priority"), travel_mode
+            )
+        departure = self._window_slot(
+            windows.get("departure_window_start"), default_period="AM"
+        )
+        return {
+            "initial_slot": departure or (start, "AM"),
+            "priority": priority,
+            "end": self._parse_date(end_value),
+            "return_end": self._parse_date(windows.get("return_window_end")),
+        }
 
     def _expand_flight_leg(
         self, leg: dict, start_point: dict, end_point: dict, priority: list[str]
