@@ -35,6 +35,13 @@ from .trip_export_visit import (
 )
 from .trip_export_xlsx import render_trip_xlsx
 
+def _participant_ids(rows) -> frozenset:
+    """Who attends, as a set: the same people in another order is no change."""
+    return frozenset(
+        str(row.get("user_id")) for row in (rows or []) if row.get("user_id")
+    )
+
+
 def _participant_ids_json(value) -> str:
     """Which team members attend a free stop. Empty means everybody on the trip."""
     ids = [str(item).strip() for item in (value or []) if str(item).strip()]
@@ -627,6 +634,15 @@ class TripPlanService:
         location_changed = location_route_signature(
             existing["location"]
         ) != location_route_signature(payload["location"])
+        # Who goes decides the route in team planning: change the attendees and
+        # the legs, the merges, the travel time and the lanes all change with
+        # them. Order does not matter, membership does.
+        attendees_changed = (
+            plan.get("planning_mode") == "team"
+            and _participant_ids(existing.get("participants"))
+            != _participant_ids(payload.get("participants"))
+        )
+        route_changed = location_changed or attendees_changed
         next_status = payload["confirmation_status"]
         if location_changed and next_status == "confirmed":
             next_status = "needs_reconfirmation"
@@ -671,15 +687,17 @@ class TripPlanService:
                 timestamp,
                 data.get("row_version"),
             )
-            if location_changed:
-                clear_locked_overrides_for_stops(
-                    conn, [stop_id], actor_id, timestamp
-                )
+            if route_changed:
+                if location_changed:
+                    clear_locked_overrides_for_stops(
+                        conn, [stop_id], actor_id, timestamp
+                    )
                 invalidate_trip_plan_ids(
                     conn,
                     [plan_id],
                     actor_id,
-                    "visit_location_changed",
+                    "visit_location_changed" if location_changed
+                    else "visit_attendees_changed",
                     timestamp=timestamp,
                 )
             if owns_transaction:
@@ -1038,6 +1056,8 @@ class TripPlanService:
                 "planned_date", "planned_end_date", "planned_start_period",
                 "planned_end_period", "stay_days", "duration_half_days",
                 "preferred_period", "schedule_locked",
+                # In team planning, who is at a stop decides whose route it is on.
+                "participant_user_ids_json",
         }
         route_changed = requested_sequence is not None or any(
             key in update_data and update_data[key] != current.get(key)

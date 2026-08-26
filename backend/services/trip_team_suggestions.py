@@ -22,6 +22,9 @@ BLOCKING_RISKS = frozenset({
     "cannot_reach_booked_visit",
     "participant_not_in_trip_team",
     "parallel_visits_unassigned",
+    # Pushing aside a time somebody already accepted is exactly what applying
+    # one suggestion and asking for the next is meant to avoid.
+    "planned_visit_moved",
 })
 
 
@@ -150,8 +153,13 @@ def suggest_flexible_visits(core, team, events, settings) -> list:
     if not flexible:
         return []
 
+    # Everything already arranged - appointments, times somebody accepted,
+    # hotels and airports - is what a candidate is measured against. Comparing
+    # against the appointments alone would charge one visit for the travel
+    # another one already caused, and would call risks new that were there.
     baseline = plan_team_itinerary(
-        core, team, [event for event in events if event.booked_slot],
+        core, team,
+        [event for index, event in enumerate(events) if index not in flexible],
         settings["origins"], settings["initial_slot"], settings["priority"],
         destinations=settings["destinations"],
         leg_settings=settings["leg_settings"],

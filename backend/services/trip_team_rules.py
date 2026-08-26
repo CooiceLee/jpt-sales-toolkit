@@ -218,13 +218,28 @@ def member_lanes(events: list, team: tuple) -> dict:
     return lanes
 
 
+def event_slot(event) -> tuple | None:
+    """When an event is meant to happen, whoever decided it."""
+    return event.booked_slot or event.planned_slot
+
+
 def ordered_events(events: list) -> list:
-    """Booked events in the order they happen, then the rest as given."""
-    booked = sorted(
-        (event for event in events if event.booked_slot),
+    """Events that have a time, in the order they happen, then the rest.
+
+    A time we planned counts here as much as one the customer agreed to. Walking
+    a planned visit in whatever order its stop happens to be stored in would run
+    the trip in one order while the suggestion that produced it was checked in
+    another, so a saved plan would not be the plan that comes back.
+
+    Where the two land in the same half-day the appointment goes first: it is a
+    fact, and our own arrangement is the one that can give way.
+    """
+    timed = sorted(
+        (event for event in events if event_slot(event)),
         key=lambda item: (
-            item.booked_slot[0].isoformat(),
-            0 if item.booked_slot[1] == "AM" else 1,
+            event_slot(item)[0].isoformat(),
+            0 if event_slot(item)[1] == "AM" else 1,
+            0 if item.booked_slot else 1,
         ),
     )
-    return [*booked, *(event for event in events if not event.booked_slot)]
+    return [*timed, *(event for event in events if not event_slot(event))]

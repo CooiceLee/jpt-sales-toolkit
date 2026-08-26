@@ -376,6 +376,145 @@ def check_only_customer_visits_are_suggested(service) -> None:
     )
 
 
+def check_planned_visits_run_in_time_order(service) -> None:
+    """A time we planned decides the order too, not the order stops are stored in.
+
+    Suggestions are searched with the candidate behaving like an appointment, so
+    in time order. If the real calculation then walked planned visits in
+    whatever order their stops sit in, the trip that was checked and the trip
+    that runs would be different ones.
+    """
+    from backend.services.trip_team_rules import ordered_events
+
+    later = TeamEvent("later", "customer", MUNICH, 1, ("zhang",), None,
+                      (date(2026, 9, 18), "AM"), label="later")
+    earlier = TeamEvent("earlier", "customer", STUTTGART, 1, ("zhang",), None,
+                        (date(2026, 9, 17), "AM"), label="earlier")
+    unscheduled = visit("open", PARIS, ["zhang"])
+    order = [item.stop_id for item in
+             ordered_events([later, earlier, unscheduled])]
+    assert order == ["earlier", "later", "open"], order
+
+    # An appointment and a plan of ours in the same half-day: the appointment
+    # goes first, because it is the one that cannot give way.
+    booked = visit("booked", FRANKFURT, ["zhang"], (date(2026, 9, 17), "AM"))
+    planned = TeamEvent("planned", "customer", STUTTGART, 1, ("zhang",), None,
+                        (date(2026, 9, 17), "AM"), label="planned")
+    assert [item.stop_id for item in ordered_events([planned, booked])] == [
+        "booked", "planned"
+    ]
+
+
+def check_added_cost_excludes_what_is_already_planned(service) -> None:
+    """A visit is charged for the travel it adds, not for travel already there.
+
+    The added cost is checked against the difference the suggestion actually
+    makes: the plan with it, less the plan as it stands. Measuring against the
+    appointments alone would bill this visit for the journey an accepted one
+    already caused.
+    """
+    from backend.services.trip_team_schedule import plan_team_itinerary
+
+    team = ("zhang",)
+    fixed = visit("fra", FRANKFURT, ["zhang"], (date(2026, 9, 16), "AM"))
+    accepted = TeamEvent("stu", "customer", STUTTGART, 1, ("zhang",), None,
+                         (date(2026, 9, 17), "AM"), label="stu")
+    events = [fixed, accepted, visit("muc", MUNICH, ["zhang"])]
+    found = suggest_flexible_visits(service, team, events, settings(team))
+    munich = [item for item in found if item.stop_id == "muc"][0]
+    assert munich.date, found
+
+    def travel_hours(trial):
+        result = plan_team_itinerary(
+            service, team, trial, {"__default__": SHANGHAI},
+            (date(2026, 9, 14), "AM"), ["flight", "drive", "ground_public"],
+            destinations={"__default__": SHANGHAI}, leg_settings={},
+        )
+        return round(sum(item["travel_hours"]
+                         for item in result.member_totals.values()), 2)
+
+    as_it_stands = travel_hours([fixed, accepted])
+    with_munich = travel_hours([
+        fixed, accepted,
+        visit("muc", MUNICH, ["zhang"],
+              (date.fromisoformat(munich.date), munich.period)),
+    ])
+    expected = round(with_munich - as_it_stands, 2)
+    assert abs(munich.added_travel_hours - expected) < 0.05, (
+        f"the added travel should be {expected} h, the difference this visit "
+        f"actually makes, but was reported as {munich.added_travel_hours} h"
+    )
+
+
+def check_displacing_an_accepted_time_is_rejected() -> None:
+    """Pushing aside a time somebody accepted disqualifies a candidate.
+
+    This checks the decision itself rather than an end-to-end outcome. In every
+    scenario tried, a candidate that displaced an accepted visit also cost more
+    travel than the alternatives, so it lost on cost before this rule applied -
+    which is the ordinary case, since displacing something means going further.
+    The rule is what stops the exception, so it is checked where it is made.
+    """
+    from backend.services.trip_team_suggestions import _blocked, _risk_key
+
+    class Result:
+        def __init__(self, risks):
+            self.risks = risks
+
+    moved = {
+        "kind": "planned_visit_moved", "stop_id": "stu",
+        "planned_date": "2026-09-17", "planned_period": "AM",
+        "date": "2026-09-18", "period": "AM",
+    }
+    assert _blocked(Result([moved]), set()), (
+        "a candidate that moves an accepted visit must be rejected"
+    )
+    # Unless the plan had already moved it: that is not this candidate's doing.
+    assert not _blocked(Result([moved]), {_risk_key(moved)})
+    # Moving it further than the plan already did is a new problem.
+    assert _blocked(Result([{**moved, "date": "2026-09-22"}]),
+                    {_risk_key(moved)})
+
+
+def check_an_accepted_time_survives_a_suggestion(service) -> None:
+    """Whatever is suggested, an accepted time still sits where it was put."""
+    from backend.services.trip_team_schedule import plan_team_itinerary
+
+    team = ("zhang",)
+    fixed = visit("fra", FRANKFURT, ["zhang"], (date(2026, 9, 16), "AM"))
+    accepted = TeamEvent("stu", "customer", STUTTGART, 1, ("zhang",), None,
+                         (date(2026, 9, 17), "AM"), label="stu")
+    events = [fixed, accepted, visit("osl", OSLO, ["zhang"])]
+    drive = settings(team, priority=["drive"])
+    found = suggest_flexible_visits(service, team, events, drive)
+    oslo = [item for item in found if item.stop_id == "osl"][0]
+    assert oslo.date, f"a workable time for Oslo should exist: {found}"
+
+    # Whatever it chose, running it must leave Stuttgart where it was accepted.
+    result = plan_team_itinerary(
+        service, team,
+        [fixed, accepted,
+         visit("osl", OSLO, ["zhang"],
+               (date.fromisoformat(oslo.date), oslo.period))],
+        {"__default__": SHANGHAI}, (date(2026, 9, 14), "AM"), ["drive"],
+        destinations={"__default__": SHANGHAI}, leg_settings={},
+    )
+    moved = [
+        risk for risk in result.risks
+        if risk["kind"] == "planned_visit_moved" and risk["stop_id"] == "stu"
+    ]
+    assert not moved, (
+        f"the suggestion pushed aside a time already accepted: {moved}"
+    )
+    placed = [
+        item for item in result.schedule_items
+        if item["source_id"] == "stu" and item["item_type"] != "leg"
+    ]
+    assert (placed[0]["date"], placed[0]["period"]) == ("2026-09-17", "AM"), (
+        f"Stuttgart no longer sits where it was accepted: {placed[0]}"
+    )
+
+
 def check_suggesting_writes_nothing(service) -> None:
     """A suggestion is a proposal: the database is untouched until Apply."""
     conn = service.lead_repo.conn
@@ -407,6 +546,10 @@ def main() -> None:
     check_a_bigger_clash_is_not_the_old_clash(service)
     check_a_long_visit_does_not_run_into_a_weekend(service)
     check_only_customer_visits_are_suggested(service)
+    check_planned_visits_run_in_time_order(service)
+    check_added_cost_excludes_what_is_already_planned(service)
+    check_displacing_an_accepted_time_is_rejected()
+    check_an_accepted_time_survives_a_suggestion(service)
     check_suggesting_writes_nothing(service)
     close_db()
     print("PASS: flexible visit suggestions")

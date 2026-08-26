@@ -253,6 +253,74 @@ def check_round_trip(service, seed) -> None:
         assert total["calculated_end_date"]
 
 
+def _is_stale(plan) -> bool:
+    summary = plan.get("itinerary_summary") or {}
+    return summary.get("stale") is True or summary.get("valid") is False
+
+
+def check_changing_who_attends_invalidates_the_route(service, seed) -> None:
+    """Who goes decides the route, so changing it makes the old one out of date.
+
+    Swapping the colleague on a visit changes whose lane it is on, the legs to
+    and from it, the travel time and where everybody is afterwards. Leaving the
+    calculated route in place would show a trip nobody is taking.
+    """
+    plan_id, actor, people = seed["plan_id"], seed["actor"], seed["people"]
+    stop_id = seed["stops"]["frankfurt"]
+
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    assert not _is_stale(service.get_trip_plan(plan_id, actor, "leader"))
+
+    stop = [
+        item for item in service.get_trip_plan(plan_id, actor, "leader")["stops"]
+        if item["id"] == stop_id
+    ][0]
+    briefing = stop["briefing"]
+    service.put_trip_visit_briefing(
+        plan_id, stop_id,
+        {**briefing, "stop_row_version": stop["row_version"],
+         "participants": [{"user_id": people["li"]}]},
+        actor, "leader",
+    )
+    assert _is_stale(service.get_trip_plan(plan_id, actor, "leader")), (
+        "changing who attends a visit must make the calculated route stale"
+    )
+
+    # The same people in another order is not a change.
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    stop = [
+        item for item in service.get_trip_plan(plan_id, actor, "leader")["stops"]
+        if item["id"] == stop_id
+    ][0]
+    service.put_trip_visit_briefing(
+        plan_id, stop_id,
+        {**stop["briefing"], "stop_row_version": stop["row_version"],
+         "participants": [{"user_id": people["li"]}]},
+        actor, "leader",
+    )
+    assert not _is_stale(service.get_trip_plan(plan_id, actor, "leader")), (
+        "saving the same attendees again must not throw the route away"
+    )
+
+
+def check_changing_a_free_stop_scope_invalidates_the_route(service, seed) -> None:
+    """Who is at a personal stop decides whose route it is on."""
+    plan_id, actor, people = seed["plan_id"], seed["actor"], seed["people"]
+    free_stop_id = seed["stops"]["munich"]
+
+    service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    assert not _is_stale(service.get_trip_plan(plan_id, actor, "leader"))
+
+    service.update_trip_free_stop(
+        plan_id, free_stop_id,
+        {"participant_user_ids": [people["zhang"]]},
+        actor, "leader",
+    )
+    assert _is_stale(service.get_trip_plan(plan_id, actor, "leader")), (
+        "narrowing a personal stop to one member must make the route stale"
+    )
+
+
 def check_overrun_is_a_risk_not_a_refusal(service, seed) -> None:
     """With fixed appointments the dates are what gives, so say it and save it."""
     plan_id, actor = seed["plan_id"], seed["actor"]
@@ -274,6 +342,8 @@ def main() -> None:
     check_missing_endpoints_are_rejected(service, seed)
     check_member_order_is_stable(service, seed)
     check_round_trip(service, seed)
+    check_changing_who_attends_invalidates_the_route(service, seed)
+    check_changing_a_free_stop_scope_invalidates_the_route(service, seed)
     check_overrun_is_a_risk_not_a_refusal(service, seed)
     close_db()
     print("PASS: team itinerary survives preview, generate and reload")
