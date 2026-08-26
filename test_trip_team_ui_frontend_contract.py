@@ -258,6 +258,85 @@ def check_real_backend_output_renders() -> None:
     )
 
 
+def check_narrow_column_and_long_names() -> None:
+    """The side column is 320px at its narrowest, and names can be long.
+
+    There is no browser here to measure boxes, so this checks the rules that
+    decide whether a long name is cut or pushes the row apart: no fixed name
+    column, min-width zero on the flex children that hold text, and an ellipsis
+    on every line that can overflow.
+    """
+    css = (ROOT / "frontend" / "css" / "style.css").read_text(encoding="utf-8")
+    team = css[css.index("/* Team planning:"):]
+
+    assert "grid-template-columns: 120px 1fr" not in team, (
+        "a fixed 120px names column cannot hold two merged Chinese names"
+    )
+    assert "minmax(100px, 28%) 1fr" in team, (
+        "the names column must follow the width it is given"
+    )
+    for rule, why in (
+        (".trip-team-member > div { min-width: 0; }",
+         "a flex child holding text needs min-width 0 or it refuses to shrink"),
+        (".trip-team-add { display: flex; flex-wrap: wrap;",
+         "the add row has to wrap in a 320px column"),
+        (".trip-team-remove", "the remove control has to stay narrow"),
+    ):
+        assert rule in team, f"{why}: missing {rule}"
+
+    for selector in (".trip-team-member strong, .trip-team-member small",
+                     ".trip-team-entry-who"):
+        block = team[team.index(selector):]
+        block = block[:block.index("}")]
+        assert "text-overflow: ellipsis" in block and "white-space: nowrap" in block, (
+            f"{selector} can overflow and has no ellipsis"
+        )
+
+    # The layout the card sits in, so the assumption above is not guesswork.
+    assert "clamp(320px, 26vw, 440px)" in css, (
+        "the side column width changed; recheck the team card density"
+    )
+
+    # Long merged names must still produce one row, not one per person.
+    data = run_js("""
+    const plan = { members: [
+        { user_id: 'z', display_name: '张三丰远' },
+        { user_id: 'l', display_name: '李四光明' },
+        { user_id: 'w', display_name: '王五国强' }] };
+    const items = ['z', 'l', 'w'].map(id => ({
+        member_id: id, source_id: 'expo', item_type: 'customer',
+        title: '慕尼黑激光展', date: '2026-09-17', period: 'AM',
+        lane_order: 2, inbound_travel_resolved: true }));
+    const grouped = TripTeamTimeline.groupSlot(items, plan);
+    console.log(JSON.stringify({
+        rows: grouped.length, who: grouped[0].members.join(' \u00b7 '),
+    }));
+    """)
+    assert data["rows"] == 1, "three colleagues at one visit is still one row"
+    assert data["who"] == "张三丰远 · 李四光明 · 王五国强", data["who"]
+
+
+def check_slot_order_follows_the_journey() -> None:
+    """Within a half-day, travel is listed before the visit it reaches."""
+    data = run_js("""
+    const plan = { members: [{ user_id: 'z', display_name: 'Zhang' }] };
+    const items = [
+        { member_id: 'z', source_id: 'a', item_type: 'customer', title: 'Alpha',
+          date: '2026-09-16', period: 'PM', lane_order: 4 },
+        { member_id: 'z', source_id: 'f>a', item_type: 'leg',
+          title: 'Frankfurt \u2192 Alpha', date: '2026-09-16', period: 'PM',
+          lane_order: 3 },
+    ];
+    console.log(JSON.stringify({
+        order: TripTeamTimeline.groupSlot(items, plan)
+            .map(entry => entry.item_type),
+    }));
+    """)
+    assert data["order"] == ["leg", "customer"], (
+        f"the timeline reads back to front: {data['order']}"
+    )
+
+
 def check_module_wiring() -> None:
     """The modules load, and the schedule view sends team plans to the timeline."""
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
@@ -283,6 +362,8 @@ def main() -> None:
     check_risk_bar_reads_backend_risks()
     check_backend_sends_kinds_not_sentences()
     check_timeline_is_not_drag_and_drop()
+    check_narrow_column_and_long_names()
+    check_slot_order_follows_the_journey()
     check_real_backend_output_renders()
     check_module_wiring()
     print("PASS: team risk bar, travel team card and team timeline contracts")

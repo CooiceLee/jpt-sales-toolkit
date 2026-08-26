@@ -28,6 +28,41 @@ BANNED_TEXT = (
 PUBLIC_TEMPLATE = "frontend/templates/JPT标准导入模板.xlsx"
 
 
+# These files predate the repo's LF default and still hold CRLF. Writing one of
+# them with a text-mode tool silently rewrites every ending, which turns a small
+# edit into a whole-file diff. That has happened twice, so it is checked here
+# rather than left to whoever is editing.
+CRLF_FILES = (
+    "README.md",
+    "backend/__init__.py",
+    "backend/services/__init__.py",
+    "backend/services/email_parser.py",
+    "config/fields.json",
+    "config/products.json",
+    "config/regions.json",
+    "config/team.json",
+    "frontend/css/style.css",
+    "frontend/index.html",
+    "frontend/js/app.js",
+    "run.py",
+)
+
+
+def check_line_endings_were_not_flattened() -> None:
+    root = Path(__file__).parent
+    flattened = []
+    for name in CRLF_FILES:
+        path = root / name
+        if not path.is_file():
+            continue
+        if b"\r\n" not in path.read_bytes():
+            flattened.append(name)
+    assert not flattened, (
+        "these files hold CRLF and something rewrote them as LF; write them in "
+        f"binary mode instead: {flattened}"
+    )
+
+
 def main() -> None:
     tracked = subprocess.check_output(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
@@ -71,6 +106,8 @@ def main() -> None:
             if name.endswith(".xml")
         )
     assert not any(marker in xml_text for marker in BANNED_TEXT)
+
+    check_line_endings_were_not_flattened()
 
     print("PASS: public-source tree excludes local paths, business workbooks and private artifacts")
 

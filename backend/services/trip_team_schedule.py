@@ -83,6 +83,7 @@ class TeamScheduleContext:
     states: dict
     previous_stop: dict
     lane_sequence: dict
+    lane_order: dict
     totals: dict
     invalid: set
     unassigned: set
@@ -120,6 +121,19 @@ def build_member_leg(core, member_id, from_point, to_point, leg_key,
 
 
 
+def _next_order(ctx: "TeamScheduleContext", user) -> int | None:
+    """The next position in this member's own run of items.
+
+    Within one half-day a journey and the visit it leads to both appear, and the
+    journey has to come first. Recording order is that order, so a counter per
+    member is enough; an event nobody on the trip attends has no lane to sit in.
+    """
+    if user is None:
+        return None
+    ctx.lane_order[user] += 1
+    return ctx.lane_order[user]
+
+
 def _spread_slots(start: tuple, half_days) -> list:
     """The half-days one event occupies, starting where it was placed."""
     slots = [start]
@@ -147,6 +161,7 @@ def _record_travel(ctx: TeamScheduleContext, user, leg, from_slot, elapsed):
         ctx.result.schedule_items.append(
             {
                 "member_id": user,
+                "lane_order": _next_order(ctx, user),
                 "source_id": leg["leg_key"] if segment is None
                 else f"{leg['leg_key']}#{segment['role']}",
                 "date": slots[0][0].isoformat(),
@@ -171,10 +186,12 @@ def _record_event(ctx: TeamScheduleContext, event, user, slots,
     day-long visit looking free, which is how a second thing gets booked into
     it. The stop itself is still one row, from its start to its end.
     """
+    order = _next_order(ctx, user)
     for index, slot in enumerate(slots, start=1):
         ctx.result.schedule_items.append(
             {
                 "member_id": user,
+                "lane_order": order,
                 "source_id": event.stop_id,
                 "date": slot[0].isoformat(),
                 "period": slot[1],
@@ -225,6 +242,7 @@ def _initialize_team_context(team: tuple, events: list, origins: dict,
         },
         previous_stop={user: None for user in team},
         lane_sequence={user: 0 for user in team},
+        lane_order={user: 0 for user in team},
         totals={
             user: {
                 "distance_km": 0.0, "travel_hours": 0.0, "route_complete": True,

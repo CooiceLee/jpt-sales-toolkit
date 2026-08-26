@@ -1,0 +1,4 @@
+# Keep every file's bytes exactly as they are committed. Several files predate
+# this repo's LF default and still hold CRLF; normalising them would turn a
+# small edit into a whole-file diff that nobody can review.
+* -text

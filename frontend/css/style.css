@@ -3806,23 +3806,36 @@ html, body {
 .trip-risk-list li { margin: 4px 0; font-size: 13px; line-height: 1.55; color: var(--ink-700); }
 
 .trip-team-list { list-style: none; margin: 0 0 10px; padding: 0; }
+/* The side column is 320px at its narrowest, so a long name or a long place
+   name must be cut rather than push the Remove control off the card. */
 .trip-team-member { display: flex; align-items: center; justify-content: space-between; gap: 8px;
     padding: 8px 0; border-bottom: 1px solid var(--border-color); }
-.trip-team-member small { display: block; color: var(--ink-500); font-size: 12px; }
+.trip-team-member > div { min-width: 0; }
+.trip-team-member strong, .trip-team-member small { display: block;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-team-member small { color: var(--ink-500); font-size: 12px; }
+.trip-team-member .btn { flex: 0 0 auto; }
+.trip-team-remove { min-width: 28px; padding: 2px 8px; font-size: 15px; line-height: 1.2; }
 .trip-team-metrics { color: var(--wine-600) !important; }
-.trip-team-add { display: flex; gap: 8px; align-items: center; }
-.trip-team-add .form-input { flex: 1; }
+.trip-team-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.trip-team-add .form-input { flex: 1 1 140px; min-width: 0; }
 
 .trip-team-slot { margin: 0 0 14px; }
 .trip-team-slot h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--ink-500);
     text-transform: uppercase; letter-spacing: .04em; }
 .trip-team-slot-body { display: flex; flex-direction: column; gap: 6px; }
-.trip-team-entry { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: baseline;
+/* The names column follows its content instead of a fixed width: two Chinese
+   names merged on a shared visit do not fit in 120px, and wrapping them makes
+   the rows different heights. */
+.trip-team-entry { display: grid; grid-template-columns: minmax(100px, 28%) 1fr;
+    gap: 10px; align-items: baseline;
     width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md);
     background: #fff; color: var(--ink-800); text-align: left; font-size: 13px; }
 .trip-team-entry:not([disabled]) { cursor: pointer; }
 .trip-team-entry:not([disabled]):hover { border-color: var(--wine-600); }
-.trip-team-entry-who { color: var(--wine-600); font-size: 12px; font-weight: 600; }
+.trip-team-entry-who { color: var(--wine-600); font-size: 12px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-team-entry strong { min-width: 0; overflow-wrap: anywhere; }
 .trip-team-entry.is-leg { background: var(--cream-100); color: var(--ink-600); }
 .trip-team-entry.is-unresolved { border-style: dashed; border-color: var(--warning); }
 .trip-team-entry em { grid-column: 2; color: var(--warning); font-size: 12px; font-style: normal; }

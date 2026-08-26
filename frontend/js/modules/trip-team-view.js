@@ -15,7 +15,9 @@
         const total = plan?.itinerary_summary?.member_totals?.[member.user_id];
         const metrics = total ? [
             total.distance_km != null
-                ? t('{count} km', { count: Math.round(total.distance_km) }) : '',
+                ? t('{count} km', {
+                    count: Math.round(total.distance_km).toLocaleString('en-US'),
+                }) : '',
             total.calculated_end_date
                 ? t('back {date}', { date: total.calculated_end_date }) : '',
         ].filter(Boolean).join(' · ') : '';
@@ -25,8 +27,9 @@
                 <small>${h(endpointLine(plan, member))}</small>
                 ${metrics ? `<small class="trip-team-metrics">${h(metrics)}</small>` : ''}
             </div>
-            <button type="button" class="btn btn-secondary btn-sm"
-                onclick="TripTeamActions.remove('${h(member.user_id)}')">${h(t('Remove'))}</button>
+            <button type="button" class="btn btn-secondary btn-sm trip-team-remove"
+                title="${h(t('Remove'))}" aria-label="${h(t('Remove'))}"
+                onclick="TripTeamActions.remove('${h(member.user_id)}')">&times;</button>
         </li>`;
     }
 

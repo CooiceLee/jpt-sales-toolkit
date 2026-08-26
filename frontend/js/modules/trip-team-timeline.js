@@ -25,10 +25,17 @@
             };
             if (item.member_id) entry.members.push(memberName(plan, item.member_id));
             if (item.inbound_travel_resolved === false) entry.unresolved = true;
+            // A shared event sits where its earliest attendee puts it, so the
+            // order within a half-day follows the journeys that led to it.
+            entry.order = Math.min(
+                entry.order ?? Number.MAX_SAFE_INTEGER,
+                item.lane_order ?? Number.MAX_SAFE_INTEGER
+            );
             merged.set(key, entry);
         });
         return [...merged.values()].sort((left, right) =>
-            String(left.item_type).localeCompare(String(right.item_type))
+            left.order - right.order
+            || String(left.item_type).localeCompare(String(right.item_type))
             || String(left.title).localeCompare(String(right.title)));
     }
 

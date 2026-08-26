@@ -683,6 +683,31 @@ def check_team_lanes_and_timeline(service) -> None:
             f"a leg on the timeline needs its own planned time: {leg['leg_key']}"
         )
 
+    # Travel and the visit it leads to can land in the same half-day, and the
+    # journey has to be listed first or the timeline reads back to front.
+    same_slot = plan_team_itinerary(
+        service, ("zhang",),
+        [TeamEvent("f", "customer", place(50.11, 8.68, "Frankfurt", "f"), 1,
+                   ("zhang",), (_date(2026, 9, 16), "AM"), label="f"),
+         TeamEvent("m", "customer", place(48.13, 11.58, "Munich", "m"), 1,
+                   ("zhang",), (_date(2026, 9, 16), "PM"), label="m")],
+        {"__default__": shanghai}, (_date(2026, 9, 15), "AM"), ["drive"],
+    )
+    in_slot = [
+        item for item in same_slot.schedule_items
+        if item["date"] == "2026-09-16" and item["period"] == "PM"
+    ]
+    assert len(in_slot) >= 2, f"expected travel and the visit together: {in_slot}"
+    travel = [item for item in in_slot if item["item_type"] == "leg"]
+    visit = [item for item in in_slot if item["source_id"] == "m"]
+    assert travel and visit, in_slot
+    assert max(item["lane_order"] for item in travel) < visit[0]["lane_order"], (
+        "travel must be ordered before the visit it reaches, "
+        f"got travel={[i['lane_order'] for i in travel]} "
+        f"visit={visit[0]['lane_order']}"
+    )
+    assert all(item["lane_order"] is not None for item in in_slot)
+
     # A visit lasting more than one half-day occupies every one of them, or the
     # afternoon of a day-long visit looks free and a second thing gets booked in.
     long_visit = plan_team_itinerary(
