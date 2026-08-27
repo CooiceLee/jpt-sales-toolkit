@@ -19,11 +19,19 @@
         // is typed in here rather than read back from whatever the last route
         // calculation happened to choose.
         const agreedPeriod = stop.planned_start_period === 'PM' ? 'PM' : 'AM';
-        const canLock = Boolean(stop.planned_date);
-        const lockHint = canLock
+        // Always usable: making it wait for the date to be saved first meant
+        // typing a date, waiting, and coming back to tick a box that had been
+        // greyed out - which reads as a box that cannot be ticked at all.
+        const lockHint = stop.planned_date
             ? 'The customer agreed this time. The route will be planned around it.'
-            : 'Enter the agreed date first.';
-        return `<div class="trip-stop-schedule-controls">
+            : 'Enter the agreed date, then confirm it here.';
+        return `<div class="trip-stop-schedule-controls${
+                stop.schedule_locked ? ' is-agreed' : ''}">
+            ${stop.schedule_locked ? `<p class="trip-agreed-banner">${h(I18n.t(
+                'Agreed with the customer: {date} {period}. The route is planned around it.',
+                { date: stop.planned_date,
+                  period: I18n.t(agreedPeriod === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)') }
+            ))}</p>` : ''}
             <label class="trip-field-label"><span>${h(I18n.t('Agreed visit date'))}</span>
                 <input type="date" class="form-input" id="stop-agreed-date-${id}"
                     value="${h(stop.planned_date || '')}"
@@ -44,7 +52,7 @@
                     ${option('cancelled', confirmation, 'Cancelled')}
                 </select></label>
             <label class="trip-check trip-schedule-lock" title="${h(I18n.t(lockHint))}">
-                <input type="checkbox" id="stop-schedule-lock-${id}" onchange="TripStopScheduleActions.appointmentChanged('${id}')" ${canLock && stop.schedule_locked ? 'checked' : ''} ${canLock ? '' : 'disabled'}>
+                <input type="checkbox" id="stop-schedule-lock-${id}" onchange="TripStopScheduleActions.appointmentChanged('${id}')" ${stop.schedule_locked ? 'checked' : ''}>
                 <span>${h(I18n.t('Customer confirmed this time'))}</span>
             </label>
         </div>`;
@@ -63,7 +71,8 @@
                 ? (agreedPeriod === 'PM' ? 'PM' : 'AM') : null,
             preferred_period: PERIODS.includes(period) ? period : 'auto',
             confirmation_status: CONFIRMATIONS.includes(confirmation) ? confirmation : 'unconfirmed',
-            schedule_locked: Boolean(agreedDate && lock && !lock.disabled && lock.checked),
+            // Confirming a time means nothing without a date to confirm.
+            schedule_locked: Boolean(agreedDate && lock && lock.checked),
         };
     }
 

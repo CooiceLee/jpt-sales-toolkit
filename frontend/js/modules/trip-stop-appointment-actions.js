@@ -16,6 +16,12 @@
         const stop = (plan?.stops || []).find(item => item.id === stopId);
         if (!plan?.id || !stop) return;
         const payload = window.TripStopScheduleControls.readPayload(stopId);
+        const wanted = document.getElementById(`stop-schedule-lock-${stopId}`);
+        if (wanted?.checked && !payload.planned_date) {
+            notify(t('Enter the agreed date, then confirm it here.'));
+            wanted.checked = false;
+            return;
+        }
         try {
             setTripBusy(true);
             State.currentTripPlan = await ApiClient.updateTripStop(

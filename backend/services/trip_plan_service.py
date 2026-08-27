@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 from ..repositories.base import generate_uuid, now_iso
@@ -51,6 +51,23 @@ def _participant_ids_json(value) -> str:
     """Which team members attend a free stop. Empty means everybody on the trip."""
     ids = [str(item).strip() for item in (value or []) if str(item).strip()]
     return json.dumps(list(dict.fromkeys(ids)), ensure_ascii=False)
+
+
+def _visit_end(start_date, start_period, half_days: int):
+    """Where a visit ends, counted in half-days from where it starts."""
+    try:
+        day = date.fromisoformat(str(start_date))
+    except (TypeError, ValueError):
+        return None
+    if not day:
+        return None
+    period = "PM" if start_period == "PM" else "AM"
+    for _ in range(max(1, half_days) - 1):
+        if period == "AM":
+            period = "PM"
+        else:
+            day, period = day + timedelta(days=1), "AM"
+    return day.isoformat(), period
 
 
 PLANNING_MODES = ("legacy", "team")
@@ -1228,6 +1245,26 @@ class TripPlanService:
             update_data["duration_half_days"] = update_data["stay_days"] * 2
         if "schedule_locked" in update_data:
             update_data["schedule_locked"] = 1 if update_data["schedule_locked"] else 0
+        # A visit's end follows from when it starts and how long it takes. When
+        # only the start is given - which is what recording an agreed time
+        # sends - the end has to move with it, or the stop keeps the end the
+        # previous calculation left behind and reads as finishing before it
+        # begins.
+        if "planned_date" in update_data and "planned_end_date" not in update_data:
+            half_days = int(
+                update_data.get("duration_half_days")
+                or current.get("duration_half_days")
+                or 2
+            )
+            end = _visit_end(
+                update_data["planned_date"],
+                update_data.get("planned_start_period")
+                or current.get("planned_start_period"),
+                half_days,
+            )
+            if end:
+                update_data["planned_end_date"] = end[0]
+                update_data["planned_end_period"] = end[1]
         if "planned_time_accepted" in update_data:
             update_data["planned_time_accepted"] = (
                 1 if update_data["planned_time_accepted"] else 0

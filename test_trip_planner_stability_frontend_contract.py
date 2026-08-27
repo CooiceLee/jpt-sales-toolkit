@@ -378,6 +378,33 @@ console.log(JSON.stringify(context.readTripPlanFormPayload()));
     )
 
 
+JS_LOCK_BOX = r'''
+const fs=require('fs');const vm=require('vm');
+const context = { console, escapeHtml: value => String(value ?? ''),
+  I18n: { t: key => String(key) },
+  State: {}, TripPlanningDraft: { get: () => ({ routeOrderMode: 'auto' }) } };
+context.window = context; vm.createContext(context);
+vm.runInContext(
+  fs.readFileSync('frontend/js/modules/trip-stop-schedule-controls.js', 'utf8'),
+  context,
+);
+const blank = context.TripStopScheduleControls.render({
+  id: 's1', planned_date: null, planned_start_period: null,
+  schedule_locked: 0, preferred_period: 'auto',
+  confirmation_status: 'unconfirmed' });
+const agreed = context.TripStopScheduleControls.render({
+  id: 's1', planned_date: '2026-09-04', planned_start_period: 'PM',
+  schedule_locked: 1, preferred_period: 'auto',
+  confirmation_status: 'unconfirmed' });
+const box = /id="stop-schedule-lock-s1"[^>]*/;
+console.log(JSON.stringify({
+  disabledWithoutDate: /disabled/.test(blank.match(box)[0]),
+  checkedWhenAgreed: /checked/.test(agreed.match(box)[0]),
+  agreedMarker: agreed.includes('is-agreed'),
+}));
+'''
+
+
 def check_agreed_visit_time_can_be_entered() -> None:
     """The time a customer agreed to must be typeable, and must be sent.
 
@@ -426,6 +453,18 @@ console.log(JSON.stringify(context.TripStopScheduleControls.readPayload('s1')));
     assert sent["planned_start_period"] == "AM", sent
     assert sent["schedule_locked"] is True, (
         f"confirming the time must lock it, or the route will move it: {sent}"
+    )
+
+    # The box must be usable straight away. Waiting for the date to be saved
+    # first meant typing a date, waiting, and coming back to tick a box that
+    # had been greyed out - which reads as a box that cannot be ticked at all.
+    rendered = json.loads(_node_json(JS_LOCK_BOX))
+    assert rendered["disabledWithoutDate"] is False, (
+        "the confirm box must be usable before the date has been saved"
+    )
+    assert rendered["checkedWhenAgreed"] is True
+    assert rendered["agreedMarker"] is True, (
+        "an agreed time needs a visible mark, not only a ticked box"
     )
 
     # An agreed time is a fact, so it is saved rather than left in the draft:

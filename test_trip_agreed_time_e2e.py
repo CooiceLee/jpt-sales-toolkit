@@ -7,6 +7,7 @@ chain was broken in the browser - the preview request carried a field the endpoi
 rejects, and there was nowhere to enter the time in the first place.
 """
 import json, os, sys, tempfile
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -159,21 +160,66 @@ assert (after_save["planned_date"], after_save["planned_start_period"]) == (
     "2026-09-16", "AM"
 )
 
-say("6. 真的改了约定时间，才应要求重新确认")
+say("6. 计算移动了已确认的时间，才应要求重新确认")
+# The case that warrants asking the customer again is the calculation moving a
+# visit they had confirmed - not the user typing a new agreed date, which is
+# them recording what the customer just told them.
+frankfurt = stops["Frankfurt"]
 rv = [s for s in client.get(f"/api/review/trip-plans/{plan}", headers=H).json()["stops"]
-      if s["id"] == paris][0]["row_version"]
-client.patch(f"/api/review/trip-plans/{plan}/stops/{paris}", headers=H,
-             json={"row_version": rv, "planned_date": "2026-09-18",
-                   "planned_start_period": "AM", "schedule_locked": True,
-                   "confirmation_status": "confirmed"})
-r = client.post(f"/api/review/trip-plans/{plan}/generate-itinerary", headers=H,
-                json={**payload, "row_version": version()})
+      if s["id"] == frankfurt][0]["row_version"]
+r = client.patch(f"/api/review/trip-plans/{plan}/stops/{frankfurt}", headers=H,
+                 json={"row_version": rv, "schedule_locked": False,
+                       "confirmation_status": "confirmed"})
 assert r.status_code == 200, r.text[:300]
-moved = [s for s in r.json()["stops"] if s["id"] == paris][0]
-assert moved["planned_date"] == "2026-09-18"
+before_move = [s for s in r.json()["stops"] if s["id"] == frankfurt][0]
+assert before_move["confirmation_status"] == "confirmed"
+assert before_move["planned_date"], "the visit needs a saved date to be moved from"
+
+# Push the whole trip later, so an unlocked visit lands on a different day.
+r = client.post(f"/api/review/trip-plans/{plan}/generate-itinerary", headers=H,
+                json={**payload, "start_date": "2026-09-28",
+                      "end_date": "2026-10-20", "row_version": version()})
+assert r.status_code == 200, r.text[:300]
+moved = [s for s in r.json()["stops"] if s["id"] == frankfurt][0]
+assert moved["planned_date"] != before_move["planned_date"], (
+    "the visit should have moved with the trip"
+)
 assert moved["confirmation_status"] == "needs_reconfirmation", (
-    "a visit whose agreed time actually moved must be reconfirmed: "
+    "a confirmed visit the route moved must be reconfirmed: "
     f"{moved['confirmation_status']}"
 )
+
+say("7. 约定时间保存后，结束时间必须跟着走")
+# The UI sends only the start, because the end follows from the start and the
+# length of the visit. Left behind, the stop reads as finishing before it began.
+rv = [s for s in client.get(f"/api/review/trip-plans/{plan}", headers=H).json()["stops"]
+      if s["id"] == paris][0]["row_version"]
+r = client.patch(f"/api/review/trip-plans/{plan}/stops/{paris}", headers=H,
+                 json={"row_version": rv, "planned_date": "2026-09-22",
+                       "planned_start_period": "PM", "schedule_locked": True,
+                       "planned_time_accepted": True})
+assert r.status_code == 200, r.text[:300]
+moved_end = [s for s in r.json()["stops"] if s["id"] == paris][0]
+assert moved_end["planned_date"] == "2026-09-22"
+assert moved_end["planned_end_date"] >= moved_end["planned_date"], (
+    "a visit cannot end before it starts: "
+    f"{moved_end['planned_date']} -> {moved_end['planned_end_date']}"
+)
+# The end is the start advanced by the visit's own length in half-days.
+half_days = int(moved_end["duration_half_days"] or 2)
+expected_day, expected_period = date(2026, 9, 22), "PM"
+for _ in range(half_days - 1):
+    if expected_period == "AM":
+        expected_period = "PM"
+    else:
+        expected_day, expected_period = expected_day + timedelta(days=1), "AM"
+assert (moved_end["planned_end_date"], moved_end["planned_end_period"]) == (
+    expected_day.isoformat(), expected_period
+), (
+    f"{half_days} half-days from 2026-09-22 PM should end "
+    f"{expected_day.isoformat()} {expected_period}, got "
+    f"{moved_end['planned_end_date']} {moved_end['planned_end_period']}"
+)
+assert bool(moved_end["schedule_locked"]) is True
 
 print("PASS: an agreed visit time is entered, saved and honoured by the route")

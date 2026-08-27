@@ -823,6 +823,8 @@
         ['Customer confirmed this time', '客户已确认此时间'],
         ['The customer agreed this time. The route will be planned around it.', '客户已约定此时间，路线将围绕它规划。'],
         ['Enter the agreed date first.', '请先填写约定日期。'],
+        ['Enter the agreed date, then confirm it here.', '请先填写约定日期，再在此确认。'],
+        ['Agreed with the customer: {date} {period}. The route is planned around it.', '已与客户约定：{date} {period}，路线围绕此时间规划。'],
         ['Agreed time saved. The route will be planned around it.', '约定时间已保存，路线将围绕它规划。'],
         ['Visit time saved.', '拜访时间已保存。'],
         ['Save agreed visit time', '保存约定拜访时间'],
