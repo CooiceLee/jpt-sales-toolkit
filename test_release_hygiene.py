@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import zipfile
 from pathlib import Path
@@ -63,7 +64,29 @@ def check_line_endings_were_not_flattened() -> None:
     )
 
 
+def check_served_pages_are_packaged() -> None:
+    """Every page a route reads from disk has to be in the build.
+
+    The packaging spec lists frontend pages one by one, so a new page is served
+    fine from source and returns 500 in the frozen app - which only shows up
+    when somebody opens it.
+    """
+    root = Path(__file__).parent
+    router = (root / "backend" / "app_v2.py").read_text(encoding="utf-8")
+    spec = (root / "packaging" / "jpt_sales_toolkit.spec").read_text(encoding="utf-8")
+    pages = set(re.findall(r'frontend_dir / "([\w.-]+\.html)"', router))
+    assert pages, "expected the router to read at least one page from disk"
+    missing = [
+        page for page in sorted(pages)
+        if f'"{page}"' not in spec and f"'{page}'" not in spec
+    ]
+    assert not missing, (
+        f"these pages are served but not packaged, so the frozen app 500s: {missing}"
+    )
+
+
 def main() -> None:
+    check_served_pages_are_packaged()
     tracked = subprocess.check_output(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=ROOT,

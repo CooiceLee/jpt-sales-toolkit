@@ -20,6 +20,7 @@ def collect_runtime_assets():
     """Package only production assets; never ship legacy users or test pages."""
     assets = [
         (str(ROOT / "frontend" / "index.html"), "frontend"),
+        (str(ROOT / "frontend" / "diagnostics.html"), "frontend"),
         (str(ROOT / "backend" / "schema.sql"), "backend"),
         (str(ROOT / "VERSION"), "."),
     ]
