@@ -41,6 +41,15 @@ from .routers import (
 APP_ROOT = Path(__file__).parent.parent
 
 
+def _frontend_build_stamp(frontend_dir) -> int:
+    """The most recent modification time anywhere under the frontend."""
+    newest = 0
+    for path in frontend_dir.rglob("*"):
+        if path.is_file():
+            newest = max(newest, int(path.stat().st_mtime))
+    return newest
+
+
 # Any asset URL carrying a hand-written version marker.
 ASSET_VERSION_PATTERN = re.compile(r'(/static/[^"\'?\s]+)\?v=[^"\'\s]*')
 
@@ -147,7 +156,10 @@ def create_app() -> FastAPI:
             time, so it changes whenever either does.
             """
             source = frontend_dir / "index.html"
-            stamp = f"{APP_VERSION}-{int(source.stat().st_mtime)}"
+            # The newest change anywhere in the frontend, not just index.html:
+            # a build that only touches a script would otherwise reuse the
+            # previous stamp and browsers would keep the scripts they have.
+            stamp = f"{APP_VERSION}-{_frontend_build_stamp(frontend_dir)}"
             html = ASSET_VERSION_PATTERN.sub(
                 lambda match: f"{match.group(1)}?v={stamp}",
                 source.read_text(encoding="utf-8"),
@@ -160,6 +172,19 @@ def create_app() -> FastAPI:
         @app.get("/")
         async def serve_index():
             return index_html()
+
+        @app.get("/diagnostics")
+        async def serve_diagnostics():
+            """What this browser actually loaded, for when a report and the
+            server disagree about which build is running."""
+            source = frontend_dir / "diagnostics.html"
+            stamp = f"{APP_VERSION}-{_frontend_build_stamp(frontend_dir)}"
+            return HTMLResponse(
+                source.read_text(encoding="utf-8").replace(
+                    "__ASSET_BUILD__", stamp
+                ),
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
 
         @app.get("/{path:path}")
         async def serve_frontend(path: str):

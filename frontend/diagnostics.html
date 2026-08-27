@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>JPT Sales Toolkit diagnostics</title>
+<style>
+  body { font: 14px/1.6 -apple-system, system-ui, sans-serif; margin: 24px;
+         color: #2C2620; background: #FDFBF7; }
+  h1 { font-size: 18px; }
+  table { border-collapse: collapse; margin-top: 12px; }
+  th, td { border: 1px solid #D6D3D1; padding: 6px 10px; text-align: left;
+           vertical-align: top; font-family: ui-monospace, Menlo, monospace; }
+  th { background: #F0EBE1; }
+  .ok { color: #16A34A; font-weight: 600; }
+  .bad { color: #DC2626; font-weight: 600; }
+</style>
+<h1>诊断 / Diagnostics</h1>
+<p>把整页截图发回即可。This page reports what your browser actually loaded.</p>
+<table id="out"><tbody></tbody></table>
+<script src="/static/js/i18n.js?v=__ASSET_BUILD__"></script>
+<script>
+(async () => {
+  const rows = [];
+  const add = (name, value, good) => rows.push([name, value, good]);
+
+  add('asset build stamp', '__ASSET_BUILD__', null);
+
+  const url = '/static/js/modules/trip-candidates-list.js?v=__ASSET_BUILD__';
+  let text = '(fetch failed)';
+  try { text = await (await fetch(url)).text(); } catch (e) { text = String(e); }
+  add('module URL', url, null);
+  add('module bytes', String(text.length), null);
+  add("contains 'Add to plan'", String(text.includes("I18n.t('Add to plan')")),
+      text.includes("I18n.t('Add to plan')"));
+  add("contains old I18n.t('Add')", String(text.includes("I18n.t('Add')")),
+      !text.includes("I18n.t('Add')"));
+  add('header cells in module',
+      String((text.match(/<th>/g) || []).length), null);
+
+  const t = (key) => (window.I18n ? I18n.t(key) : '(no I18n)');
+  add("I18n.t('Add to plan')", t('Add to plan'), t('Add to plan') === '添加');
+  add("I18n.t('Already added')", t('Already added'), t('Already added') === '已添加');
+  add("I18n.t('Add')", t('Add'), null);
+  add('I18n locale', window.I18n?.locale ? I18n.locale() : '(unknown)', null);
+
+  const body = document.querySelector('#out tbody');
+  body.innerHTML = rows.map(([name, value, good]) => {
+    const cls = good === true ? 'ok' : good === false ? 'bad' : '';
+    const mark = good === true ? ' ✓' : good === false ? ' ✗' : '';
+    return `<tr><th>${name}</th><td class="${cls}">${
+      String(value).replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;')
+    }${mark}</td></tr>`;
+  }).join('');
+})();
+</script>
