@@ -42,3 +42,45 @@
 
     window.TripStopScheduleActions = Object.freeze({ appointmentChanged });
 })();
+
+/** Switching how a plan is planned. */
+(function() {
+    const t = (key, params = {}) => I18n.t(key, params);
+
+    /**
+     * Save the planning mode as soon as it changes.
+     *
+     * It decides which calculation runs and which panels belong on screen, so
+     * leaving it in the route draft meant the plan on the server stayed in the
+     * old mode: switching back to one traveller left the team panels up and the
+     * next save still refused for having no team members.
+     */
+    async function planningModeChanged() {
+        if (State.tripBusy) return;
+        const plan = State.currentTripPlan;
+        const mode = document.getElementById('trip-planning-mode')?.value;
+        if (!plan?.id || !mode || mode === plan.planning_mode) return;
+        try {
+            setTripBusy(true);
+            State.currentTripPlan = await ApiClient.updateTripPlan(plan.id, {
+                planning_mode: mode,
+                row_version: plan.row_version || null,
+            });
+            notify(t(mode === 'team'
+                ? 'Team planning is on. Add the people travelling.'
+                : 'Single-traveller planning is on.'));
+        } catch (err) {
+            console.error('Change planning mode error:', err);
+            await handleTripError(err, 'Change planning mode');
+        } finally {
+            setTripBusy(false);
+        }
+        populateTripPlanForm(State.currentTripPlan, { committed: true });
+        renderCurrentTripPlan();
+        window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
+        window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
+        renderTripMap();
+    }
+
+    window.TripPlanningModeActions = Object.freeze({ planningModeChanged });
+})();

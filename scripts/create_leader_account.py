@@ -96,11 +96,30 @@ def main() -> int:
              args.display_name, now),
         )
         action = "created"
-    # A stored credential row would override the users table on sign-in.
+    # The account needs a credential row in the same organization as everybody
+    # else, not no credential at all: the team directory is read through that
+    # membership, so an account without one sees only itself and cannot be
+    # planned alongside colleagues.
     if conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='user_credentials'"
     ).fetchone():
+        organization = conn.execute(
+            "SELECT organization_id FROM user_credentials WHERE is_active = 1 "
+            "ORDER BY created_at LIMIT 1"
+        ).fetchone()
+        organization_id = (
+            organization["organization_id"] if organization
+            else conn.execute("SELECT id FROM organizations LIMIT 1").fetchone()["id"]
+        )
         conn.execute("DELETE FROM user_credentials WHERE user_id = ?", (user_id,))
+        conn.execute(
+            "INSERT INTO user_credentials (id, organization_id, user_id, "
+            "password_hash, password_scheme, must_change_password, is_active, "
+            "created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'pbkdf2_sha256', 0, 1, ?, ?)",
+            (generate_uuid(), organization_id, user_id,
+             hash_password(password), now, now),
+        )
     conn.commit()
     close_db()
 

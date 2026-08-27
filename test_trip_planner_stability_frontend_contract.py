@@ -438,10 +438,44 @@ console.log(JSON.stringify(context.TripStopScheduleControls.readPayload('s1')));
     assert "trip-stop-appointment-actions.js" in index, "module never loaded"
 
 
+def check_planning_mode_is_saved_not_drafted() -> None:
+    """Switching how a plan is planned has to reach the server.
+
+    The mode decides which calculation runs and which panels belong on screen.
+    Kept only in the route draft it never reached the plan, so switching back to
+    one traveller left the team panels up and the next save still refused the
+    plan for having no team members.
+    """
+    route_form = _source("frontend/js/modules/trip-route-form.js")
+    assert "'trip-planning-mode'" not in route_form, (
+        "the mode is a plan setting, not one of the route draft's fields"
+    )
+    index = _source("frontend/index.html")
+    assert 'id="trip-planning-mode"' in index
+    select = index[index.index('id="trip-planning-mode"'):]
+    select = select[:select.index(">")]
+    assert "TripPlanningModeActions.planningModeChanged()" in select, (
+        f"changing the mode must save it: {select}"
+    )
+    actions = _source("frontend/js/modules/trip-stop-appointment-actions.js")
+    assert "updateTripPlan" in actions and "planning_mode" in actions, (
+        "the mode must be sent to the plan endpoint"
+    )
+    # The panels follow the saved plan, so saving is what makes them appear and
+    # disappear; nothing may read the mode off the form instead.
+    for module in ("trip-team-view.js", "trip-schedule-view.js",
+                   "trip-flexible-suggestions.js"):
+        source = _source(f"frontend/js/modules/{module}")
+        assert "trip-planning-mode" not in source, (
+            f"{module} must read the saved mode, not the form control"
+        )
+
+
 def main() -> None:
     check_static_contract()
     check_itinerary_payload_carries_no_undeclared_field()
     check_agreed_visit_time_can_be_entered()
+    check_planning_mode_is_saved_not_drafted()
     check_calendar_dates_are_timezone_invariant()
     check_region_state_and_sibling_visit_draft_are_preserved()
     print("PASS: Trip Planner frontend stability contracts")

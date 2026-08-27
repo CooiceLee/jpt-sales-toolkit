@@ -113,11 +113,17 @@ def validate_team_inputs(team: tuple, origins: dict, destinations: dict) -> None
         raise ValueError(
             "Add at least one team member before planning a team trip"
         )
+    # Named without the account id: the message is shown to a user, and an
+    # id in the middle of a sentence cannot be translated either.
     for user in team:
         if not (origins.get(user) or origins.get("__default__")):
-            raise ValueError(f"Set a departure point for team member {user}")
+            raise ValueError(
+                "Set a departure point for the plan, or for every team member"
+            )
         if not (destinations.get(user) or destinations.get("__default__")):
-            raise ValueError(f"Set a return point for team member {user}")
+            raise ValueError(
+                "Set a return point for the plan, or for every team member"
+            )
 
 
 def merge_stop_updates(updates: list) -> list:

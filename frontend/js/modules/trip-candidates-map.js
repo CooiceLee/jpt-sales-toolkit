@@ -24,11 +24,16 @@ function renderTripMap() {
         const hasExactCoordinates = window.TripCandidateState?.hasExactCoordinates
             ? window.TripCandidateState.hasExactCoordinates(candidate)
             : Boolean(pair && candidate.coordinate_quality === 'exact' && !candidate.needs_coordinate_review);
-        const candidateAction = hasExactCoordinates
-            ? `<button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add to Plan'))}</button>`
+        // The same customer must not read as addable here and already added in
+        // the list beside it.
+        const alreadyOnPlan = selected;
+        const candidateAction = alreadyOnPlan
+            ? `<button type="button" class="btn btn-secondary btn-sm" disabled>${escapeHtml(I18n.t('Already added'))}</button>`
+            : hasExactCoordinates
+            ? `<button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add to plan'))}</button>`
             : `<div class="trip-coordinate-required">${escapeHtml(I18n.t('Precise coordinates are required before this customer can be added.'))}</div>
                 <div class="trip-popup-actions">
-                    <button type="button" class="btn btn-primary btn-sm" disabled>${escapeHtml(I18n.t('Add to Plan'))}</button>
+                    <button type="button" class="btn btn-primary btn-sm" disabled>${escapeHtml(I18n.t('Add to plan'))}</button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="openTripCandidateCoordinateReview(${index})">${escapeHtml(I18n.t('Open Coordinate Review'))}</button>
                 </div>`;
         marker.bindPopup(`

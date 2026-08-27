@@ -12,6 +12,12 @@ async function handleTripError(err, action) {
     }));
 }
 
+function inCurrentPlan(candidate) {
+    return (State.currentTripPlan?.stops || []).some(
+        stop => stop.stop_kind !== 'free' && stop.customer_id === candidate.customer_id
+    );
+}
+
 function renderTripCandidates() {
     const container = document.getElementById('trip-candidate-list');
     const candidates = State.tripCandidates || [];
@@ -48,10 +54,12 @@ function renderTripCandidates() {
                         <td>${escapeHtml((item.reasons || []).map(reason => I18n.t(reason)).join(', ') || '-')}</td>
                         <td class="trip-candidate-actions">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="focusTripCandidate(${index})">${escapeHtml(I18n.t('Map'))}</button>
-                            ${TripCandidateState.hasExactCoordinates(item) ? `
-                                <button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add'))}</button>
+                            ${inCurrentPlan(item) ? `
+                                <button type="button" class="btn btn-secondary btn-sm" disabled>${escapeHtml(I18n.t('Already added'))}</button>
+                            ` : TripCandidateState.hasExactCoordinates(item) ? `
+                                <button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add to plan'))}</button>
                             ` : `
-                                <button type="button" class="btn btn-primary btn-sm" disabled title="${escapeHtml(I18n.t('Add precise coordinates before adding this customer.'))}">${escapeHtml(I18n.t('Add'))}</button>
+                                <button type="button" class="btn btn-primary btn-sm" disabled title="${escapeHtml(I18n.t('Add precise coordinates before adding this customer.'))}">${escapeHtml(I18n.t('Add to plan'))}</button>
                                 <button type="button" class="btn btn-secondary btn-sm" onclick="openTripCandidateCoordinateReview(${index})">${escapeHtml(I18n.t('Coordinate Review'))}</button>
                             `}
                         </td>
