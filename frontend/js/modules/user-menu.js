@@ -22,8 +22,17 @@ function initUserMenu() {
             );
             const version = document.getElementById('runtime-version');
             if (version) {
-                version.textContent = `v${status.version || '—'}`;
-                version.title = `${window.I18n?.t('Running version') || 'Running version'}: ${status.version || '—'}`;
+                // The server's version and the build the page's own scripts
+                // came from are different facts. A tab left open across an
+                // upgrade shows the new server and the old assets, which looks
+                // exactly like a feature that was never fixed.
+                const assets = version.dataset.assetBuild || '';
+                const running = status.version || '—';
+                const stale = assets && !assets.startsWith(running);
+                version.textContent = `v${running}${stale ? ' ⚠' : ''}`;
+                version.title = `${window.I18n?.t('Running version') || 'Running version'}: `
+                    + `${running}\n${window.I18n?.t('Loaded assets') || 'Loaded assets'}: ${assets || '—'}`
+                    + (stale ? `\n${window.I18n?.t('This page is out of date. Reload it.') || 'This page is out of date. Reload it.'}` : '');
             }
         })
         .catch(error => console.debug('Runtime status unavailable:', error));

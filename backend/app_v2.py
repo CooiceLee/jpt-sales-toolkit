@@ -152,6 +152,9 @@ def create_app() -> FastAPI:
                 lambda match: f"{match.group(1)}?v={stamp}",
                 source.read_text(encoding="utf-8"),
             )
+            # The page reports the build its own assets came from, so a stale
+            # tab can be told apart from a broken feature by looking at it.
+            html = html.replace("__ASSET_BUILD__", stamp)
             return HTMLResponse(html, headers={"Cache-Control": "no-store, max-age=0"})
 
         @app.get("/")

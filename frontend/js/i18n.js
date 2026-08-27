@@ -733,6 +733,8 @@
         // Team planning
         ['Agreed visit date', '约定拜访日期'], ['Agreed period', '约定时段'],
         ['Add to plan', '添加'], ['Already added', '已添加'],
+        ['Loaded assets', '已加载的构建'],
+        ['This page is out of date. Reload it.', '此页面已过期，请刷新。'],
         ['{name} joined the trip', '{name} 已加入行程'],
         ['Removed from the trip', '已从行程中移除'],
         ['Customer visits with no agreed time yet.', '尚未约定时间的客户拜访。'],
