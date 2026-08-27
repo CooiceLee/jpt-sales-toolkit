@@ -3846,6 +3846,8 @@ html, body {
     padding-left: 9px; background: var(--cream-50); border-radius: var(--radius-md); }
 .trip-agreed-banner { margin: 0 0 8px; color: var(--wine-700); font-size: 12px;
     font-weight: 600; }
+.trip-leg-members { margin: 10px 0 -4px; color: var(--wine-600); font-size: 12px;
+    font-weight: 600; }
 .trip-map-notice { margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius-md);
     background: var(--cream-100); color: var(--ink-700); font-size: 13px; }
 .trip-suggestions-panel { margin: 0 0 12px; }

@@ -30,6 +30,16 @@ globalThis.State = {};
 """
 
 
+def _node_json(script: str) -> str:
+    """Run a self-contained node script and return its last line as JSON text."""
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr.strip()[:500])
+    return result.stdout.strip().splitlines()[-1]
+
+
 def run_js(body: str) -> dict:
     sources = "\n".join(
         (MODULES / name).read_text(encoding="utf-8")
@@ -514,6 +524,85 @@ globalThis.MapSupport = { coordinatePair: (a, b) => [a, b] };
     )
 
 
+JS_LEG_LIST = r'''
+const fs=require('fs');const vm=require('vm');
+const nodes = new Map([['trip-leg-list', { innerHTML: '' }],
+                       ['trip-leg-count', { textContent: '' }]]);
+const context = { console, escapeHtml: v => String(v ?? ''),
+  I18n: { t: (k, p = {}) =>
+    String(k).replace(/\{(\w+)\}/g, (_, n) => p[n] ?? `{${n}}`) },
+  document: { getElementById: id => nodes.get(id) || { innerHTML: '' } },
+  State: {},
+  TripDuration: { label: v => String(v), toDisplayTravelDays: v => String(v),
+                  toDisplayDays: v => String(v) },
+  TripPlanningDraft: { MODES: ['flight', 'drive', 'ground_public', 'other'] },
+  TripSuggestionView: { render: () => {} },
+  MapSupport: { coordinatePair: (a, b) => [a, b] },
+};
+context.window = context; vm.createContext(context);
+for (const f of ['trip-schedule-view.js', 'trip-team-risks.js',
+                 'trip-team-timeline-view.js', 'trip-team-timeline.js',
+                 'trip-team-journeys.js', 'trip-transport-view.js']) {
+  vm.runInContext(fs.readFileSync('frontend/js/modules/' + f, 'utf8'), context);
+}
+const draft = { legOverrides: {}, transportModePriority: ['flight', 'drive'] };
+const members = [{ user_id: 'a', display_name: 'Ayden' },
+                 { user_id: 's', display_name: 'Slluu' }];
+const leg = (m, n, from, to, mode) => ({ member_id: m, sequence_no: n,
+  leg_key: from + '>' + to, from_label: from, to_label: to,
+  selected_mode: mode, distance_km: 100, time_hours: 2,
+  travel_half_days: 2, travel_days: 1 });
+const together = [];
+for (const m of ['a', 's']) {
+  together.push(leg(m, 1, 'SZX', 'VJT', 'flight'), leg(m, 2, 'VJT', 'SZX', 'flight'));
+}
+context.TripTransportView.render(
+  { planning_mode: 'team', members, legs: together, stops: [] }, draft);
+const teamCount = nodes.get('trip-leg-count').textContent;
+const teamNames = (nodes.get('trip-leg-list').innerHTML
+  .match(/trip-leg-members">([^<]*)</g) || [])
+  .map(x => x.replace(/.*">/, '').replace('<', ''));
+
+nodes.get('trip-leg-list').innerHTML = '';
+const apart = [leg('a', 1, 'VJT', 'STU', 'drive'), leg('s', 1, 'VJT', 'STU', 'ground_public')];
+context.TripTransportView.render(
+  { planning_mode: 'team', members, legs: apart, stops: [] }, draft);
+const apartCount = nodes.get('trip-leg-count').textContent;
+
+nodes.get('trip-leg-list').innerHTML = '';
+context.TripTransportView.render(
+  { planning_mode: 'legacy', members: [], legs: together.slice(0, 2), stops: [] }, draft);
+console.log(JSON.stringify({
+  teamCount, teamNames, apartCount,
+  legacyCount: nodes.get('trip-leg-count').textContent,
+  legacyNames: nodes.get('trip-leg-list').innerHTML.includes('trip-leg-members'),
+}));
+'''
+
+
+def check_team_legs_are_listed_once_per_journey() -> None:
+    """Colleagues travelling together are one leg in the list, naming them all.
+
+    Every member has their own legs, so three people on the same trip produce
+    three identical rows for each hop - nine rows for two customers. Listed flat
+    and unattributed that reads as legs appearing from nowhere, which is how it
+    was reported.
+    """
+    data = json.loads(_node_json(JS_LEG_LIST))
+    assert data["teamCount"] == "2 legs", (
+        f"two colleagues on the same two hops is two legs: {data['teamCount']}"
+    )
+    assert data["teamNames"] == ["Ayden · Slluu", "Ayden · Slluu"], data["teamNames"]
+    assert data["apartCount"] == "2 legs", (
+        "the same two places by different means stays two legs: "
+        f"{data['apartCount']}"
+    )
+    assert data["legacyCount"] == "2 legs"
+    assert data["legacyNames"] is False, (
+        "a single-traveller plan must not gain member labels"
+    )
+
+
 def check_module_wiring() -> None:
     """The modules load, and the schedule view sends team plans to the timeline."""
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
@@ -546,6 +635,7 @@ def main() -> None:
     check_real_backend_output_renders()
     check_only_a_decision_reads_as_planned()
     check_actions_call_globals_that_exist()
+    check_team_legs_are_listed_once_per_journey()
     check_module_wiring()
     print("PASS: team risk bar, travel team card and team timeline contracts")
 

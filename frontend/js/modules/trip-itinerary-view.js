@@ -107,7 +107,9 @@ function renderTripItinerarySummary(plan) {
             <div><span>${escapeHtml(I18n.t('Business days'))}</span><strong>${escapeHtml(summary.total_business_days ?? '-')}</strong></div>
             <div><span>${escapeHtml(I18n.t('Stay'))}</span><strong>${escapeHtml(I18n.t('{count} days', { count: summary.total_stay_days ?? 0 }))}</strong></div>
             <div><span>${escapeHtml(I18n.t('Travel'))}</span><strong>${escapeHtml(I18n.t('{count} days', { count: summary.total_travel_days ?? 0 }))}</strong></div>
-            <div><span>${escapeHtml(I18n.t('Distance'))}</span><strong>${escapeHtml(I18n.t('{count} km', { count: summary.total_distance_km ?? 0 }))}</strong></div>
+            <div><span>${escapeHtml(I18n.t(
+                plan?.planning_mode === 'team' ? 'Team aggregate distance' : 'Distance'
+            ))}</span><strong>${escapeHtml(I18n.t('{count} km', { count: summary.total_distance_km ?? 0 }))}</strong></div>
             ${warnings.length ? `
                 <div class="trip-itinerary-warning" role="alert">
                     <strong>${escapeHtml(I18n.t('Route needs attention'))}</strong>

@@ -71,14 +71,43 @@
         </div>`;
     }
 
+    /**
+     * One entry per journey, saying whose it is.
+     *
+     * In team planning every member has their own legs, so three colleagues
+     * travelling together produce three identical rows for each hop. Listed
+     * flat and unattributed that reads as legs appearing out of nowhere - the
+     * same journey is shown once, naming everybody on it.
+     */
+    function legEntries(plan) {
+        const legs = plan?.legs || [];
+        if (plan?.planning_mode !== 'team') {
+            return legs.map(leg => ({ leg, members: [] }));
+        }
+        const merged = new Map();
+        legs.forEach(leg => {
+            const key = window.TripTeamJourneys?.identityOf?.(leg)
+                || `${leg.leg_key}|${leg.selected_mode}`;
+            const entry = merged.get(key) || { leg, members: [] };
+            const name = window.TripTeamJourneys?.memberName?.(plan, leg.member_id);
+            if (name && !entry.members.includes(name)) entry.members.push(name);
+            merged.set(key, entry);
+        });
+        return [...merged.values()];
+    }
+
     function renderLegs(plan, draft) {
         const root = document.getElementById('trip-leg-list');
         const count = document.getElementById('trip-leg-count');
         if (!root) return;
-        const legs = plan?.legs || [];
-        if (count) count.textContent = t('{count} legs', { count: legs.length });
-        root.innerHTML = legs.length
-            ? legs.map((leg, index) => renderLeg(leg, index, draft)).join('')
+        const entries = legEntries(plan);
+        if (count) count.textContent = t('{count} legs', { count: entries.length });
+        root.innerHTML = entries.length
+            ? entries.map((entry, index) =>
+                (entry.members.length
+                    ? `<p class="trip-leg-members">${h(entry.members.join(' · '))}</p>`
+                    : '')
+                + renderLeg(entry.leg, index, draft)).join('')
             : `<div class="empty-state compact">${h(t('Preview the route to calculate transport legs.'))}</div>`;
         window.TripSuggestionView?.render?.(plan);
     }
