@@ -47,7 +47,8 @@ for name, lat, lng in (("Frankfurt",50.1109,8.6821), ("Paris",48.8566,2.3522)):
       (sid,plan,cid,len(stops)+1,stamp,actor,stamp,actor))
     stops[name] = sid
 conn.commit()
-from backend.repositories import close_db; close_db()
+from backend.repositories import close_db
+close_db()
 
 from fastapi.testclient import TestClient
 from backend.app_v2 import create_app
@@ -110,4 +111,69 @@ r = client.post(f"/api/review/trip-plans/{plan}/generate-itinerary",
 assert r.status_code == 200, r.text[:300]
 final = [x for x in r.json()["stops"] if x["id"] == paris][0]
 assert (final["planned_date"], final["planned_start_period"]) == ("2026-09-16", "AM")
+# The first save is where the end of the visit is written for the first time.
+# Deriving it must not read as changing what the customer agreed to.
+assert final["confirmation_status"] == "confirmed", (
+    "the first save after an agreed time was entered downgraded it: "
+    f"{final['confirmation_status']}"
+)
+assert final["planned_end_date"], "the end of the visit should now be recorded"
+
+say("5. 已确认的约定时间不因别处改动而被降级")
+# Confirm the agreed visit, then change the plan around it.
+cur = client.get(f"/api/review/trip-plans/{plan}", headers=H).json()
+rv = [s for s in cur["stops"] if s["id"] == paris][0]["row_version"]
+r = client.patch(f"/api/review/trip-plans/{plan}/stops/{paris}", headers=H,
+                 json={"row_version": rv, "confirmation_status": "confirmed"})
+assert r.status_code == 200, r.text[:200]
+
+conn = get_db()
+extra_customer, extra_stop = generate_uuid(), generate_uuid()
+conn.execute("INSERT INTO customers (id,display_name,normalized_name,lat,lng,"
+             "created_at,updated_at,row_version) VALUES (?,'Munich','munich',"
+             "48.1351,11.5820,?,?,1)", (extra_customer, stamp, stamp))
+conn.commit()
+close_db()
+
+r = client.post(f"/api/review/trip-plans/{plan}/stops", headers=H,
+                json={"customer_id": extra_customer})
+assert r.status_code == 200, r.text[:200]
+after_add = [s for s in r.json()["stops"] if s["id"] == paris][0]
+assert after_add["confirmation_status"] == "confirmed", (
+    "adding a customer elsewhere must not ask the customer to confirm again: "
+    f"{after_add['confirmation_status']}"
+)
+
+def version():
+    return client.get(f"/api/review/trip-plans/{plan}", headers=H).json()["row_version"]
+
+r = client.post(f"/api/review/trip-plans/{plan}/generate-itinerary", headers=H,
+                json={**payload, "row_version": version()})
+assert r.status_code == 200, r.text[:300]
+after_save = [s for s in r.json()["stops"] if s["id"] == paris][0]
+assert after_save["confirmation_status"] == "confirmed", (
+    "saving the route must not downgrade a time that did not move: "
+    f"{after_save['confirmation_status']}"
+)
+assert (after_save["planned_date"], after_save["planned_start_period"]) == (
+    "2026-09-16", "AM"
+)
+
+say("6. 真的改了约定时间，才应要求重新确认")
+rv = [s for s in client.get(f"/api/review/trip-plans/{plan}", headers=H).json()["stops"]
+      if s["id"] == paris][0]["row_version"]
+client.patch(f"/api/review/trip-plans/{plan}/stops/{paris}", headers=H,
+             json={"row_version": rv, "planned_date": "2026-09-18",
+                   "planned_start_period": "AM", "schedule_locked": True,
+                   "confirmation_status": "confirmed"})
+r = client.post(f"/api/review/trip-plans/{plan}/generate-itinerary", headers=H,
+                json={**payload, "row_version": version()})
+assert r.status_code == 200, r.text[:300]
+moved = [s for s in r.json()["stops"] if s["id"] == paris][0]
+assert moved["planned_date"] == "2026-09-18"
+assert moved["confirmation_status"] == "needs_reconfirmation", (
+    "a visit whose agreed time actually moved must be reconfirmed: "
+    f"{moved['confirmation_status']}"
+)
+
 print("PASS: an agreed visit time is entered, saved and honoured by the route")

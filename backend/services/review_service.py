@@ -1007,19 +1007,30 @@ class ReviewService:
             visit_end = visit_slots[-1] if visit_slots else visit_start_slot
             stay_days = math.ceil(duration_half_days / 2)
             confirmation_status = stop.get("confirmation_status") or "unconfirmed"
-            schedule_semantic_changed = any(
+            # What the customer agreed to is a time, not a position in the
+            # route. Where the visit sits in the order, which period we would
+            # have preferred and whether we marked it locked are all ours to
+            # change; asking the customer to confirm again because a different
+            # city was added earlier in the trip is noise, and noise is how a
+            # reconfirmation flag stops being read.
+            def moved(field, value) -> bool:
+                # Filling in something that was never recorded is not a change
+                # to what the customer agreed to: the end of a visit is derived
+                # from its start and its length, so the first calculation after
+                # an agreed time is entered supplies it rather than altering it.
+                previous = stop.get(field)
+                return bool(previous) and previous != value
+
+            agreed_schedule_changed = any(
                 (
-                    stop.get("sequence_no") != sequence_no,
-                    stop.get("planned_date") != visit_start[0].isoformat(),
-                    stop.get("planned_end_date") != visit_end[0].isoformat(),
-                    stop.get("planned_start_period") != visit_start[1],
-                    stop.get("planned_end_period") != visit_end[1],
+                    moved("planned_date", visit_start[0].isoformat()),
+                    moved("planned_end_date", visit_end[0].isoformat()),
+                    moved("planned_start_period", visit_start[1]),
+                    moved("planned_end_period", visit_end[1]),
                     int(stop.get("duration_half_days") or 0) != duration_half_days,
-                    (stop.get("preferred_period") or "auto") != preferred_period,
-                    bool(stop.get("schedule_locked")) != schedule_locked,
                 )
             )
-            if confirmation_status == "confirmed" and schedule_semantic_changed:
+            if confirmation_status == "confirmed" and agreed_schedule_changed:
                 confirmation_status = "needs_reconfirmation"
             stop_updates.append(
                 {

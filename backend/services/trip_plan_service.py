@@ -100,6 +100,11 @@ class TripPlanService:
                     updated_at = ?, updated_by = ?, row_version = row_version + 1
                 WHERE plan_id = ? AND archived_at IS NULL
                   AND confirmation_status = 'confirmed'
+                  -- A visit whose time the customer agreed to does not move
+                  -- when the route around it changes, so the confirmation still
+                  -- stands. Asking for it again after every added stop trains
+                  -- people to ignore the flag.
+                  AND schedule_locked = 0
                 """,
                 (timestamp, actor_id, plan_id),
             )
@@ -507,6 +512,7 @@ class TripPlanService:
                             updated_at = ?, updated_by = ?, row_version = row_version + 1
                         WHERE plan_id = ? AND archived_at IS NULL
                           AND confirmation_status = 'confirmed'
+                          AND schedule_locked = 0
                         """,
                         (now, actor_id, plan_id),
                     )

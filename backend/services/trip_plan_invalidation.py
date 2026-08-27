@@ -158,6 +158,9 @@ def invalidate_trip_plan_ids(
                 updated_at = ?, updated_by = ?, row_version = row_version + 1
             WHERE plan_id IN ({marks}) AND archived_at IS NULL
               AND confirmation_status = 'confirmed'
+              -- An agreed time does not move when the route around it changes,
+              -- so the customer's confirmation still stands.
+              AND schedule_locked = 0
             """,
             (timestamp, actor_id, *ids),
         )

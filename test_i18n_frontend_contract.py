@@ -30,7 +30,67 @@ ACTION_TRANSLATORS = {
 }
 
 
+def _source(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
+
+# The screens where an untranslated server message is most visible: both show
+# whatever the API returned, so a message added on the server without a
+# translation reaches a Chinese user in English.
+SERVER_MESSAGE_SOURCES = (
+    "backend/routers/authorization.py",
+    "backend/routers/admin.py",
+    "backend/services/offline_authorization_service.py",
+    "backend/services/leader_authorization_recovery_service.py",
+    "backend/authorization/issuer.py",
+    "backend/authorization/device.py",
+    "backend/services/trip_team_adapter.py",
+)
+
+
+def check_server_messages_are_translated() -> None:
+    """A message the server raises must have a translation before it is shown.
+
+    The authorization screens and the Excel preflight display the API's own
+    text, so this is not a cosmetic gap: the user reads English in an otherwise
+    Chinese interface at exactly the moment something went wrong.
+    """
+    i18n = _source("frontend/js/i18n.js")
+    missing = []
+    for relative in SERVER_MESSAGE_SOURCES:
+        path = ROOT / relative
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for message in re.findall(
+            r'(?:AuthorizationError|ValueError|detail=)\(?\s*"([A-Z][^"]{12,140})"',
+            text,
+        ):
+            if f"['{message}'" not in i18n and f'["{message}"' not in i18n:
+                missing.append(f"{relative}: {message}")
+    assert not missing, (
+        "these server messages reach the user untranslated:\n  "
+        + "\n  ".join(sorted(missing))
+    )
+
+
+def check_authorization_screens_translate_what_they_show() -> None:
+    """Every authorization message box has to pass its text through I18n."""
+    for name in ("authorization-activation.js", "authorization-center.js"):
+        source = _source(f"frontend/js/modules/{name}")
+        setters = re.findall(
+            r"function set\w*Message\([^)]*\)\s*\{(.*?)\n    \}", source, re.S
+        )
+        assert setters, f"{name} has no message setter to check"
+        for body in setters:
+            assert "I18n.t(" in body, (
+                f"{name} writes a message without translating it: {body.strip()[:120]}"
+            )
+
+
 def main() -> None:
+    check_server_messages_are_translated()
+    check_authorization_screens_translate_what_they_show()
     i18n = (ROOT / "frontend" / "js" / "i18n.js").read_text(encoding="utf-8")
     utils = (ROOT / "frontend" / "js" / "shared" / "utils.js").read_text(encoding="utf-8")
 

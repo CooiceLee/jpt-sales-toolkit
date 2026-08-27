@@ -25,7 +25,9 @@
     function setCenterMessage(message, error = false) {
         const element = document.getElementById('authorization-center-message');
         if (!element) return;
-        element.textContent = message || '';
+        // Server messages arrive here as English text, so they are translated
+        // like any other label rather than shown as they came.
+        element.textContent = message ? I18n.t(message) : '';
         element.classList.toggle('error-state', error);
         element.style.display = message ? 'block' : 'none';
     }
