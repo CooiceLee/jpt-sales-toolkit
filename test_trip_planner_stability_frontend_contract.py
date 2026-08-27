@@ -471,11 +471,50 @@ def check_planning_mode_is_saved_not_drafted() -> None:
         )
 
 
+def check_assets_are_stamped_with_the_build() -> None:
+    """Every asset URL must change when the build does.
+
+    The version markers in index.html were written by hand, so a module whose
+    contents changed kept the same URL and browsers went on using the copy they
+    already had. That shows up as a half-updated page - a new label from one
+    module beside old behaviour from another - which is very hard to tell apart
+    from a bug in the feature itself.
+    """
+    import os
+    import re
+    import sys
+    import tempfile
+
+    os.environ["JPT_DATA_DIR"] = tempfile.mkdtemp(prefix="jpt_asset_stamp_")
+    sys.path.insert(0, str(ROOT))
+    from fastapi.testclient import TestClient
+
+    from backend.config import APP_VERSION, init_settings
+    from backend.startup_upgrade import initialize_database_safely
+
+    initialize_database_safely(init_settings(ROOT))
+    from backend.app_v2 import create_app
+
+    html = TestClient(create_app()).get("/").text
+    stamps = set(re.findall(r'/static/[^"?]+\?v=([^"]+)', html))
+    assert len(stamps) == 1, (
+        f"assets must all carry the same build stamp, found {sorted(stamps)}"
+    )
+    stamp = next(iter(stamps))
+    assert APP_VERSION in stamp, (
+        f"the stamp must change with the application version: {stamp}"
+    )
+    assert not re.search(r'\?v=\d+\.\d+"', html), (
+        "a hand-written version marker survived; it will not change on release"
+    )
+
+
 def main() -> None:
     check_static_contract()
     check_itinerary_payload_carries_no_undeclared_field()
     check_agreed_visit_time_can_be_entered()
     check_planning_mode_is_saved_not_drafted()
+    check_assets_are_stamped_with_the_build()
     check_calendar_dates_are_timezone_invariant()
     check_region_state_and_sibling_visit_draft_are_preserved()
     print("PASS: Trip Planner frontend stability contracts")

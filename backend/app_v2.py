@@ -12,7 +12,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+
+import re
+from fastapi.responses import FileResponse, HTMLResponse
 
 from .config import APP_VERSION, init_settings
 from .database_access import database_access_gate
@@ -37,6 +39,10 @@ from .routers import (
 
 # Application root directory
 APP_ROOT = Path(__file__).parent.parent
+
+
+# Any asset URL carrying a hand-written version marker.
+ASSET_VERSION_PATTERN = re.compile(r'(/static/[^"\'?\s]+)\?v=[^"\'\s]*')
 
 
 def create_app() -> FastAPI:
@@ -130,9 +136,27 @@ def create_app() -> FastAPI:
     if frontend_dir.exists():
         app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")
 
+        def index_html() -> HTMLResponse:
+            """The page with every asset stamped with this build.
+
+            The version markers in index.html are written by hand, so an asset
+            whose contents changed kept the same URL and browsers went on using
+            the copy they already had - which shows up as a half-updated page:
+            new labels from one module beside old behaviour from another. The
+            stamp is the application version and the file's own modification
+            time, so it changes whenever either does.
+            """
+            source = frontend_dir / "index.html"
+            stamp = f"{APP_VERSION}-{int(source.stat().st_mtime)}"
+            html = ASSET_VERSION_PATTERN.sub(
+                lambda match: f"{match.group(1)}?v={stamp}",
+                source.read_text(encoding="utf-8"),
+            )
+            return HTMLResponse(html, headers={"Cache-Control": "no-store, max-age=0"})
+
         @app.get("/")
         async def serve_index():
-            return FileResponse(frontend_dir / "index.html")
+            return index_html()
 
         @app.get("/{path:path}")
         async def serve_frontend(path: str):
@@ -145,7 +169,7 @@ def create_app() -> FastAPI:
             file_path = frontend_dir / path
             if file_path.exists() and file_path.is_file():
                 return FileResponse(file_path)
-            return FileResponse(frontend_dir / "index.html")
+            return index_html()
 
     return app
 
