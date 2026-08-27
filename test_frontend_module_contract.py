@@ -11,7 +11,44 @@ FRONTEND = ROOT / "frontend"
 MODULES = FRONTEND / "js" / "modules"
 
 
+def check_const_globals_are_not_read_through_window() -> None:
+    """A global declared with const is not a property of window.
+
+    app.js declares State and ApiClient with const, so `window.State` is
+    undefined even though `State` works. Reading one through window with
+    optional chaining fails silently - the guard that follows just returns and
+    the button does nothing at all, with no error anywhere.
+
+    A node harness cannot catch this: assigning globalThis.State there makes
+    window.State work, so the test passes and the browser does not.
+    """
+    import re
+
+    root = Path(__file__).parent
+    declared = set()
+    for relative in ("frontend/js/app.js", "frontend/js/api-client.js"):
+        path = root / relative
+        if path.is_file():
+            declared |= set(re.findall(
+                r"^(?:const|let)\s+([A-Z][A-Za-z0-9_]*)",
+                path.read_text(encoding="utf-8"), re.M,
+            ))
+    assert declared, "expected some const-declared globals to guard"
+
+    offenders = []
+    for path in sorted((root / "frontend" / "js" / "modules").glob("*.js")):
+        source = path.read_text(encoding="utf-8")
+        for name in declared:
+            if re.search(rf"window\.{name}\b", source):
+                offenders.append(f"{path.name}: window.{name}")
+    assert not offenders, (
+        "these read a const global through window, which is always undefined:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
 def main() -> None:
+    check_const_globals_are_not_read_through_window()
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
     app_source = (FRONTEND / "js" / "app.js").read_text(encoding="utf-8")
     script_sources = re.findall(r'<script\s+src="([^"]+\.js)(?:\?[^" ]*)?"', index)

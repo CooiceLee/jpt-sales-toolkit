@@ -3,7 +3,10 @@
     const t = (key, params = {}) => I18n.t(key, params);
 
     function currentPlanId() {
-        return window.State?.currentTripPlan?.id || '';
+        // State is declared with const at the top level of app.js, so it is not
+        // a property of window: reading it through window gives undefined and
+        // every action here silently does nothing.
+        return State.currentTripPlan?.id || '';
     }
 
     async function apply(action) {
