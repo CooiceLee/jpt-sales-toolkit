@@ -10,6 +10,7 @@ separated time zones.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -17,6 +18,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 MODULES = ROOT / "frontend" / "js" / "modules"
+
+
+def _source(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
+
+def _node_json(script: str) -> str:
+    """Run a node script and return its last line, which must be JSON."""
+    result = subprocess.run(
+        ["node", "-e", script], cwd=ROOT, check=True, text=True,
+        capture_output=True,
+    )
+    return result.stdout.strip().splitlines()[-1]
 
 
 def _run_node(script: str, *, timezone: str | None = None) -> None:
@@ -291,8 +305,143 @@ vm.runInContext(
     _run_node(script)
 
 
+def check_itinerary_payload_carries_no_undeclared_field() -> None:
+    """The itinerary endpoints forbid extra fields, so the payload must match them.
+
+    A field added to the plan header spreads into the preview and save requests
+    through readTripPlanFormPayload. TripItineraryGenerate is declared with
+    extra="forbid", so one stray field makes every preview and every save fail
+    with 422 - not the field's own feature, the whole route calculation.
+    """
+    import re
+
+    router = _source("backend/routers/review.py")
+    block = router[router.index("class TripItineraryGenerate"):]
+    block = block[:block.index("\n\n\nclass ")]
+    assert 'extra="forbid"' in block, (
+        "this check exists because the schema forbids extra fields"
+    )
+    declared = set(re.findall(r"^    (\w+):", block, re.M))
+
+    sent = json.loads(_node_json(r"""
+const fs=require('fs');const vm=require('vm');
+const elements=new Map();
+[
+ 'trip-title','trip-start-date','trip-end-date','trip-plan-region',
+ 'trip-planning-mode','trip-origin-name','trip-origin-lat','trip-origin-lng',
+ 'trip-destination-name','trip-destination-lat','trip-destination-lng',
+ 'trip-holidays','trip-description','trip-avoid-weekends',
+ 'trip-route-order-mode','trip-travel-mode','trip-departure-window-start',
+ 'trip-departure-window-end','trip-return-window-start','trip-return-window-end',
+].forEach(id => elements.set(id, { id, value: '', checked: false }));
+elements.get('trip-planning-mode').value = 'team';
+const context = {
+  console, Date,
+  State: { currentTripPlan: { id: 'p1', stops: [] },
+           tripCandidatePagination: { limit: 25, offset: 0 } },
+  document: { getElementById: id => elements.get(id) || null },
+  I18n: { t: value => value },
+  toDateInput: () => '2026-09-15', formatDate: value => value,
+};
+context.window = context; vm.createContext(context);
+for (const file of ['trip-form.js', 'trip-stop-duration-payload.js']) {
+  vm.runInContext(fs.readFileSync('frontend/js/modules/' + file, 'utf8'), context);
+}
+console.log(JSON.stringify(Object.keys(context.readTripItineraryPayload())));
+"""))
+    undeclared = sorted(set(sent) - declared)
+    assert not undeclared, (
+        "the itinerary request carries fields the endpoint rejects, so preview "
+        f"and save both fail with 422: {undeclared}"
+    )
+    # And the plan header request still carries the mode, which it owns.
+    header = json.loads(_node_json(r"""
+const fs=require('fs');const vm=require('vm');
+const elements=new Map();
+['trip-title','trip-planning-mode','trip-avoid-weekends','trip-holidays']
+  .forEach(id => elements.set(id, { id, value: '', checked: false }));
+elements.get('trip-planning-mode').value = 'team';
+const context = { console, Date,
+  State: { currentTripPlan: { id: 'p1', stops: [] },
+           tripCandidatePagination: { limit: 25, offset: 0 } },
+  document: { getElementById: id => elements.get(id) || null },
+  I18n: { t: value => value }, toDateInput: () => '2026-09-15',
+  formatDate: value => value };
+context.window = context; vm.createContext(context);
+for (const file of ['trip-form.js', 'trip-stop-duration-payload.js']) {
+  vm.runInContext(fs.readFileSync('frontend/js/modules/' + file, 'utf8'), context);
+}
+console.log(JSON.stringify(context.readTripPlanFormPayload()));
+"""))
+    assert header.get("planning_mode") == "team", (
+        f"creating or updating a plan must still carry the mode: {header}"
+    )
+
+
+def check_agreed_visit_time_can_be_entered() -> None:
+    """The time a customer agreed to must be typeable, and must be sent.
+
+    The calculation reads a locked visit's time from the stop, so the whole
+    "plan around the times I agreed" workflow depends on the UI being able to
+    put one there. Everything behind it existed while the only date field on
+    screen was read-only and labelled "calculated by route preview", which made
+    the feature unreachable - so what is checked here is the input itself.
+    """
+    controls = _source("frontend/js/modules/trip-stop-schedule-controls.js")
+    assert "readonly" not in controls, (
+        "the agreed date has to be editable"
+    )
+    assert "stop-agreed-date-" in controls and "stop-agreed-period-" in controls, (
+        "there must be an input for the agreed date and its AM/PM period"
+    )
+    view = _source("frontend/js/modules/trip-itinerary-view.js")
+    assert "Calculated by route preview" not in view, (
+        "the read-only calculated date must not sit beside the editable one"
+    )
+
+    sent = json.loads(_node_json(r"""
+const fs=require('fs');const vm=require('vm');
+const values = {
+  'stop-agreed-date-s1': '2026-09-16',
+  'stop-agreed-period-s1': 'AM',
+  'stop-period-s1': 'auto',
+  'stop-confirmation-s1': 'confirmed',
+};
+const nodes = new Map(Object.entries(values).map(([id, value]) => [id, { id, value }]));
+nodes.set('stop-schedule-lock-s1', { id: 'lock', checked: true, disabled: false });
+const context = {
+  console,
+  State: { currentTripPlan: { id: 'p1', route_order_mode: 'auto' } },
+  document: { getElementById: id => nodes.get(id) || null },
+  I18n: { t: value => value }, escapeHtml: value => String(value ?? ''),
+};
+context.window = context; vm.createContext(context);
+vm.runInContext(
+  fs.readFileSync('frontend/js/modules/trip-stop-schedule-controls.js', 'utf8'),
+  context,
+);
+console.log(JSON.stringify(context.TripStopScheduleControls.readPayload('s1')));
+"""))
+    assert sent["planned_date"] == "2026-09-16", sent
+    assert sent["planned_start_period"] == "AM", sent
+    assert sent["schedule_locked"] is True, (
+        f"confirming the time must lock it, or the route will move it: {sent}"
+    )
+
+    # An agreed time is a fact, so it is saved rather than left in the draft:
+    # the calculation reads it from the stop, not from the preview payload.
+    actions = _source("frontend/js/modules/trip-stop-appointment-actions.js")
+    assert "updateTripStop" in actions, (
+        "the agreed time must be saved, not only put in the route draft"
+    )
+    index = _source("frontend/index.html")
+    assert "trip-stop-appointment-actions.js" in index, "module never loaded"
+
+
 def main() -> None:
     check_static_contract()
+    check_itinerary_payload_carries_no_undeclared_field()
+    check_agreed_visit_time_can_be_entered()
     check_calendar_dates_are_timezone_invariant()
     check_region_state_and_sibling_visit_draft_are_preserved()
     print("PASS: Trip Planner frontend stability contracts")

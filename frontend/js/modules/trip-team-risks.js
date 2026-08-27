@@ -18,8 +18,11 @@
             'A visit names people who are not on this trip. Add them to the travel team, or change who attends.',
             risk
         ),
+        // A single-traveller plan has nobody to name, so it names the visit.
         cannot_reach_booked_visit: risk => t(
-            '{member} is not expected to reach the visit booked for {date} {period}. Confirm the travel, or move the appointment.',
+            risk.member_id || risk.user_id
+                ? '{member} is not expected to reach the visit booked for {date} {period}. Confirm the travel, or move the appointment.'
+                : 'The route does not reach {stop} before {date} {period}, when it is booked. Confirm the travel, or move the appointment.',
             risk
         ),
         planned_visit_moved: risk => t(

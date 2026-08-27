@@ -605,35 +605,54 @@ def check_duration_and_lock_conflicts_are_zero_write(
     preferred_conflict[first["id"]]["preferred_period"] = (
         "PM" if first["planned_start_period"] == "AM" else "AM"
     )
-    before = _snapshot()
-    response = client.post(
-        f"/api/review/trip-plans/{locked['id']}/generate-itinerary",
-        headers=ctx["headers"]["owner"],
-        json=_route_payload(locked, preferred_conflict),
-    )
-    assert response.status_code == 400, response.text
-    assert _snapshot() == before
-
-    before = _snapshot()
-    response = client.post(
-        f"/api/review/trip-plans/{locked['id']}/generate-itinerary",
-        headers=ctx["headers"]["owner"],
-        json=_route_payload(
-            locked,
-            locked_durations,
-            route_order_mode="auto",
-            stop_order=None,
+    # A preferred period that disagrees with the agreed one is reported, not
+    # refused: the customer's time wins and the preference is what gives way.
+    saved = _require(
+        client.post(
+            f"/api/review/trip-plans/{locked['id']}/generate-itinerary",
+            headers=ctx["headers"]["owner"],
+            json=_route_payload(locked, preferred_conflict),
         ),
+        200,
     )
-    assert response.status_code == 400, response.text
-    assert _snapshot() == before
+    kinds = {
+        risk["kind"] for risk in saved["itinerary_summary"].get("risks") or []
+    }
+    assert "booked_outside_preferred_period" in kinds, kinds
+    kept = next(item for item in saved["stops"] if item["id"] == first["id"])
+    assert kept["planned_start_period"] == first["planned_start_period"], (
+        "the agreed period must survive a conflicting preference"
+    )
 
+    # Recording an agreed time no longer requires switching the route order to
+    # manual first: the appointment is what decides where the visit sits, and
+    # making the user change a mode before they can write down what a customer
+    # told them was the wrong way round.
+    automatic = _require(
+        client.post(
+            f"/api/review/trip-plans/{saved['id']}/generate-itinerary",
+            headers=ctx["headers"]["owner"],
+            json=_route_payload(
+                saved,
+                locked_durations,
+                route_order_mode="auto",
+                stop_order=None,
+            ),
+        ),
+        200,
+    )
+    assert any(
+        bool(stop["schedule_locked"]) for stop in automatic["stops"]
+    ), "the agreed times must still be locked under automatic ordering"
+
+    # A route that cannot fit inside the requested end date is still refused,
+    # and still writes nothing.
     before = _snapshot()
     response = client.post(
-        f"/api/review/trip-plans/{locked['id']}/generate-itinerary",
+        f"/api/review/trip-plans/{automatic['id']}/generate-itinerary",
         headers=ctx["headers"]["owner"],
         json=_route_payload(
-            locked,
+            automatic,
             locked_durations,
             end_date="2026-09-15",
         ),

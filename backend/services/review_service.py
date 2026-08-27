@@ -911,10 +911,10 @@ class ReviewService:
             schedule_locked = bool(
                 override.get("locked", bool(stop.get("schedule_locked")))
             )
-            if schedule_locked and route_order_mode != "manual":
-                raise ValueError(
-                    "Set the route order to manual before locking a visit time"
-                )
+            # An agreed time does not need the route order set to manual first:
+            # the appointment is what decides where the visit sits, and asking
+            # the user to switch a mode before they can record what a customer
+            # told them was the wrong way round.
 
             is_customer = (stop.get("stop_kind") or "customer") != "free"
             is_waypoint = (
@@ -969,8 +969,20 @@ class ReviewService:
                         }
                     )
                 if self._slot_key(locked_slot) < self._slot_key(visit_start_slot):
-                    raise ValueError(
-                        "The route cannot reach this visit before its locked time"
+                    # The appointment is a fact and the travel time is an
+                    # estimate, so the estimate is what gives way. Refusing to
+                    # plan would leave the user with no itinerary at all for a
+                    # trip whose times are already agreed; this shows the
+                    # problem and still produces the plan.
+                    risks.append(
+                        {
+                            "kind": "cannot_reach_booked_visit",
+                            "stop_id": stop["id"],
+                            "date": locked_date.isoformat(),
+                            "period": locked_period,
+                            "earliest_date": visit_start_slot[0].isoformat(),
+                            "earliest_period": visit_start_slot[1],
+                        }
                     )
                 visit_start_slot = locked_slot
 

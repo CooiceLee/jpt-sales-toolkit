@@ -36,7 +36,6 @@ function renderTripStopCard(stop, index, total) {
                 <div class="trip-stop-meta">${escapeHtml([stop.city, stop.country, stop.lead_display_id].filter(Boolean).join(' · '))}</div>
                 <div class="trip-stop-schedule">${escapeHtml(formatTripStopSchedule(stop))}</div>
                 <div class="trip-date-row">
-                    <input type="date" class="form-input" id="stop-date-${stop.id}" value="${escapeHtml(stop.planned_date || '')}" readonly title="${escapeHtml(I18n.t('Calculated by route preview'))}">
                     <label class="trip-field-label">
                         <span>${escapeHtml(I18n.t('Stop duration (days)'))}</span>
                         <input type="number" min="0.5" max="30" step="0.5" class="form-input" data-stop-duration-half-days id="stop-stay-${stop.id}" value="${escapeHtml(TripDuration.toDisplayDays(TripPlanningDraft.durationFor(stop.id, TripDuration.readStopDuration(stop))))}" placeholder="${escapeHtml(I18n.t('Duration days'))}" oninput="TripTransportActions.stayChanged('${stop.id}', this.value)">

@@ -102,11 +102,16 @@ function parseHolidayInput(value) {
 }
 
 function readTripItineraryPayload() {
-    return {
+    const payload = {
         ...window.TripPlanningDraft?.itineraryPayload?.(),
         ...readTripPlanFormPayload(),
         stop_durations: readTripStopDurationPayload(),
     };
+    // Calculating a route and choosing how the plan is planned are different
+    // requests. The itinerary endpoints reject anything they do not declare, so
+    // a plan-header field arriving here fails the whole preview.
+    delete payload.planning_mode;
+    return payload;
 }
 
 function numericOrNull(value) {
