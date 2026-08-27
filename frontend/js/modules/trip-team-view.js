@@ -61,7 +61,9 @@
         const members = plan?.members || [];
         target.innerHTML = `
             ${members.length
-                ? `<ul class="trip-team-list">${members
+                ? `<p class="trip-team-count">${h(t('{count} people travelling', {
+                    count: members.length,
+                }))}</p><ul class="trip-team-list">${members
                     .map(member => renderMember(plan, member)).join('')}</ul>`
                 : `<p class="trip-form-help">${h(t(
                     'Add the people travelling before previewing the route.'

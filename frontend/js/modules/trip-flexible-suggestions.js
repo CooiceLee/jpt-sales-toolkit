@@ -71,7 +71,7 @@
         const plan = State.currentTripPlan;
         if (!plan?.id) return;
         try {
-            const result = await API.getTripFlexibleSuggestions(plan.id);
+            const result = await ApiClient.getTripFlexibleSuggestions(plan.id);
             state = {
                 planId: plan.id,
                 planVersion: result.plan_row_version,
@@ -79,8 +79,8 @@
             };
         } catch (error) {
             state = null;
-            window.showToast?.(error?.message
-                || t('Could not work out suggested times'), 'error');
+            notify(error?.message
+                || t('Could not work out suggested times'));
         }
         render(State.currentTripPlan);
     }
@@ -100,7 +100,7 @@
             row => row.id === stopId);
         if (!item?.date || !stop) return;
         try {
-            const plan = await API.updateTripStop(
+            const plan = await ApiClient.updateTripStop(
                 State.currentTripPlan.id, stopId, {
                     planned_date: item.date,
                     planned_start_period: item.period,
@@ -120,9 +120,8 @@
         } catch (error) {
             state = null;
             render(State.currentTripPlan);
-            window.showToast?.(error?.message
-                || t('The plan has changed. Look at the suggestions again.'),
-                'error');
+            notify(error?.message
+                || t('The plan has changed. Look at the suggestions again.'));
             window.loadTripPlanner?.();
         }
     }

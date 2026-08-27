@@ -733,6 +733,8 @@
         // Team planning
         ['Agreed visit date', '约定拜访日期'], ['Agreed period', '约定时段'],
         ['Add to plan', '添加'], ['Already added', '已添加'],
+        ['{name} joined the trip', '{name} 已加入行程'],
+        ['Removed from the trip', '已从行程中移除'],
         ['Customer visits with no agreed time yet.', '尚未约定时间的客户拜访。'],
         ['Map route view', '地图路线视图'],
         ['Excel, web and calendar files do not carry the travel team yet. Use Markdown, CSV or the daily report.', 'Excel、网页和日历文件暂不包含出差团队信息。请使用 Markdown、CSV 或每日报告。'],

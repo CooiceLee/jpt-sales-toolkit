@@ -432,6 +432,88 @@ def check_only_a_decision_reads_as_planned() -> None:
     assert data["leg"] == "", data
 
 
+def check_actions_call_globals_that_exist() -> None:
+    """The action modules must run, not merely contain the right words.
+
+    Two modules were written against globals that do not exist - `API` instead
+    of `ApiClient`, and a `showToast` that was never defined - so pressing the
+    button threw, the catch reported it through the missing function, and
+    nothing happened at all. Reading the source cannot catch that; calling the
+    functions can.
+    """
+    modules = (
+        "trip-stop-schedule-controls.js",
+        "trip-team-journeys.js",
+        "trip-team-actions.js",
+        "trip-flexible-suggestions.js",
+        "trip-stop-appointment-actions.js",
+    )
+    sources = "\n".join(
+        (MODULES / name).read_text(encoding="utf-8") for name in modules
+    )
+    script = """
+globalThis.escapeHtml = value => String(value ?? '');
+globalThis.I18n = { t: (key, params = {}) =>
+    String(key).replace(/\\{(\\w+)\\}/g, (_, name) => params[name] ?? `{${name}}`) };
+globalThis.window = globalThis;
+const called = [];
+globalThis.State = { tripBusy: false, currentTripPlan: {
+    id: 'p1', row_version: 3, planning_mode: 'team',
+    stops: [{ id: 's1', row_version: 2 }], members: [] } };
+const select = { value: 'u1', selectedIndex: 0, options: [{ text: 'Zhang' }] };
+globalThis.document = { getElementById: id =>
+    id === 'trip-team-add-user' ? select
+    : id === 'trip-planning-mode' ? { value: 'legacy' }
+    : { value: '', innerHTML: '', hidden: false } };
+globalThis.ApiClient = new Proxy({}, { get: (_, name) => async (...args) => {
+    called.push(String(name));
+    return State.currentTripPlan;
+} });
+globalThis.notify = message => called.push('notify:' + message);
+globalThis.setTripBusy = () => {};
+globalThis.handleTripError = async () => { called.push('handleTripError'); };
+globalThis.renderTripMap = () => {};
+globalThis.renderCurrentTripPlan = () => {};
+globalThis.populateTripPlanForm = () => {};
+globalThis.confirm = () => true;
+globalThis.TripScheduleView = { renderPlan: () => {} };
+globalThis.TripPlannerModule = { renderVisitExecution: () => {} };
+globalThis.TripTransportActions = { schedulePreview: () => {} };
+globalThis.TripBriefingActions = { open: () => {} };
+globalThis.TripTeamMap = { focusStop: () => {}, focusLeg: () => {} };
+globalThis.loadTripPlanner = async () => {};
+globalThis.MapSupport = { coordinatePair: (a, b) => [a, b] };
+""" + sources + """
+(async () => {
+  await TripTeamActions.add();
+  await TripTeamActions.remove('u1');
+  await TripFlexibleSuggestions.load();
+  await TripStopScheduleActions.appointmentChanged('s1');
+  await TripPlanningModeActions.planningModeChanged();
+  console.log(JSON.stringify(called));
+})().catch(error => { console.error(String(error)); process.exit(1); });
+"""
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, (
+        f"an action threw when called: {result.stderr.strip()[:400]}"
+    )
+    called = json.loads(result.stdout.strip().splitlines()[-1])
+    for endpoint in ("setTripMember", "removeTripMember",
+                     "getTripFlexibleSuggestions", "updateTripStop",
+                     "updateTripPlan"):
+        assert endpoint in called, (
+            f"{endpoint} was never reached; the action failed silently: {called}"
+        )
+    assert any(item.startswith("notify:Zhang joined") for item in called), (
+        f"adding somebody must say who joined: {called}"
+    )
+    assert "handleTripError" not in called, (
+        f"an action reported an error on a successful call: {called}"
+    )
+
+
 def check_module_wiring() -> None:
     """The modules load, and the schedule view sends team plans to the timeline."""
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
@@ -463,6 +545,7 @@ def main() -> None:
     check_slot_order_follows_the_journey()
     check_real_backend_output_renders()
     check_only_a_decision_reads_as_planned()
+    check_actions_call_globals_that_exist()
     check_module_wiring()
     print("PASS: team risk bar, travel team card and team timeline contracts")
 

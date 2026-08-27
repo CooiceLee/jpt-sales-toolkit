@@ -8,16 +8,19 @@
 
     async function apply(action) {
         const planId = currentPlanId();
-        if (!planId) return;
+        if (!planId) return null;
         try {
             const plan = await action(planId);
-            if (!plan) return;
+            if (!plan) return null;
             State.currentTripPlan = plan;
             window.renderCurrentTripPlan?.();
             window.TripScheduleView?.renderPlan?.(plan);
             window.renderTripMap?.();
+            return plan;
         } catch (error) {
-            window.showToast?.(error?.message || t('Could not update the travel team'), 'error');
+            console.error('Travel team update error:', error);
+            notify(t(error?.message || 'Could not update the travel team'));
+            return null;
         }
     }
 
@@ -25,7 +28,13 @@
         const select = document.getElementById('trip-team-add-user');
         const userId = select?.value;
         if (!userId) return;
-        await apply(planId => API.setTripMember(planId, { user_id: userId }));
+        // Say who joined by name: the confirmation is the point of pressing the
+        // button, and a list that silently grew by one row is not one.
+        const name = select.options[select.selectedIndex]?.text || userId;
+        const plan = await apply(
+            planId => ApiClient.setTripMember(planId, { user_id: userId })
+        );
+        if (plan) notify(t('{name} joined the trip', { name }));
     }
 
     async function remove(userId) {
@@ -36,7 +45,10 @@
             'Remove this person from the trip? The route planned for them is removed as well.'
         ));
         if (!confirmed) return;
-        await apply(planId => API.removeTripMember(planId, userId));
+        const plan = await apply(
+            planId => ApiClient.removeTripMember(planId, userId)
+        );
+        if (plan) notify(t('Removed from the trip'));
     }
 
     window.TripTeamActions = Object.freeze({ add, remove });
