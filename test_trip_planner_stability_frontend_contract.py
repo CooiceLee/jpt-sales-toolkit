@@ -495,18 +495,25 @@ def check_assets_are_stamped_with_the_build() -> None:
     initialize_database_safely(init_settings(ROOT))
     from backend.app_v2 import create_app
 
-    html = TestClient(create_app()).get("/").text
-    stamps = set(re.findall(r'/static/[^"?]+\?v=([^"]+)', html))
-    assert len(stamps) == 1, (
-        f"assets must all carry the same build stamp, found {sorted(stamps)}"
-    )
-    stamp = next(iter(stamps))
-    assert APP_VERSION in stamp, (
-        f"the stamp must change with the application version: {stamp}"
-    )
-    assert not re.search(r'\?v=\d+\.\d+"', html), (
-        "a hand-written version marker survived; it will not change on release"
-    )
+    client = TestClient(create_app())
+    # Every route that can return the page, not only the root: the copy on disk
+    # still holds the hand-written markers, and asking for it by name used to
+    # send it straight through - which handed the browser exactly the asset URLs
+    # it already had cached.
+    for route in ("/", "/index.html", "/some/spa/route"):
+        html = client.get(route).text
+        stamps = set(re.findall(r'/static/[^"?]+\?v=([^"]+)', html))
+        assert len(stamps) == 1, (
+            f"{route}: assets must all carry one build stamp, found "
+            f"{sorted(stamps)}"
+        )
+        stamp = next(iter(stamps))
+        assert APP_VERSION in stamp, (
+            f"{route}: the stamp must change with the version: {stamp}"
+        )
+        assert not re.search(r'\?v=\d+\.\d+"', html), (
+            f"{route}: a hand-written version marker survived"
+        )
 
 
 def main() -> None:

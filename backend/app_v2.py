@@ -167,9 +167,15 @@ def create_app() -> FastAPI:
                     detail="API endpoint not found",
                 )
             file_path = frontend_dir / path
-            if file_path.exists() and file_path.is_file():
-                return FileResponse(file_path)
-            return index_html()
+            # index.html is always built rather than sent from disk, whichever
+            # name it is asked for: the copy on disk still carries the version
+            # markers that are rewritten per build, and serving it raw hands the
+            # browser the old asset URLs it already has cached.
+            if file_path.name == "index.html" or not (
+                file_path.exists() and file_path.is_file()
+            ):
+                return index_html()
+            return FileResponse(file_path)
 
     return app
 
