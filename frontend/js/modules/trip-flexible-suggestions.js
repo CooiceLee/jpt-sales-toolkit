@@ -99,6 +99,7 @@
         const stop = (State.currentTripPlan?.stops || []).find(
             row => row.id === stopId);
         if (!item?.date || !stop) return;
+        const token = TripPlanIdentity.intend();
         try {
             const plan = await ApiClient.updateTripStop(
                 State.currentTripPlan.id, stopId, {
@@ -111,7 +112,7 @@
                     row_version: stop.row_version,
                     plan_row_version: state.planVersion,
                 });
-            State.currentTripPlan = plan;
+            if (!TripPlanIdentity.accept(token, plan)) return;
             state = null;
             window.renderCurrentTripPlan?.();
             window.TripScheduleView?.renderPlan?.(plan);

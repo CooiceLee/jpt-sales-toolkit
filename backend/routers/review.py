@@ -4,13 +4,16 @@ Review router - dashboard and map endpoints.
 
 from __future__ import annotations
 
+import json
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..repositories.base import ConflictError
 from ..services import ReviewService
+from ..config import MAX_UPLOAD_SIZE
+from ..services.trip_working_import import TripWorkingImportError
 from .deps import get_current_user, require_role
 
 router = APIRouter(
@@ -36,6 +39,11 @@ TripConfirmationStatus = Literal[
 ]
 
 
+# A transfer to or from an airport never flies: that would need airports of its
+# own, and the expansion would have no end.
+TripGroundMode = Literal["drive", "ground_public", "other"]
+
+
 class TripLegOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -56,6 +64,14 @@ class TripLegOverride(BaseModel):
     arrival_airport_lat: Optional[float] = Field(None, ge=-90, le=90)
     arrival_airport_lng: Optional[float] = Field(None, ge=-180, le=180)
     arrival_airport_stay_half_days: Optional[int] = Field(None, ge=0, le=60)
+    # The drive to and from an airport is a movement of its own, so it can be
+    # given a time rather than only estimated.
+    departure_transfer_half_days: Optional[int] = Field(None, ge=0, le=60)
+    departure_transfer_mode: Optional[TripGroundMode] = None
+    departure_transfer_time_hours: Optional[float] = Field(None, ge=0)
+    arrival_transfer_half_days: Optional[int] = Field(None, ge=0, le=60)
+    arrival_transfer_mode: Optional[TripGroundMode] = None
+    arrival_transfer_time_hours: Optional[float] = Field(None, ge=0)
 
 
 def get_review_service() -> ReviewService:
@@ -76,6 +92,9 @@ def _conflict_http(exc: ConflictError) -> HTTPException:
 
 
 TripPlanningMode = Literal["legacy", "team"]
+# "shared" is the arrangement the whole team confirms; "full" adds what each
+# visit is prepared for, which belongs to the people making it.
+TripExportVariant = Literal["shared", "full"]
 
 
 class TripPlanCreate(BaseModel):
@@ -174,6 +193,8 @@ class TripStopUpdate(BaseModel):
     visit_followup_due_date: Optional[str] = None
     visit_sample_needed: Optional[bool] = None
     visit_quote_needed: Optional[bool] = None
+    actual_visit_date: Optional[str] = None
+    actual_visit_period: Optional[TripPlannedPeriod] = None
     plan_row_version: Optional[int] = Field(None, ge=1)
     planned_time_accepted: Optional[bool] = None
 
@@ -197,6 +218,8 @@ class TripMemberUpsert(BaseModel):
     destination_name_override: Optional[str] = None
     destination_lat_override: Optional[float] = None
     destination_lng_override: Optional[float] = None
+    departure_date: Optional[str] = None
+    row_version: Optional[int] = Field(None, ge=1)
 
 
 class TripFreeStopCreate(BaseModel):
@@ -212,6 +235,8 @@ class TripFreeStopCreate(BaseModel):
     stay_days: Optional[int] = Field(None, ge=1, le=30)
     duration_half_days: Optional[int] = Field(None, ge=1, le=60)
     preferred_period: TripPeriod = "auto"
+    planned_date: Optional[str] = None
+    planned_end_date: Optional[str] = None
     planned_start_period: Optional[TripPlannedPeriod] = None
     planned_end_period: Optional[TripPlannedPeriod] = None
     schedule_locked: bool = False
@@ -236,6 +261,8 @@ class TripFreeStopUpdate(BaseModel):
     stay_days: Optional[int] = Field(None, ge=1, le=30)
     duration_half_days: Optional[int] = Field(None, ge=1, le=60)
     preferred_period: Optional[TripPeriod] = None
+    planned_date: Optional[str] = None
+    planned_end_date: Optional[str] = None
     planned_start_period: Optional[TripPlannedPeriod] = None
     planned_end_period: Optional[TripPlannedPeriod] = None
     schedule_locked: Optional[bool] = None
@@ -817,6 +844,8 @@ async def set_trip_member(
             user["id"],
             user["role"],
         )
+    except ConflictError as exc:
+        raise _conflict_http(exc)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not plan:
@@ -958,45 +987,162 @@ async def export_trip_plan_csv(
 
 
 def _formal_export_response(
-    content: Optional[bytes], plan_id: str, extension: str, media_type: str
+    content: Optional[bytes], plan_id: str, extension: str, media_type: str,
+    variant: str = "full",
 ) -> Response:
     if content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip plan not found")
     filename_id = _safe_filename_id(plan_id)
+    # The two variants land in the same download folder, so the shared
+    # itinerary has to say so in its own name.
+    suffix = "-shared" if variant == "shared" else ""
     return Response(
         content=content,
         media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="trip-plan-{filename_id}.{extension}"'},
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="trip-plan-{filename_id}{suffix}.{extension}"'
+        },
     )
 
 
 @router.get("/trip-plans/{plan_id}/export.xlsx")
 async def export_trip_plan_xlsx(
     plan_id: str,
+    variant: TripExportVariant = "full",
     user: dict = Depends(get_current_user),
     service: ReviewService = Depends(get_review_service),
 ):
     try:
-        content = service.export_trip_plan_xlsx(plan_id, user["id"], user["role"])
+        content = service.export_trip_plan_xlsx(
+            plan_id, user["id"], user["role"], variant
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return _formal_export_response(
         content, plan_id, "xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        variant,
     )
 
 
 @router.get("/trip-plans/{plan_id}/export.html")
 async def export_trip_plan_html(
     plan_id: str,
+    variant: TripExportVariant = "full",
     user: dict = Depends(get_current_user),
     service: ReviewService = Depends(get_review_service),
 ):
     try:
-        content = service.export_trip_plan_html(plan_id, user["id"], user["role"])
+        content = service.export_trip_plan_html(
+            plan_id, user["id"], user["role"], variant
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    return _formal_export_response(content, plan_id, "html", "text/html; charset=utf-8")
+    return _formal_export_response(
+        content, plan_id, "html", "text/html; charset=utf-8", variant
+    )
+
+
+@router.get("/trip-plans/{plan_id}/working.xlsx")
+async def export_trip_working_xlsx(
+    plan_id: str,
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Download the workbook the field team fills in and sends back."""
+    try:
+        content = service.export_trip_working_xlsx(
+            plan_id, user["id"], user["role"]
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return _formal_export_response(
+        content, plan_id, "working.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+# The body is read into memory to be unzipped, so the boundary is here rather
+# than after the whole of whatever was sent has already arrived.
+MAX_RESOLUTIONS_BYTES = 256 * 1024
+
+
+async def _read_working_upload(file: UploadFile) -> bytes:
+    """The uploaded workbook, refused at the door if it is not one."""
+    name = (file.filename or "").lower()
+    if not name.endswith(".xlsx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only .xlsx field workbooks can be imported",
+        )
+    content = await file.read(MAX_UPLOAD_SIZE + 1)
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="The workbook exceeds the 25 MB limit",
+        )
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="The workbook is empty"
+        )
+    return content
+
+
+@router.post("/trip-working/preflight")
+async def preflight_trip_working(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Read a returned field workbook without writing any database row."""
+    try:
+        content = await _read_working_upload(file)
+        return service.preflight_trip_working(
+            content, file.filename or "working.xlsx", user["id"], user["role"]
+        )
+    except TripWorkingImportError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "report": exc.report},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.post("/trip-working/import")
+async def import_trip_working(
+    file: UploadFile = File(...),
+    expected_source_hash: str = Form(...),
+    expected_preview_digest: str = Form(...),
+    resolutions_json: str = Form("{}"),
+    user: dict = Depends(get_current_user),
+    service: ReviewService = Depends(get_review_service),
+):
+    """Re-read and atomically merge a returned field workbook."""
+    try:
+        if len(resolutions_json.encode("utf-8")) > MAX_RESOLUTIONS_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Too many conflict choices were submitted at once",
+            )
+        resolutions = json.loads(resolutions_json or "{}")
+        if not isinstance(resolutions, dict):
+            raise ValueError("resolutions_json must be an object")
+        content = await _read_working_upload(file)
+        return service.import_trip_working(
+            content, file.filename or "working.xlsx", expected_source_hash,
+            expected_preview_digest, resolutions, user["id"], user["role"],
+        )
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid resolutions JSON") from exc
+    except TripWorkingImportError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail={"message": str(exc), "report": exc.report},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.get("/trip-plans/{plan_id}/export.ics")

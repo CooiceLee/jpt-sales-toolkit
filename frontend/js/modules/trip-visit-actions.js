@@ -11,8 +11,10 @@
             visit_decision_maker: document.getElementById(`visit-decision-${stopId}`)?.value?.trim() || null,
             visit_next_action: document.getElementById(`visit-next-${stopId}`)?.value?.trim() || null,
             visit_followup_due_date: document.getElementById(`visit-due-${stopId}`)?.value || null,
-            visit_sample_needed: Boolean(document.getElementById(`visit-sample-${stopId}`)?.checked),
-            visit_quote_needed: Boolean(document.getElementById(`visit-quote-${stopId}`)?.checked),
+            visit_sample_needed: TripVisitAnswer.read(`visit-sample-${stopId}`),
+            visit_quote_needed: TripVisitAnswer.read(`visit-quote-${stopId}`),
+            actual_visit_date: document.getElementById(`visit-actual-date-${stopId}`)?.value || null,
+            actual_visit_period: document.getElementById(`visit-actual-period-${stopId}`)?.value || null,
         };
     }
 
@@ -20,11 +22,13 @@
         if (State.tripBusy || !State.currentTripPlan?.id) return;
         try {
             setTripBusy(true);
-            State.currentTripPlan = await ApiClient.updateTripStop(
+            const token = TripPlanIdentity.intend();
+            const recorded = await ApiClient.updateTripStop(
                 State.currentTripPlan.id,
                 stopId,
                 readStopPayload(stopId)
             );
+            if (!TripPlanIdentity.accept(token, recorded)) return;
             window.TripVisitDraft?.markClean?.(stopId);
             notify(I18n.t('Visit saved'));
             // Replace only the committed card. Re-rendering the whole day would

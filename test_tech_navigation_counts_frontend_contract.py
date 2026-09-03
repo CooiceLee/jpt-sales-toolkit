@@ -29,9 +29,28 @@ def static_contracts() -> None:
     assert "await refreshAllCounts()" in packages
     assert "await refreshAllCounts()" in sampling
     assert "await refreshAllCounts()" in aftersales
-    assert "ApiClient.getDashboard()" not in refresh.split(
-        "if (RoleCapabilities.isTech())", 1
-    )[1].split("return;", 1)[0]
+    # A Tech user has no dashboard to read, so the branch that serves them must
+    # not call for one. Read to the branch's own closing brace rather than to
+    # the next return, so how it returns is free to change.
+    assert "ApiClient.getDashboard()" not in _tech_branch(refresh), (
+        "the Tech branch reads the dashboard, which Tech users cannot see"
+    )
+
+
+def _tech_branch(source: str) -> str:
+    """The body of `if (RoleCapabilities.isTech()) { ... }`, braces matched."""
+    marker = "if (RoleCapabilities.isTech())"
+    start = source.index("{", source.index(marker))
+    depth, index = 0, start
+    while index < len(source):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+        index += 1
+    raise AssertionError("the Tech branch is not closed")
 
 
 def browser_contracts() -> None:

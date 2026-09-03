@@ -5,10 +5,12 @@ window.saveTripStopSchedule = async function(stopId) {
     if (!stop) return;
     try {
         setTripBusy(true);
-        State.currentTripPlan = await ApiClient.updateTripStop(State.currentTripPlan.id, stopId, {
+        const token = TripPlanIdentity.intend();
+        const updated = await ApiClient.updateTripStop(State.currentTripPlan.id, stopId, {
             row_version: stop.row_version || null,
             ...TripStopScheduleControls.readPayload(stopId),
         });
+        if (!TripPlanIdentity.accept(token, updated)) return;
         notify(I18n.t('Schedule details saved'));
         renderCurrentTripPlan();
         window.TripScheduleView?.renderPlan?.(State.currentTripPlan);

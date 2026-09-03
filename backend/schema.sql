@@ -583,18 +583,16 @@ CREATE TABLE IF NOT EXISTS trip_plan_stops (
         result_status IN ('Planned', 'Visited', 'Follow-up Needed', 'Skipped')
     ),
     result_notes TEXT,
+    actual_visit_date TEXT,
+    actual_visit_period TEXT CHECK (actual_visit_period IN ('AM', 'PM')),
     visit_customer_needs TEXT,
     visit_competitor TEXT,
     visit_budget TEXT,
     visit_decision_maker TEXT,
     visit_next_action TEXT,
     visit_followup_due_date TEXT,
-    visit_sample_needed INTEGER NOT NULL DEFAULT 0 CHECK (
-        visit_sample_needed IN (0, 1)
-    ),
-    visit_quote_needed INTEGER NOT NULL DEFAULT 0 CHECK (
-        visit_quote_needed IN (0, 1)
-    ),
+    visit_sample_needed INTEGER CHECK (visit_sample_needed IN (0, 1)),
+    visit_quote_needed INTEGER CHECK (visit_quote_needed IN (0, 1)),
     followup_activity_id TEXT REFERENCES lead_activities(id),
     result_activity_id TEXT REFERENCES lead_activities(id),
     archived_at TEXT,
@@ -663,6 +661,7 @@ CREATE TABLE IF NOT EXISTS trip_plan_members (
     destination_name_override TEXT,
     destination_lat_override REAL CHECK (destination_lat_override BETWEEN -90 AND 90),
     destination_lng_override REAL CHECK (destination_lng_override BETWEEN -180 AND 180),
+    departure_date TEXT,
     created_at TEXT NOT NULL,
     created_by TEXT REFERENCES users(id),
     updated_at TEXT NOT NULL,
@@ -799,6 +798,28 @@ CREATE INDEX IF NOT EXISTS idx_tech_exchange_bindings_source_lead
 CREATE INDEX IF NOT EXISTS idx_attachments_lead ON attachments(lead_id, category);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_trip_plans_owner ON trip_plans(owner_id, status);
+CREATE TABLE IF NOT EXISTS trip_working_exports (
+    workbook_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    format TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    last_imported_at TEXT,
+    last_imported_by TEXT REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS trip_working_export_rows (
+    workbook_id TEXT NOT NULL REFERENCES trip_working_exports(workbook_id),
+    row_token TEXT NOT NULL,
+    stop_id TEXT NOT NULL REFERENCES trip_plan_stops(id),
+    row_version INTEGER NOT NULL,
+    baseline_json TEXT NOT NULL,
+    PRIMARY KEY (workbook_id, row_token)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trip_working_exports_plan ON trip_working_exports(plan_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_trip_working_export_rows_token ON trip_working_export_rows(row_token);
+
 CREATE INDEX IF NOT EXISTS idx_trip_stops_plan ON trip_plan_stops(plan_id, sequence_no);
 CREATE INDEX IF NOT EXISTS idx_trip_stops_customer ON trip_plan_stops(customer_id);
 CREATE INDEX IF NOT EXISTS idx_trip_stops_lead ON trip_plan_stops(lead_id);

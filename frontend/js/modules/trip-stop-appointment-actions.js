@@ -24,15 +24,17 @@
         }
         try {
             setTripBusy(true);
-            State.currentTripPlan = await ApiClient.updateTripStop(
+            const token = TripPlanIdentity.intend();
+            const saved = await ApiClient.updateTripStop(
                 plan.id, stopId,
                 { row_version: stop.row_version || null, ...payload },
             );
+            if (!TripPlanIdentity.accept(token, saved)) return;
             notify(t(payload.schedule_locked
                 ? 'Agreed time saved. The route will be planned around it.'
                 : 'Visit time saved.'));
             window.refreshTripStopCard?.(State.currentTripPlan, stopId);
-            window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
+            TripPlanRefresh.redrawVisits();
             window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
             renderTripMap();
         } catch (err) {
@@ -64,27 +66,42 @@
     async function planningModeChanged() {
         if (State.tripBusy) return;
         const plan = State.currentTripPlan;
-        const mode = document.getElementById('trip-planning-mode')?.value;
+        const select = document.getElementById('trip-planning-mode');
+        const mode = select?.value;
         if (!plan?.id || !mode || mode === plan.planning_mode) return;
+        // Switching mode changes which calculation runs, so the route has to be
+        // worked out again from the server's copy. Anything in the draft goes
+        // with it, and that is the reader's call to make, not a side effect.
+        if (TripPlanningDraft.get()?.dirty && !confirm(t(
+            'Changing how this plan is planned discards the unsaved route '
+            + 'changes. Save the route first, or continue and lose them?'
+        ))) {
+            if (select) select.value = plan.planning_mode || 'legacy';
+            return;
+        }
         try {
             setTripBusy(true);
-            State.currentTripPlan = await ApiClient.updateTripPlan(plan.id, {
+            const token = TripPlanIdentity.intend();
+            const switched = await ApiClient.updateTripPlan(plan.id, {
                 planning_mode: mode,
                 row_version: plan.row_version || null,
             });
+            if (!TripPlanIdentity.accept(token, switched)) return;
             notify(t(mode === 'team'
                 ? 'Team planning is on. Add the people travelling.'
                 : 'Single-traveller planning is on.'));
         } catch (err) {
             console.error('Change planning mode error:', err);
+            if (select) select.value = plan.planning_mode || 'legacy';
             await handleTripError(err, 'Change planning mode');
+            return;
         } finally {
             setTripBusy(false);
         }
         populateTripPlanForm(State.currentTripPlan, { committed: true });
         renderCurrentTripPlan();
         window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
-        window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
+        TripPlanRefresh.redrawVisits();
         renderTripMap();
     }
 

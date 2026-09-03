@@ -1,7 +1,5 @@
 /** Loading, full-replacement saving and explicit geocoding for visit briefings. */
 (function() {
-    const BRIEFING_FIELDS = ['timezone', 'location', 'customer_team', 'contacts',
-        'participants', 'channel_partner_companions', 'equipment', 'agenda_items'];
     let requestEpoch = 0;
     let locationEpoch = 0;
     let candidates = [];
@@ -12,6 +10,7 @@
         if (!root) return null;
         root.hidden = !open;
         root.closest('.trip-schedule-workspace')?.classList.toggle('has-open-briefing', Boolean(open));
+        if (open) TripBriefingReveal.show(root);
         return root;
     }
 
@@ -30,7 +29,7 @@
     async function open(stopId) {
         const planId = State.currentTripPlan?.id;
         if (!planId || !stopId) return;
-        if (TripBriefingDraft.getStopId() === stopId) return;
+        if (TripBriefingDraft.getStopId() === stopId) return setEditorOpen(true);
         if (TripBriefingDraft.guard()) return;
         const epoch = ++requestEpoch;
         locationEpoch += 1;
@@ -65,22 +64,23 @@
         let payload;
         try { payload = TripBriefingForm.payload(); }
         catch (error) { alert(error.message); return; }
+        // The team is filled in for reading. Sent back it would turn "whoever
+        // is travelling" into a fixed list, and somebody joining the trip later
+        // would be left off this visit without a word.
+        if (TripBriefingDraft.isWholeTeam(payload.participants)) {
+            payload.participants = [];
+        }
         try {
             setBusy(true);
             const data = await ApiClient.putTripBriefing(planId, stopId, payload);
-            const stop = (State.currentTripPlan.stops || []).find(item => item.id === stopId);
-            if (stop) {
-                stop.row_version = data.stop_row_version ?? stop.row_version;
-                stop.confirmation_status = data.confirmation_status || stop.confirmation_status;
-            }
-            // Show what was just written, not the previous version.
-            if (stop) stop.briefing = Object.fromEntries(
-                BRIEFING_FIELDS.map(field => [field, data[field]]));
             TripBriefingDraft.markClean(data);
             close({ force: true });
-            renderCurrentTripPlan();
-            window.TripPlannerModule?.renderVisitExecution?.(State.currentTripPlan);
-            window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
+            // Who attends and where the visit is both decide the route, so the
+            // server marks the itinerary out of date when either changes. Read
+            // the plan back rather than reloading the whole page: a full reload
+            // stops when another editor holds unsaved work, which would leave
+            // "saved" on screen over the previous calculation.
+            await TripPlanRefresh.reread(planId);
             notify(I18n.t('Customer visit preparation saved.'));
         } catch (error) {
             console.error('Save trip briefing error:', error);

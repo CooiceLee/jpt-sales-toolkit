@@ -5,25 +5,6 @@
     let draft = null;
     const priority = (value, legacyMode = 'auto') =>
         TripRouteValues.transportPriority(value, legacyMode, MODES, DEFAULT_MODES);
-    const cleanOverride = value => TripRouteValues.cleanLegOverride(value, MODES);
-    function returnedOverrides(plan) {
-        const result = {};
-        (plan?.legs || []).forEach(leg => {
-            const source = { ...(leg.override || leg) };
-            if (source.selected_mode === 'other') {
-                source.manual_distance_km ??= leg.distance_km;
-                source.manual_time_hours ??= leg.time_hours;
-                source.manual_travel_half_days ??= leg.travel_half_days != null
-                    ? leg.travel_half_days
-                    : (leg.travel_days != null ? TripDuration.fromDisplayTravelDays(leg.travel_days) : null);
-            }
-            const manual = leg.has_override || leg.override_applied || source.mode_locked
-                || source.manual_distance_km != null || source.manual_time_hours != null
-                || source.manual_travel_half_days != null || source.manual_travel_days != null || source.notes;
-            if (leg.leg_key && manual) result[leg.leg_key] = cleanOverride(source);
-        });
-        return result;
-    }
     function fromPlan(plan) {
         const stops = plan?.stops || [];
         return {
@@ -33,6 +14,9 @@
                 start_date: plan?.start_date || null,
                 end_date: plan?.end_date || null,
                 region: plan?.region || null,
+                // Without this the form falls back to single-traveller and
+                // the next header save turns a team trip solo.
+                planning_mode: plan?.planning_mode === 'team' ? 'team' : 'legacy',
                 origin_name: plan?.origin_name || null,
                 origin_lat: plan?.origin_lat ?? null,
                 origin_lng: plan?.origin_lng ?? null,
@@ -55,7 +39,7 @@
                 preferred_period: ['auto', 'AM', 'PM'].includes(stop.preferred_period) ? stop.preferred_period : 'auto',
                 locked: Boolean(stop.schedule_locked),
             }])),
-            legOverrides: returnedOverrides(plan),
+            legOverrides: TripLegOverrides.fromPlan(plan, MODES),
             dirty: false,
             previewReady: false,
             revision: 0,
@@ -78,7 +62,15 @@
             };
         });
         draft.stopDurations = durations;
-        const keys = new Set();
+        // Which connections still exist. A calculated leg counts when both of
+        // its ends are still on the plan - that drops the ones through a stop
+        // just removed, and keeps each member's own chain, which the single run
+        // through every stop below cannot describe.
+        const alive = new Set([...ids, 'origin', 'destination']);
+        const keys = new Set((plan?.legs || [])
+            .map(leg => leg.leg_key)
+            .filter(key => key && String(key).split('>').every(
+                part => alive.has(part))));
         if (draft.stopOrder.length) {
             keys.add(`origin>${draft.stopOrder[0]}`);
             draft.stopOrder.slice(1).forEach((id, index) => {
@@ -86,7 +78,7 @@
             });
             keys.add(`${draft.stopOrder[draft.stopOrder.length - 1]}>destination`);
         }
-        const returned = returnedOverrides(plan);
+        const returned = TripLegOverrides.fromPlan(plan, MODES);
         draft.legOverrides = Object.fromEntries(
             Object.entries({ ...returned, ...draft.legOverrides }).filter(([key]) => keys.has(key))
         );
@@ -101,6 +93,18 @@
         window.TripTransportView?.render(plan, draft);
         return draft;
     }
+    /** Record something the server already has, without marking work unsaved.
+
+    Renaming a plan saves at once, so the route it describes is exactly as
+    saved as it was a moment before. Going through `change` would mark it
+    unsaved, which refuses the export and asks for a route nobody altered.
+    */
+    function adopt(mutator) {
+        if (!draft) return;
+        mutator(draft);
+        window.TripTransportView?.render(State.currentTripPlan, draft);
+    }
+
     function change(mutator) {
         if (!draft) return;
         mutator(draft);
@@ -144,6 +148,7 @@
         isCurrentRevision: value => value === (draft?.revision || 0),
         previewApplied,
         change,
+        adopt,
         durationFor: (id, fallback = 1) => TripDuration.normalizeHalfDays(
             draft?.stopDurations?.[id]?.half_days ?? fallback
         ),

@@ -104,6 +104,12 @@ def build_leg(
                 "arrival_airport_lat",
                 "arrival_airport_lng",
                 "arrival_airport_stay_half_days",
+                "departure_transfer_half_days",
+                "departure_transfer_mode",
+                "departure_transfer_time_hours",
+                "arrival_transfer_half_days",
+                "arrival_transfer_mode",
+                "arrival_transfer_time_hours",
             )
         },
     }

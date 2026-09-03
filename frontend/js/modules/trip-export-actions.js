@@ -1,13 +1,5 @@
 /** Download saved trip plans in team-ready file formats. */
 (function() {
-    const FILE_LABELS = Object.freeze({
-        xlsx: 'Excel itinerary',
-        html: 'Web itinerary',
-        ics: 'Calendar file',
-        md: 'Markdown',
-        csv: 'CSV',
-    });
-
     function setStatus(message, tone = '') {
         const target = document.getElementById('trip-export-status');
         if (!target) return;
@@ -15,64 +7,70 @@
         target.className = `trip-export-status${tone ? ` ${tone}` : ''}`;
     }
 
-    // These three are built from a model that has no member dimension, so a
-    // team plan would download a file stating one colleague's journey as
-    // everybody's. They are turned off rather than allowed to fail on click.
-    const TEAM_UNSUPPORTED = Object.freeze(['xlsx', 'html', 'ics']);
-
-    function refresh(plan) {
-        const team = plan?.planning_mode === 'team';
+    function updateButtons(plan) {
+        // A button that cannot produce a file says so before it is pressed,
+        // and says why. Refusing after the click leaves the reader guessing
+        // which of five conditions they are in.
+        const reason = TripExportNaming.blockedReason(plan);
         document.querySelectorAll('[data-trip-export-format]').forEach(button => {
-            const format = button.getAttribute('data-trip-export-format');
-            if (!TEAM_UNSUPPORTED.includes(format)) return;
-            button.disabled = team;
-            button.title = team
-                ? I18n.t('Not available for a team trip yet. Use Markdown, CSV or the daily report.')
-                : '';
+            button.disabled = Boolean(reason);
+            button.title = reason ? I18n.t(reason) : '';
         });
-        const note = document.getElementById('trip-export-team-note');
-        if (note) note.hidden = !team;
+        return reason;
     }
 
-    function setBusy(busy) {
+    function refresh(plan) {
+        // Called when another plan is opened: the last download belonged to
+        // whichever plan was open then, so its result goes with it rather than
+        // standing over a plan it was not made from.
+        setStatus(I18n.t(updateButtons(plan) || 'Choose a file to download.'));
+    }
+
+    function setBusy(busy, plan) {
         const panel = document.querySelector('.trip-export-panel');
         if (!panel) return;
         panel.setAttribute('aria-busy', String(busy));
         panel.querySelectorAll('[data-trip-export-format]').forEach(button => {
             button.disabled = busy;
         });
-        if (!busy) refresh(State.currentTripPlan);
+        // Finishing a download leaves its own result standing.
+        if (!busy) updateButtons(plan);
     }
 
-    function canDownload() {
-        if (!State.currentTripPlan?.id) {
+    function canDownload(plan) {
+        if (!plan?.id) {
             alert(I18n.t('Select a trip plan first'));
             return false;
         }
         if (window.TripBriefingDraft?.guard?.()) return false;
         if (window.TripVisitDraft?.guard?.()) return false;
         if (window.TripFreeStopDraft?.guardRouteAction?.()) return false;
-        if (window.TripPlanningDraft?.get?.()?.dirty) {
-            alert(I18n.t('Save the current route draft before exporting it.'));
-            return false;
-        }
-        const summary = State.currentTripPlan.itinerary_summary || {};
-        if (summary.stale === true || summary.valid === false) {
-            alert(I18n.t('This route is out of date. Recalculate and save it before exporting.'));
+        const reason = TripExportNaming.blockedReason(plan);
+        if (reason) {
+            alert(I18n.t(reason));
             return false;
         }
         return true;
     }
 
-    async function download(format) {
-        if (!canDownload()) return;
-        const fileLabel = I18n.t(FILE_LABELS[format] || format.toUpperCase());
-        setBusy(true);
-        setStatus(I18n.t('Generating {file}...', { file: fileLabel }), 'busy');
+    async function download(format, variant = '') {
+        // The plan is fixed here, at the click. Waiting for a file is long
+        // enough to open another plan in, and a file that arrives named after
+        // whatever is on screen by then is the wrong file sent to a customer.
+        const plan = State.currentTripPlan;
+        if (!canDownload(plan)) return;
+        const document_ = TripExportNaming.document(format, variant);
+        const fileLabel = I18n.t(document_.label);
+        setBusy(true, plan);
+        setStatus(I18n.t('Generating {file} for {plan}...', {
+            file: fileLabel, plan: plan.title || '',
+        }), 'busy');
         try {
-            const { blob, filename } = await ApiClient.exportTripPlan(State.currentTripPlan.id, format);
-            downloadBlob(blob, filename);
-            const message = I18n.t('Downloaded: {filename}', { filename });
+            const { blob, filename } = await ApiClient.exportTripPlan(
+                plan.id, format, variant);
+            const name = TripExportNaming.filename(plan, format, variant, filename);
+            downloadBlob(blob, name);
+            const message = I18n.t('Downloaded: {filename}', { filename: name });
             setStatus(message, 'success');
             window.notify?.(message);
         } catch (error) {
@@ -83,7 +81,7 @@
             setStatus(message, 'error');
             window.notify?.(message);
         } finally {
-            setBusy(false);
+            setBusy(false, State.currentTripPlan);
         }
     }
 

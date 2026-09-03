@@ -4,6 +4,10 @@
     const FIELDS = SIDES.flatMap(side => [
         `${side}_airport_name`, `${side}_airport_lat`,
         `${side}_airport_lng`, `${side}_airport_stay_half_days`,
+        // The drive to or from the airport belongs to the same decision, so it
+        // is kept whenever the airports are.
+        `${side}_transfer_half_days`, `${side}_transfer_mode`,
+        `${side}_transfer_time_hours`,
     ]);
     const candidates = new Map();
     const el = id => document.getElementById(id);
@@ -16,7 +20,7 @@
         });
         return kept;
     }
-    function legFor(index) { return State.currentTripPlan?.legs?.[index] || null; }
+    function legFor(index) { return TripTransportView.legAt(index); }
     function status(index, side, message, kind = '') {
         const node = el(`trip-leg-air-status-${index}-${side}`);
         if (!node) return;
@@ -124,29 +128,15 @@
         TripPlanningDraft.change(draft => {
             const current = { ...(draft.legOverrides[leg.leg_key] || {}) };
             [`${side}_airport_name`, `${side}_airport_lat`, `${side}_airport_lng`,
-             `${side}_airport_stay_half_days`].forEach(field => { current[field] = null; });
+             `${side}_airport_stay_half_days`,
+             `${side}_transfer_half_days`, `${side}_transfer_mode`,
+             `${side}_transfer_time_hours`].forEach(field => { current[field] = null; });
             draft.legOverrides[leg.leg_key] = current;
         });
         status(index, side, '');
         TripTransportActions.schedulePreview();
     }
-    function stayChanged(index, side, raw) {
-        const leg = legFor(index);
-        const halfDays = TripDuration.parseDisplayTravelDays(raw);
-        if (!leg) return;
-        if (raw !== '' && halfDays == null) {
-            status(index, side, 'Stay must be 0 to 30 days in 0.5-day steps.', 'error');
-            return;
-        }
-        TripPlanningDraft.change(draft => {
-            draft.legOverrides[leg.leg_key] = {
-                ...(draft.legOverrides[leg.leg_key] || {}),
-                [`${side}_airport_stay_half_days`]: halfDays || 0,
-            };
-        });
-        TripTransportActions.schedulePreview();
-    }
     window.TripLegAirports = Object.freeze({
-        pick, search, choose, clear, stayChanged, FIELDS,
+        pick, search, choose, clear, FIELDS, legFor, status,
     });
 })();

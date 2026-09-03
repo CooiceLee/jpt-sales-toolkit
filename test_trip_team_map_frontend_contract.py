@@ -30,7 +30,7 @@ globalThis.State = {};
 MODULE_FILES = (
     "trip-schedule-view.js", "trip-team-risks.js",
     "trip-team-timeline-view.js", "trip-team-timeline.js",
-    "trip-team-journeys.js",
+    "trip-team-journeys.js", "trip-team-colors.js",
 )
 
 
@@ -281,6 +281,74 @@ def check_one_rule_for_both_views() -> None:
     )
 
 
+def check_every_traveller_has_their_own_colour() -> None:
+    """Whose route is whose is readable without hovering every line.
+
+    Three colleagues over one continent is three routes drawn on top of each
+    other. In one colour the map says a trip happened but not whose, so each
+    member gets a colour, keeps it wherever they appear, and a shared journey
+    is drawn as nested bands so it still names everybody on it.
+    """
+    data = run_js("""
+const plan = { members: [
+    { user_id: 'a', display_name: 'Ayden' },
+    { user_id: 'b', display_name: 'Slluu' },
+    { user_id: 'c', display_name: 'Eric' },
+] };
+const colors = TripTeamColors;
+console.log(JSON.stringify({
+    each: plan.members.map(m => colors.colorOf(plan, m.user_id)),
+    stable: colors.colorOf(plan, 'b') === colors.colorOf(plan, 'b'),
+    unknown: colors.colorOf(plan, 'nobody'),
+    alone: colors.bandsFor(plan, ['b']),
+    together: colors.bandsFor(plan, ['a', 'b', 'c']),
+    nobody: colors.bandsFor(plan, []),
+    legend: colors.legend(plan),
+}));
+""")
+    assert len(set(data["each"])) == 3, (
+        f"two travellers must not share a colour: {data['each']}"
+    )
+    assert data["stable"], "a traveller's colour must not change between reads"
+    assert data["unknown"] not in data["each"], (
+        "somebody not on the trip must not borrow a traveller's colour"
+    )
+    assert [band["color"] for band in data["alone"]] == [data["each"][1]], (
+        f"one traveller is drawn in their own colour: {data['alone']}"
+    )
+    together = data["together"]
+    assert [band["color"] for band in together] == data["each"], (
+        f"a shared journey must show every colour on it: {together}"
+    )
+    widths = [band["weight"] for band in together]
+    assert widths == sorted(widths, reverse=True), (
+        f"nested bands must run widest first or they cover each other: {widths}"
+    )
+    assert len(set(widths)) == len(widths), (
+        f"bands of the same width hide all but the last: {widths}"
+    )
+    assert len(data["nobody"]) == 1, (
+        "a journey with nobody on it is still drawn, in its own colour"
+    )
+    assert [item["name"] for item in data["legend"]] == [
+        "Ayden", "Slluu", "Eric"
+    ], data["legend"]
+    assert [item["color"] for item in data["legend"]] == data["each"], (
+        "the legend must show the colours the map actually draws"
+    )
+
+    source = (MODULES / "trip-team-map.js").read_text(encoding="utf-8")
+    assert "'#1f5135'" not in source, (
+        "the map must not fall back to one colour for every route"
+    )
+    assert "TripTeamColors.bandsFor(plan, journey.memberIds)" in source, (
+        "the drawn colours must come from the same place the legend reads"
+    )
+    assert "trip-lane-swatch" in source, (
+        "the per-member buttons are the legend: each needs its colour on it"
+    )
+
+
 def main() -> None:
     check_different_modes_are_two_routes()
     check_same_journey_is_one_route()
@@ -290,6 +358,7 @@ def main() -> None:
     check_focus_picks_the_chosen_members_journey()
     check_flown_legs_pass_through_their_airports()
     check_one_rule_for_both_views()
+    check_every_traveller_has_their_own_colour()
     print("PASS: team map lanes, shared journeys and unresolved routes")
 
 

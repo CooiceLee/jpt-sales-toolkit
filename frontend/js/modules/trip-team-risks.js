@@ -33,6 +33,10 @@
             '{member} is expected back on {date}, after the planned end of the trip on {deadline}. Confirm the return arrangement.',
             risk
         ),
+        member_departure_after_plan_end: risk => t(
+            '{member} is set to leave on {departureDate}, after the trip ends on {deadline}. They are travelling with the team until this is corrected.',
+            risk
+        ),
     });
 
     function memberName(plan, userId) {
@@ -54,6 +58,7 @@
             member: memberName(plan, risk.member_id || risk.user_id),
             stop: stopName(plan, risk.stop_id),
             plannedDate: risk.planned_date,
+            departureDate: risk.departure_date,
             period: t(risk.period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),
             count: risk.visit_count || (risk.stop_ids || []).length,
         });

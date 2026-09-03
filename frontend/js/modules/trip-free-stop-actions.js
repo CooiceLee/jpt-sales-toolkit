@@ -1,11 +1,9 @@
 /** CRUD and explicit geocoding actions for non-customer itinerary stops. */
 (function() {
     let geocodeEpoch = 0;
-    function acceptPlan(plan, duration = null) {
-        State.currentTripPlan = plan;
-        State.tripPlans = (State.tripPlans || []).map(item => item.id === plan.id
-            ? { ...item, stop_count: (plan.stops || []).length, row_version: plan.row_version }
-            : item);
+    function acceptPlan(plan, token, duration = null) {
+        if (!TripPlanIdentity.accept(token, plan)) return;
+        syncTripPlanListEntry(plan);
         const hasStops = Boolean(plan.stops?.length);
         populateTripPlanForm(plan, { committed: !hasStops });
         if (hasStops) TripPlanningDraft.change(draft => {
@@ -30,15 +28,18 @@
         if (stopId) payload.row_version = TripFreeStopForm.rowVersion();
         else payload.sequence_no = (State.currentTripPlan.stops || []).length + 1;
         let committed = false;
+        let token = null;
         try {
             setTripBusy(true);
             TripFreeStopForm.setBusy(true);
+            token = TripPlanIdentity.intend();
             const plan = await ApiClient[stopId ? 'updateTripFreeStop' : 'addTripFreeStop'](
                 State.currentTripPlan.id, ...(stopId ? [stopId, payload] : [payload])
             );
             const saved = (plan.stops || []).find(item => item.id === stopId)
                 || [...(plan.stops || [])].reverse().find(item => item.stop_kind === 'free');
-            acceptPlan(plan, saved ? { id: saved.id, halfDays: payload.duration_half_days } : null);
+            acceptPlan(plan, token,
+                saved ? { id: saved.id, halfDays: payload.duration_half_days } : null);
             TripFreeStopForm.close({ force: true });
             committed = true;
             notify(I18n.t(stopId ? 'Personal stop updated. Preview and save the route.'
@@ -46,7 +47,7 @@
         } catch (error) {
             console.error('Save personal stop error:', error);
             if (error?.name === 'ConflictError') {
-                await loadTripPlanner();
+                await loadTripPlanner({ token });
                 TripFreeStopForm.close({ force: true });
                 alert(I18n.t('This personal stop changed elsewhere. Latest data was loaded; reopen the editor and try again.'));
             } else await handleTripError(error, 'Save personal stop');
@@ -75,17 +76,19 @@
             });
         if (!confirm(message)) return;
         let committed = false;
+        let token = null;
         try {
             setTripBusy(true);
+            token = TripPlanIdentity.intend();
             const plan = await ApiClient.archiveTripFreeStop(State.currentTripPlan.id, stopId, stop.row_version || null);
-            acceptPlan(plan);
+            acceptPlan(plan, token);
             TripFreeStopForm.close({ force: true });
             committed = true;
             notify(I18n.t('Personal stop removed. Preview and save the route.'));
         } catch (error) {
             console.error('Remove personal stop error:', error);
             if (error?.name === 'ConflictError') {
-                await loadTripPlanner();
+                await loadTripPlanner({ token });
                 TripFreeStopForm.close({ force: true });
                 alert(I18n.t('This personal stop changed elsewhere. Latest data was loaded; reopen the editor and try again.'));
             } else await handleTripError(error, 'Remove personal stop');

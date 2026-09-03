@@ -209,41 +209,109 @@ def check_legacy_export_is_untouched(service, seed) -> None:
         assert column not in header, f"legacy CSV gained a team column: {column}"
 
 
-def check_formats_without_a_team_dimension_are_refused(service, seed) -> None:
-    """Excel, HTML and calendar files are refused rather than quietly wrong.
+def check_every_format_carries_the_team(service, seed) -> None:
+    """Excel, HTML and the calendar describe who travelled, not just where.
 
-    They are built from a model whose timeline looks a leg up by its key alone.
-    Two colleagues travelling between the same pair of places share that key, so
-    one overwrites the other and the file would state one member's journey as
-    both of theirs. Refusing says so; producing the file does not.
+    They are built from one model that used to look a leg up by its key alone.
+    Two colleagues between the same pair of places share that key, so one
+    overwrote the other and the file would have stated one member's journey as
+    both of theirs - which is why these three refused a team trip outright.
     """
     plan_id, actor = seed["plan_id"], seed["actor"]
     plan = service.get_trip_plan(plan_id, actor, "leader")
 
-    # The collision this protects against is real in an ordinary team trip.
+    # The collision this guards against is real in an ordinary team trip.
     keys = [leg["leg_key"] for leg in plan["legs"]]
     assert len(keys) != len(set(keys)), (
         "this plan no longer has two members sharing a leg key, so the test is "
         "not exercising what it claims"
     )
 
-    for export in (service.export_trip_plan_xlsx, service.export_trip_plan_html,
-                   service.export_trip_plan_ics):
-        try:
-            export(plan_id, actor, "leader")
-        except ValueError as exc:
-            assert "team" in str(exc).lower(), exc
-            assert "Markdown" in str(exc), (
-                "the refusal has to say which exports do work"
-            )
-        else:
-            raise AssertionError(
-                f"{export.__name__} produced a file with no member dimension"
-            )
+    from backend.services.trip_export_model import build_trip_export_model
 
-    # And the ones that carry the team still work.
-    assert service.export_trip_plan_markdown(plan_id, actor, "leader")
-    assert service.export_trip_plan_csv(plan_id, actor, "leader")
+    model = build_trip_export_model(plan, lambda leg: "")
+    travellers = [row["出行人 / Travellers"] for row in model["timeline"]]
+    assert any(travellers), "no line of the itinerary says who is on it"
+    assert any(" · " in who for who in travellers), (
+        f"colleagues travelling together are one line naming both: {travellers}"
+    )
+
+    journeys = [(row["出发地 / From"], row["目的地 / To"],
+                 row["交通方式 / Mode"], row["出行人 / Travellers"])
+                for row in model["legs"]]
+    assert len(journeys) == len(set(journeys)), (
+        f"a journey is printed more than once: {journeys}"
+    )
+
+    names = {member["display_name"] for member in plan["members"]}
+    header = " ".join(f"{label} {value}" for label, value in model["metadata"])
+    for name in names:
+        assert name in header, f"{name} is missing from the document header"
+
+    # And every format actually produces a file for that plan.
+    for export in (service.export_trip_plan_xlsx, service.export_trip_plan_html,
+                   service.export_trip_plan_ics,
+                   service.export_trip_plan_markdown,
+                   service.export_trip_plan_csv):
+        assert export(plan_id, actor, "leader"), (
+            f"{export.__name__} produced nothing for a team trip"
+        )
+
+
+def check_record_formats_state_their_own_terms(service, seed) -> None:
+    """Markdown and CSV are records, and say the same thing about the team.
+
+    They print one row per member's leg on purpose: a record is read a row at a
+    time and filtered by who, so a shared journey is one row for each person on
+    it. What they must not do is disagree with the formal documents about the
+    trip itself - the shared travel windows describe the whole team leaving at
+    once, which a team trip does not do, and they were removed from the plan.
+    """
+    plan_id, actor = seed["plan_id"], seed["actor"]
+
+    text = service.export_trip_plan_markdown(plan_id, actor, "leader")
+    for banned in ("Departure Window", "Return Window"):
+        assert banned not in text, (
+            f"{banned} describes the whole team leaving at once, which this "
+            "plan does not do; each member's own dates are in the team table"
+        )
+    assert "## Travel Team" in text, "the record has to say who is going"
+
+    # The plan carries windows, so blanking them is a decision this test can
+    # see rather than something the fixture happened to leave empty.
+    conn = get_db()
+    conn.execute(
+        "UPDATE trip_plans SET departure_window_start = ?, "
+        "departure_window_end = ?, return_window_start = ?, "
+        "return_window_end = ? WHERE id = ?",
+        ("2026-09-13T09:00", "2026-09-13T18:00",
+         "2026-09-29T09:00", "2026-09-30T18:00", plan_id),
+    )
+    conn.commit()
+
+    csv_text = service.export_trip_plan_csv(plan_id, actor, "leader")
+    rows = list(csv.DictReader(_io.StringIO(csv_text)))
+    for field in ("departure_window_start", "departure_window_end",
+                  "return_window_start", "return_window_end"):
+        assert field in (rows[0] if rows else {}), (
+            f"{field} must stay a column so the file shape does not change "
+            "between one kind of plan and another"
+        )
+        assert all(not row[field] for row in rows), (
+            f"{field} still carries a value that does not describe this trip"
+        )
+
+    # One row per member's leg is the point of a record format, so a journey
+    # two of them share is two rows - one for each of them to be found by.
+    travelled = [row for row in rows if row.get("leg_member_id")]
+    assert travelled, "the record has to say who travelled each leg"
+    shared = {}
+    for row in travelled:
+        shared.setdefault(row["leg_key"], set()).add(row["leg_member_id"])
+    assert any(len(members) > 1 for members in shared.values()), (
+        "a journey two members share is one row each in a record format, and "
+        f"this plan has one: {shared}"
+    )
 
 
 def check_legacy_keeps_every_format(service, seed) -> None:
@@ -265,7 +333,8 @@ def main() -> None:
     check_team_markdown(service, seed)
     check_team_csv(service, seed)
     check_daily_execution(service, seed)
-    check_formats_without_a_team_dimension_are_refused(service, seed)
+    check_record_formats_state_their_own_terms(service, seed)
+    check_every_format_carries_the_team(service, seed)
     check_legacy_keeps_every_format(service, seed)
     check_legacy_export_is_untouched(service, seed)
     close_db()

@@ -103,6 +103,35 @@ def build_team_events(core, plan: dict, stop_durations: dict) -> list:
     return events
 
 
+def member_departure_slots(core, member_repo, plan_id: str,
+                           start_slot: tuple, end=None) -> tuple:
+    """Each member's own departure half-day, for those who have one.
+
+    The plan's own dates bound the whole trip. A date before the start is not a
+    second start - the plan cannot begin before it begins - so the team slot
+    stands. A date after the end is a real mistake worth saying out loud: it
+    would put somebody's departure past the day the trip is over.
+    """
+    slots, risks = {}, []
+    for user, value in member_repo.departure_slots(plan_id).items():
+        day = core._parse_date(value)
+        if not day:
+            continue
+        if end and day > end:
+            risks.append(
+                {
+                    "kind": "member_departure_after_plan_end",
+                    "member_id": user,
+                    "departure_date": day.isoformat(),
+                    "deadline": end.isoformat(),
+                }
+            )
+            continue
+        if core._slot_key((day, "AM")) > core._slot_key(start_slot):
+            slots[user] = (day, "AM")
+    return slots, risks
+
+
 def validate_team_inputs(team: tuple, origins: dict, destinations: dict) -> None:
     """Everybody on the trip needs somewhere to leave from and return to.
 
@@ -178,13 +207,20 @@ def calculate_team_itinerary(core, member_repo, plan: dict, data: dict) -> dict:
     validate_team_inputs(team, origins, destinations)
 
     events = build_team_events(core, plan, data.get("stop_durations") or {})
+    departures, departure_risks = member_departure_slots(
+        core, member_repo, plan_id, settings["initial_slot"], settings["end"]
+    )
     result = plan_team_itinerary(
         core, team, events, origins, settings["initial_slot"],
         settings["priority"], destinations=destinations,
-        leg_settings=core._team_leg_settings(plan_id, team),
+        leg_settings=core._team_leg_settings(
+            plan_id, team, data.get("leg_overrides")
+        ),
+        departures=departures,
     )
     risks = [
         *result.risks,
+        *departure_risks,
         *return_overrun_risks(
             result.member_totals, settings["end"], settings["return_end"]
         ),
@@ -267,7 +303,13 @@ def suggest_team_visits(core, member_repo, plan: dict, data: dict) -> list:
         **settings,
         "origins": origins,
         "destinations": destinations,
-        "leg_settings": core._team_leg_settings(plan_id, team),
+        "leg_settings": core._team_leg_settings(
+            plan_id, team, data.get("leg_overrides")
+        ),
+        "departures": member_departure_slots(
+            core, member_repo, plan_id, settings["initial_slot"],
+            settings["end"],
+        )[0],
         "avoid_weekends": bool(avoid_weekends),
         "holidays": tuple(holidays),
     })

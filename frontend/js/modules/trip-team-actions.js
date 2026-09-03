@@ -12,10 +12,11 @@
     async function apply(action) {
         const planId = currentPlanId();
         if (!planId) return null;
+        const token = TripPlanIdentity.intend();
         try {
             const plan = await action(planId);
             if (!plan) return null;
-            State.currentTripPlan = plan;
+            if (!TripPlanIdentity.accept(token, plan)) return null;
             window.renderCurrentTripPlan?.();
             window.TripScheduleView?.renderPlan?.(plan);
             window.renderTripMap?.();
@@ -40,6 +41,32 @@
         if (plan) notify(t('{name} joined the trip', { name }));
     }
 
+    async function departureChanged(userId, value) {
+        if (!userId) return;
+        const before = memberOf(userId);
+        const field = document.getElementById(`trip-team-departure-${userId}`);
+        // One change at a time. Two dates sent together come back in whatever
+        // order the server answers, and the earlier answer would overwrite the
+        // later change while the box goes on showing the newer date.
+        const done = await TripTeamQueue.run(async () => {
+            if (field) field.disabled = true;
+            return apply(planId => ApiClient.setTripMember(planId, {
+                user_id: userId, departure_date: value || null,
+                row_version: before?.row_version || null,
+            }));
+        });
+        if (field) field.disabled = false;
+        if (!done) {
+            // The save did not happen, so the box must stop claiming it did.
+            if (field) field.value = before?.departure_date || '';
+            return;
+        }
+        notify(value
+            ? t('{name} now leaves on {date}', {
+                name: nameOf(userId), date: value })
+            : t('{name} now leaves with the team', { name: nameOf(userId) }));
+    }
+
     async function remove(userId) {
         if (!userId) return;
         // Removing somebody takes the route worked out for them with it, so this
@@ -54,5 +81,14 @@
         if (plan) notify(t('Removed from the trip'));
     }
 
-    window.TripTeamActions = Object.freeze({ add, remove });
+    function memberOf(userId) {
+        return (State.currentTripPlan?.members || [])
+            .find(item => item.user_id === userId) || null;
+    }
+
+    function nameOf(userId) {
+        return memberOf(userId)?.display_name || userId;
+    }
+
+    window.TripTeamActions = Object.freeze({ add, remove, departureChanged });
 })();

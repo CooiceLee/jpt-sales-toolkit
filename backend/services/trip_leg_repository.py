@@ -76,6 +76,12 @@ class TripLegRepository:
                     "arrival_airport_lat",
                     "arrival_airport_lng",
                     "arrival_airport_stay_half_days",
+                    "departure_transfer_half_days",
+                    "departure_transfer_mode",
+                    "departure_transfer_time_hours",
+                    "arrival_transfer_half_days",
+                    "arrival_transfer_mode",
+                    "arrival_transfer_time_hours",
                 )
             }
             if saved.get("departure_airport_name") or saved.get("arrival_airport_name"):
@@ -173,10 +179,11 @@ class TripLegRepository:
                     departure_airport_lng, departure_airport_stay_half_days,
                     arrival_airport_name, arrival_airport_lat,
                     arrival_airport_lng, arrival_airport_stay_half_days,
+                    departure_transfer_half_days, departure_transfer_mode, departure_transfer_time_hours, arrival_transfer_half_days, arrival_transfer_mode, arrival_transfer_time_hours,
                     created_at, created_by, updated_at, updated_by
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     generate_uuid(),
@@ -227,6 +234,12 @@ class TripLegRepository:
                     leg.get("arrival_airport_lat"),
                     leg.get("arrival_airport_lng"),
                     int(leg.get("arrival_airport_stay_half_days") or 0),
+                    leg.get("departure_transfer_half_days"),
+                    leg.get("departure_transfer_mode"),
+                    leg.get("departure_transfer_time_hours"),
+                    leg.get("arrival_transfer_half_days"),
+                    leg.get("arrival_transfer_mode"),
+                    leg.get("arrival_transfer_time_hours"),
                     timestamp,
                     actor_id,
                     timestamp,

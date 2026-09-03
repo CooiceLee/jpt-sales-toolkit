@@ -64,6 +64,12 @@ function populateTripPlanForm(plan, options = {}) {
     setInputValue('trip-end-date', header.end_date || '');
     setInputValue('trip-plan-region', header.region || '');
     setInputValue('trip-planning-mode', header.planning_mode || 'legacy');
+    // A team trip runs between the plan's own dates, and a member who leaves on
+    // their own day says so on their own row. Two more windows saying the same
+    // thing for everybody at once only gave the reader a second place to look.
+    document.querySelectorAll('[data-single-traveller-only]').forEach(node => {
+        node.hidden = header.planning_mode === 'team';
+    });
     setInputValue('trip-origin-name', header.origin_name || '');
     setInputValue('trip-origin-lat', header.origin_lat ?? '');
     setInputValue('trip-origin-lng', header.origin_lng ?? '');

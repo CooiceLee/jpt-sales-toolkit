@@ -1,5 +1,6 @@
 /** Render transport preferences, route draft status and per-leg overrides. */
 (function() {
+    let shown = [];
     const modeLabels = {
         flight: 'Flight', drive: 'Drive', ground_public: 'Ground public', other: 'Other',
     };
@@ -101,6 +102,11 @@
         const count = document.getElementById('trip-leg-count');
         if (!root) return;
         const entries = legEntries(plan);
+        // Colleagues travelling together are one row, so a row number is no
+        // longer a position in plan.legs. Every action on a row is given by
+        // that number, and looking it up in the unmerged list edits somebody
+        // else's leg - or writes an airport onto a connection nobody is on.
+        shown = entries.map(entry => entry.leg);
         if (count) count.textContent = t('{count} legs', { count: entries.length });
         root.innerHTML = entries.length
             ? entries.map((entry, index) =>
@@ -122,7 +128,10 @@
             : t('Route settings match the saved plan.');
     }
 
-    window.TripTransportView = Object.freeze({
+    /** The leg a rendered row stands for. */
+    function legAt(index) { return shown[index] || null; }
+
+    window.TripTransportView = Object.freeze({ legAt,
         render(plan, draft) { renderPriority(draft); renderLegs(plan, draft); renderStatus(draft); },
     });
 })();

@@ -27,7 +27,8 @@ window.moveTripStop = async function(stopId, direction) {
     [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
 
     reordered.forEach((stop, position) => { stop.sequence_no = position + 1; });
-    State.currentTripPlan = { ...plan, route_order_mode: 'manual', stops: reordered };
+    TripPlanIdentity.accept(TripPlanIdentity.intend(),
+        { ...plan, route_order_mode: 'manual', stops: reordered });
     TripPlanningDraft.change(draft => {
         draft.routeOrderMode = 'manual';
         draft.stopOrder = reordered.map(stop => stop.id);
@@ -48,13 +49,15 @@ window.saveTripStopResult = async function(stopId) {
     if (!State.currentTripPlan?.id) return;
     try {
         setTripBusy(true);
-        State.currentTripPlan = await ApiClient.updateTripStop(State.currentTripPlan.id, stopId, {
+        const token = TripPlanIdentity.intend();
+        const moved = await ApiClient.updateTripStop(State.currentTripPlan.id, stopId, {
             row_version: (State.currentTripPlan.stops || []).find(stop => stop.id === stopId)?.row_version || null,
             ...TripStopScheduleControls.readPayload(stopId),
             visit_purpose: document.getElementById(`stop-purpose-${stopId}`)?.value?.trim() || null,
             result_status: document.getElementById(`stop-result-${stopId}`)?.value || 'Planned',
             result_notes: document.getElementById(`stop-notes-${stopId}`)?.value?.trim() || null
         });
+        if (!TripPlanIdentity.accept(token, moved)) return;
         notify(I18n.t('Visit details saved'));
         window.refreshTripStopCard?.(State.currentTripPlan, stopId);
         window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
@@ -94,6 +97,7 @@ async function runTripItinerary(action, options = {}) {
         if (action !== 'preview') {
             payload.row_version = State.currentTripPlan.row_version || null;
         }
+        const token = TripPlanIdentity.intend();
         const result = await ApiClient[action === 'preview' ? 'previewTripItinerary' : 'generateTripItinerary'](
             State.currentTripPlan.id,
             payload
@@ -103,7 +107,7 @@ async function runTripItinerary(action, options = {}) {
             notify(I18n.t('The draft changed while previewing. Run the preview again.'));
             return;
         }
-        State.currentTripPlan = result;
+        if (!TripPlanIdentity.accept(token, result)) return;
         if (action === 'preview') window.TripPlanningDraft?.previewApplied?.(result, draftRevision);
         populateTripPlanForm(State.currentTripPlan, { committed: action !== 'preview' });
         if (action !== 'preview' && window.TripFreeStopForm?.isOpen?.()) {
@@ -112,6 +116,10 @@ async function runTripItinerary(action, options = {}) {
         renderCurrentTripPlan();
         window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
         window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
+        // A preview writes nothing, so the list of saved plans must not take its
+        // dates: the row would show a date the plan does not have until a
+        // refresh quietly puts the real one back.
+        if (action !== 'preview') syncTripPlanListEntry(State.currentTripPlan);
         renderTripPlans();
         renderTripMap();
         notify(I18n.t(action === 'preview'
@@ -128,8 +136,4 @@ async function runTripItinerary(action, options = {}) {
 window.previewCurrentTripItinerary = async function(options = {}) { await runTripItinerary('preview', options); };
 window.generateCurrentTripItinerary = async function() {
     await runTripItinerary('generate');
-};
-
-window.exportCurrentTripPlan = async function(format) {
-    return window.TripExportActions.download(format);
 };

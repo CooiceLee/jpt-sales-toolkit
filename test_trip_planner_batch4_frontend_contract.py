@@ -146,7 +146,7 @@ const fields=new Map([
  ['duration-s2',{value:'2',dataset:{stopDurationHalfDays:'2',stopId:'s2'}}],
  ['duration-s3',{value:'3',dataset:{stopDurationHalfDays:'3',stopId:'s3'}}],
 ]);
-const context={console,document:{getElementById:id=>fields.get(id)||null,
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,document:{getElementById:id=>fields.get(id)||null,
  querySelectorAll(selector){return selector==='[data-stop-duration-half-days]'?Array.from(fields.values()).slice(1):[]}},
  State:{currentTripPlan:{id:'p1',stops:[{id:'s1'},{id:'s2'},{id:'s3'}]}},
  numericOrNull:v=>v===''?null:Number(v),parseHolidayInput:()=>[],tripDateTimeLocalValue:v=>v||'',
@@ -190,7 +190,7 @@ def check_schedule_items_are_sorted_and_all_kinds_render() -> None:
     _node(r"""
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 const target={innerHTML:''};
-const context={console,document:{getElementById:id=>id==='trip-schedule-list'?target:null},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,document:{getElementById:id=>id==='trip-schedule-list'?target:null},
  I18n:{t:v=>v==='Flight'?'航班':v},escapeHtml:v=>String(v??'')};context.window=context;vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-schedule-view.js','utf8'),context);
 const items=[
@@ -210,7 +210,7 @@ for(const kind of ['customer','free','leg']) assert(target.innerHTML.includes(ki
 def check_half_day_summary_and_visit_location_linkage() -> None:
     _node(r"""
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
-const context={console,Date,document:{getElementById(){return null},querySelectorAll(){return[]}},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,Date,document:{getElementById(){return null},querySelectorAll(){return[]}},
  I18n:{t:(text,params={})=>Object.entries(params).reduce((value,[key,item])=>value.replace(`{${key}}`,item),text)},
  escapeHtml:value=>String(value??''),TripCandidateState:{warningText:value=>value},
  JPTRender:{escape:value=>String(value??'')}};
@@ -241,7 +241,7 @@ const points=[];const tooltips=[];
 const marker=()=>({bindTooltip(value){tooltips.push(value);return this},bindPopup(){return this},addTo(){return this}});
 const stop={sequence_no:1,stop_kind:'customer',customer_name:'Customer default',lat:1,lng:2,
  visit_location:{name:'Paris meeting room',address:'12 Rue Demo',city:'Paris',country:'France',lat:48.86,lng:2.35}};
-const context={console,State:{tripMap:{fitBounds(){}},tripMapLayer:{clearLayers(){}},tripCandidates:[],currentTripPlan:{stops:[stop]}},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{tripMap:{fitBounds(){}},tripMapLayer:{clearLayers(){}},tripCandidates:[],currentTripPlan:{stops:[stop]}},
  MapSupport:{coordinatePair(lat,lng){if(lat==null||lng==null)return null;const pair=[Number(lat),Number(lng)];points.push(pair);return pair}},
  L:{circleMarker:marker,polyline:marker},I18n:{t:value=>value},escapeHtml:value=>String(value??''),formatMoney(){return''},
  TripVisitState:{visitLocation:item=>item.visit_location||item}};
@@ -265,11 +265,11 @@ const zh={
  'Competitor':'竞争对手','Budget':'预算','Decision maker':'客户决策人','Next action':'下一步行动',
  'Meeting notes':'会议记录','Sample needed':'需要样品','Quote needed':'需要报价','Save visit':'保存拜访记录',
  'Discard edits':'放弃编辑','Upload files':'上传文件','Planned':'已计划','Visited':'已拜访',
- 'Follow-up Needed':'需要跟进','Skipped':'已跳过',
+ 'Follow-up Needed':'需要跟进','Skipped':'已跳过','Not answered':'未填写',
 };
 const stop={id:'s1',sequence_no:1,customer_name:'Customer GmbH',result_status:'Planned',lead_id:'l1'};
 const plan={id:'p1',stops:[stop]};
-const context={console,State:{currentTripPlan:plan},I18n:{t:key=>zh[key]||key},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{currentTripPlan:plan},I18n:{t:key=>zh[key]||key},
  document:{getElementById:id=>id==='trip-visit-execution'?target:null},
  TripVisitState:{escape:value=>String(value??''),planDays(){return[]},currentDateForPlan(){return''},
   stopMatchesDay(){return true},compareStops(){return 0},scheduleLabel(){return''},customerPersonnelLine(){return'客户甲'},
@@ -277,6 +277,7 @@ const context={console,State:{currentTripPlan:plan},I18n:{t:key=>zh[key]||key},
   agendaLine(stop){return (stop&&stop.visit_purpose)||''}},
  TripVisitDraft:{mark(){},discard(){}},JPTRender:{field:(label,value)=>`<div>${label}:${value||''}</div>`,empty:value=>value}};
 context.window=context;vm.createContext(context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-visit-answer.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planner.js','utf8'),context);
 context.TripPlannerModule.renderVisitExecution(plan);
 for(const label of ['未排程拜访','导出当日拜访报告','尚未排定日期','客户人员','渠道代理公司陪同人员','JPT 内部参会人员','商机','客户需求','预算','会议记录','需要样品','需要报价','上传文件']) {
@@ -286,6 +287,24 @@ for(const pair of ['客户人员:客户甲','渠道代理公司陪同人员:代�
 for(const raw of ['Unscheduled stops','Export day report','No scheduled date','Customer needs','Meeting notes','Sample needed','Quote needed','Upload files']) {
  assert(!target.innerHTML.includes(raw),raw);
 }
+
+// A question nobody has answered offers the blank choice, and it is the one
+// standing. Rendering it as 否 would answer for whoever opens the card.
+const chosen = html => {
+ const select = html.slice(html.indexOf('id="visit-sample-s1"'));
+ const option = select.slice(0, select.indexOf('</select>'));
+ const match = option.match(/<option value="([^"]*)" selected>/);
+ return match ? match[1] : null;
+};
+assert.strictEqual(chosen(target.innerHTML), '', 'an unanswered question came up answered');
+assert(target.innerHTML.includes('未填写'), 'the blank choice is not offered');
+
+stop.visit_sample_needed = false;
+context.TripPlannerModule.renderVisitExecution(plan);
+assert.strictEqual(chosen(target.innerHTML), 'no', 'a deliberate no was not shown');
+stop.visit_sample_needed = true;
+context.TripPlannerModule.renderVisitExecution(plan);
+assert.strictEqual(chosen(target.innerHTML), 'yes', 'a deliberate yes was not shown');
 """)
 
 
@@ -303,17 +322,20 @@ const fields={
 const locationFields=['name','address','city','postal_code','country','lat','lng']
  .map(key=>({value:'',dataset:{locationField:key}}));
 const emptyRows={querySelectorAll(){return[]}};
-const context={console,structuredClone,State:{tripBusy:false,currentTripPlan:{id:'p1',stops:[{id:'s1',row_version:7,customer_name:'Rayxion'}]}},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,structuredClone,State:{tripBusy:false,currentTripPlan:{id:'p1',stops:[{id:'s1',row_version:7,customer_name:'Rayxion'}]}},
  document:{getElementById:id=>fields[id]||null,
   querySelector(selector){return selector.startsWith('[data-briefing-array-key=')?emptyRows:null},
   querySelectorAll(selector){return selector==='[data-location-field]'?locationFields:[]}},
  I18n:{t:v=>v},escapeHtml:v=>String(v??''),alert(message){throw new Error(message)},confirm(){return true},
- notify(){},renderCurrentTripPlan(){},handleTripError(error){throw error},
+ notify(){},renderCurrentTripPlan(){},loadTripPlanner:async()=>{},handleTripError(error){throw error},
+ populateTripPlanForm(){},syncTripPlanListEntry(){},renderTripPlans(){},renderTripMap(){},
+ TripPlannerModule:{renderVisitExecution(){}},
  TripScheduleView:{renderPlan(){}},
- ApiClient:{async putTripBriefing(planId,stopId,payload){sent={planId,stopId,payload};return payload}}};
+ ApiClient:{async putTripBriefing(planId,stopId,payload){sent={planId,stopId,payload};return payload},
+  async getTripPlan(planId){return {id:planId,stops:[],members:[]}}}};
 context.window=context;vm.createContext(context);
 context.addEventListener=()=>{};
-for(const file of ['trip-briefing-draft.js','trip-briefing-rows.js','trip-briefing-form.js','trip-briefing-actions.js'])
+for(const file of ['trip-briefing-reveal.js','trip-briefing-scroll.js','trip-briefing-draft.js','trip-briefing-rows.js','trip-briefing-form.js','trip-plan-identity.js','trip-plan-refresh.js','trip-briefing-actions.js'])
  vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 const record={row_version:3,stop_row_version:7,confirmation_status:'confirmed',timezone:'Europe/Paris',
  location:{use_customer_default:false,name:'Rayxion HQ',address:'99 Demo Road',city:'Paris',postal_code:'75001',country:'France',lat:48.86,lng:2.35},
@@ -356,7 +378,7 @@ def check_dirty_briefing_blocks_navigation_and_route_actions() -> None:
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 let guarded=true,writes=0,downloads=0;
 const p1={id:'p1',row_version:2,stops:[],legs:[]},p2={id:'p2',row_version:1,stops:[],legs:[]};
-const context={console,State:{tripBusy:false,currentTripPlan:p1,tripPlans:[p1,p2]},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{tripBusy:false,currentTripPlan:p1,tripPlans:[p1,p2]},
  document:{getElementById(){return null}},I18n:{t:v=>v},
  TripBriefingDraft:{guard(){return guarded}},TripFreeStopDraft:{guardRouteAction(){return false}},
  TripPlanningDraft:{get(){return{dirty:false}},revision(){return 1}},TripTransportActions:{cancelScheduledPreview(){}},

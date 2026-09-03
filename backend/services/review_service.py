@@ -40,6 +40,7 @@ from .trip_flight_waypoints import (
     split_waypoints,
 )
 from .trip_plan_service import TripPlanService
+from .trip_working_import import TripWorkingImportService
 from .visibility_service import VisibilityService
 
 RISK_SCORE_WEIGHTS = {
@@ -60,6 +61,11 @@ TRIP_SCORE_WEIGHTS = {
 }
 
 TRIP_TRAVEL_MODES = {"auto", "drive", "ground_public", "flight", "other"}
+
+
+def _answer_value(value):
+    """The stored answer as JSON sees it: unanswered, yes or no."""
+    return None if value is None else bool(value)
 
 
 class ReviewService:
@@ -84,6 +90,7 @@ class ReviewService:
         self.analysis_service = ReviewAnalysisService(self)
         self.map_service = ReviewMapService(self)
         self.trip_plan_service = TripPlanService(self)
+        self.trip_working_import_service = TripWorkingImportService(self)
 
     def get_analysis_data(
         self,
@@ -298,14 +305,42 @@ class ReviewService:
     def export_trip_plan_csv(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[str]:
         return self.trip_plan_service.export_trip_plan_csv(plan_id, actor_id, actor_role)
 
-    def export_trip_plan_xlsx(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
-        return self.trip_plan_service.export_trip_plan_xlsx(plan_id, actor_id, actor_role)
+    def export_trip_plan_xlsx(self, plan_id: str, actor_id: str, actor_role: str,
+                              variant: str = "full") -> Optional[bytes]:
+        return self.trip_plan_service.export_trip_plan_xlsx(
+            plan_id, actor_id, actor_role, variant
+        )
 
-    def export_trip_plan_html(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
-        return self.trip_plan_service.export_trip_plan_html(plan_id, actor_id, actor_role)
+    def export_trip_plan_html(self, plan_id: str, actor_id: str, actor_role: str,
+                              variant: str = "full") -> Optional[bytes]:
+        return self.trip_plan_service.export_trip_plan_html(
+            plan_id, actor_id, actor_role, variant
+        )
 
     def export_trip_plan_ics(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
         return self.trip_plan_service.export_trip_plan_ics(plan_id, actor_id, actor_role)
+
+    def export_trip_working_xlsx(
+        self, plan_id: str, actor_id: str, actor_role: str
+    ) -> Optional[bytes]:
+        return self.trip_plan_service.export_trip_working_xlsx(
+            plan_id, actor_id, actor_role
+        )
+
+    def preflight_trip_working(self, content: bytes, filename: str, actor_id: str, actor_role: str) -> dict:
+        return self.trip_working_import_service.preflight(
+            content, filename, actor_id, actor_role
+        )
+
+    def import_trip_working(
+        self, content: bytes, filename: str, expected_source_hash: str,
+        expected_preview_digest: str, resolutions: dict,
+        actor_id: str, actor_role: str,
+    ) -> dict:
+        return self.trip_working_import_service.commit(
+            content, filename, expected_source_hash, expected_preview_digest,
+            resolutions, actor_id, actor_role,
+        )
 
     def get_trip_execution(
         self,
@@ -1725,8 +1760,16 @@ class ReviewService:
                 stored.setdefault(leg_key, {}).update(airports)
         return stored
 
-    def _team_leg_settings(self, plan_id: str, team: tuple) -> dict:
-        """Stored leg settings keyed by member, for the team calculation."""
+    def _team_leg_settings(self, plan_id: str, team: tuple,
+                           incoming: dict | None = None) -> dict:
+        """Leg settings keyed by member, for the team calculation.
+
+        What is stored comes back keyed by who travelled it. What the browser
+        sends is keyed by the connection alone, because the route shows one row
+        for a journey colleagues make together and one choice is made on it, so
+        it applies to everybody on that connection. Without this the mode a user
+        picks is dropped on the way in and the next draw shows it unset again.
+        """
         repo = self.trip_plan_service.leg_repo
         stored: dict = {}
         for key, value in repo.locked_overrides(plan_id).items():
@@ -1735,21 +1778,22 @@ class ReviewService:
         for key, airports in repo.saved_airports(plan_id).items():
             if key[0] in team:
                 stored.setdefault(key, {}).update(airports)
+        for leg_key, value in (incoming or {}).items():
+            for user in team:
+                stored.setdefault((user, leg_key), {}).update(dict(value))
         return stored
 
     def _team_plan_settings(self, plan: dict, data: dict) -> dict:
-        """When the trip starts, how people travel, and when it has to be over."""
-        windows = {
-            key: data[key] if key in data else plan.get(key)
-            for key in (
-                "departure_window_start", "departure_window_end",
-                "return_window_start", "return_window_end",
-            )
-        }
-        validate_time_windows(windows)
+        """When the trip starts, how people travel, and when it has to be over.
+
+        A team trip is bounded by the plan's own dates. The separate departure
+        and return windows said the same thing a second time, in a second place,
+        for the whole team at once - and a member who leaves on their own day
+        already says so on their own row. One window, on the plan, is the thing
+        every member's dates are checked against.
+        """
         start = self._parse_date(
             data.get("start_date") or plan.get("start_date")
-            or windows.get("departure_window_start")
         )
         if not start:
             raise ValueError(
@@ -1771,14 +1815,12 @@ class ReviewService:
             priority = normalize_priority(
                 plan.get("transport_mode_priority"), travel_mode
             )
-        departure = self._window_slot(
-            windows.get("departure_window_start"), default_period="AM"
-        )
+        end = self._parse_date(end_value)
         return {
-            "initial_slot": departure or (start, "AM"),
+            "initial_slot": (start, "AM"),
             "priority": priority,
-            "end": self._parse_date(end_value),
-            "return_end": self._parse_date(windows.get("return_window_end")),
+            "end": end,
+            "return_end": end,
         }
 
     def _expand_flight_leg(
@@ -1794,24 +1836,46 @@ class ReviewService:
         departure = airport_point(leg, "departure")
         arrival = airport_point(leg, "arrival")
         transfer = ground_mode(priority)
+        # What the reader typed on the connection describes the flight: those
+        # are the hours and the days of the flight they looked up. The drives at
+        # either end each have their own field. Anything not given is estimated.
         hops = (
-            ("to_airport", transfer, start_point, departure),
-            ("flight", "flight", departure, arrival),
-            ("from_airport", transfer, arrival, end_point),
+            ("to_airport",
+             leg.get("departure_transfer_mode") or transfer,
+             start_point, departure,
+             leg.get("departure_transfer_half_days"),
+             leg.get("departure_transfer_time_hours"), None),
+            ("flight", "flight", departure, arrival,
+             leg.get("manual_travel_half_days"),
+             leg.get("manual_time_hours"), leg.get("manual_distance_km")),
+            ("from_airport",
+             leg.get("arrival_transfer_mode") or transfer,
+             arrival, end_point,
+             leg.get("arrival_transfer_half_days"),
+             leg.get("arrival_transfer_time_hours"), None),
         )
         segments = []
-        for role, mode, left, right in hops:
+        for role, mode, left, right, half_days, given_hours, given_km in hops:
             estimate = self._estimate_travel_leg(left, right, mode)
-            hours = float(estimate["time_hours"])
+            hours = float(
+                given_hours if given_hours is not None
+                else estimate["time_hours"]
+            )
+            distance = float(
+                given_km if given_km is not None else estimate["distance_km"]
+            )
             segments.append(
                 {
                     "role": role,
                     "selected_mode": mode,
                     "from_label": left.get("label"),
                     "to_label": right.get("label"),
-                    "distance_km": round(float(estimate["distance_km"]), 1),
+                    "distance_km": round(distance, 1),
                     "time_hours": round(hours, 1),
-                    "travel_half_days": travel_calendar_half_days(hours),
+                    "travel_half_days": (
+                        min(60, int(half_days)) if half_days is not None
+                        else travel_calendar_half_days(hours)
+                    ),
                     "stay_half_days": int(
                         (right or {}).get("stay_half_days") or 0
                     ) if role != "from_airport" else 0,
@@ -1970,8 +2034,12 @@ class ReviewService:
                 "budget": stop.get("visit_budget"),
                 "decision_maker": stop.get("visit_decision_maker"),
                 "next_action": stop.get("visit_next_action"),
-                "sample_needed": bool(stop.get("visit_sample_needed")),
-                "quote_needed": bool(stop.get("visit_quote_needed")),
+                # None stays None: the activity must not record an answer
+                # nobody gave.
+                "sample_needed": _answer_value(stop.get("visit_sample_needed")),
+                "quote_needed": _answer_value(stop.get("visit_quote_needed")),
+                "actual_visit_date": stop.get("actual_visit_date"),
+                "actual_visit_period": stop.get("actual_visit_period"),
             }
         )
         if stop.get("result_activity_id"):

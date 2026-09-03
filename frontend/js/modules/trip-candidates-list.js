@@ -72,7 +72,7 @@ function renderTripCandidates() {
                 shown: candidates.length,
                 total: pagination.total || candidates.length
             }))}</span>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="loadMoreTripCandidates()" ${pagination.has_more ? '' : 'disabled'}>
+            <button type="button" class="btn btn-secondary btn-sm" id="trip-candidate-more" onclick="loadMoreTripCandidates()" ${pagination.has_more ? '' : 'disabled'}>
                 ${escapeHtml(I18n.t('Load more'))}
             </button>
         </div>
@@ -82,6 +82,21 @@ function renderTripCandidates() {
 window.loadMoreTripCandidates = async function() {
     const pagination = State.tripCandidatePagination || {};
     if (!pagination.has_more) return;
-    State.tripCandidatePagination.offset = (pagination.offset || 0) + (pagination.limit || 25);
-    await loadTripPlanner({ appendCandidates: true });
+    // One page at a time, among requests for the same question: a page still
+    // arriving for a filter the reader has left must not block this one.
+    const request = TripCandidateRequests.claimPaging();
+    if (!request) return;
+    const button = document.getElementById('trip-candidate-more');
+    if (button) button.disabled = true;
+    try {
+        // The offset is what this request asks for, not what the list already
+        // holds: a page that fails to arrive must be the one asked for again.
+        await loadTripCandidates({
+            append: true, request,
+            offset: (pagination.offset || 0) + (pagination.limit || 25),
+        });
+    } finally {
+        TripCandidateRequests.releasePaging(request);
+        if (button) button.disabled = !State.tripCandidatePagination?.has_more;
+    }
 };

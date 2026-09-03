@@ -108,7 +108,7 @@ def check_free_stop_dirty_blocks_route_actions_and_clean_save_resyncs() -> None:
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 let dirty=true,writes=0,closed=0,freePayloadReads=0,alerts=[];
 const saved={id:'p1',row_version:8,stops:[{id:'f1',stop_kind:'free',row_version:4,stay_days:1}],legs:[]};
-const context={console,State:{tripBusy:false,currentTripPlan:{...saved,row_version:7}},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{tripBusy:false,currentTripPlan:{...saved,row_version:7}},
  I18n:{t:value=>value},TripFreeStopDraft:{guardRouteAction(){if(!dirty)return false;alerts.push('blocked');return true}},
  TripFreeStopForm:{isOpen(){return true},close(options){assert.strictEqual(options.force,true);closed+=1},
   payload(){freePayloadReads+=1;throw new Error('free-stop payload must remain independent')}},
@@ -121,6 +121,7 @@ const context={console,State:{tripBusy:false,currentTripPlan:{...saved,row_versi
    assert.strictEqual(payload.title,'Route only');assert.strictEqual('location_name' in payload,false);return saved},
   async exportTripPlan(){writes+=1;return{blob:{},filename:'route.csv'}}}};
 context.window=context;vm.createContext(context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-plan-list-sync.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-itinerary-actions.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-export-actions.js','utf8'),context);
 (async()=>{
@@ -138,7 +139,7 @@ def check_free_stop_conflict_reloads_and_closes_editor() -> None:
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 let updates=0,reloads=0,closed=0,message='';
 const conflict=new Error('conflict');conflict.name='ConflictError';
-const context={console:{error(){},log(){}},State:{tripBusy:false,currentTripPlan:{id:'p1',stops:[{id:'f1',stop_kind:'free'}]},tripPlans:[]},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console:{error(){},log(){}},State:{tripBusy:false,currentTripPlan:{id:'p1',stops:[{id:'f1',stop_kind:'free'}]},tripPlans:[]},
  I18n:{t:value=>value},TripFreeStopDraft:{isDirty(){return true},confirmDiscard(){return true}},
  TripFreeStopForm:{payload(){return{location_name:'Hotel',lat:1,lng:2,stay_days:1}},editingId(){return'f1'},
   rowVersion(){return 2},setBusy(){},close(options){assert.strictEqual(options.force,true);closed+=1}},
@@ -147,6 +148,7 @@ const context={console:{error(){},log(){}},State:{tripBusy:false,currentTripPlan
  populateTripPlanForm(){},TripPlannerModule:{renderVisitExecution(){}},TripTransportActions:{schedulePreview(){}},
  notify(){},alert(value){message=value},handleTripError(){throw new Error('ConflictError must use recovery path')}};
 context.window=context;vm.createContext(context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-plan-list-sync.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-free-stop-actions.js','utf8'),context);
 (async()=>{await context.TripFreeStopActions.save();
  assert.strictEqual(updates,1);assert.strictEqual(reloads,1);assert.strictEqual(closed,1);
@@ -159,13 +161,14 @@ def check_successful_plan_switch_clears_free_stop_dirty() -> None:
     _node(r"""
 const fs=require('fs');const vm=require('vm');const assert=require('assert');let dirty=true,closed=0;
 const p1={id:'p1',title:'One',stops:[],legs:[]},p2={id:'p2',title:'Two',stops:[],legs:[]};
-const context={console,State:{currentTripPlan:p1,tripPlans:[p1,p2]},document:{getElementById(){return null}},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{currentTripPlan:p1,tripPlans:[p1,p2]},document:{getElementById(){return null}},
  I18n:{t:value=>value},TripTransportView:{render(){}},TripSuggestionState:{resetForPlan(){}},
  TripFreeStopDraft:{isDirty(){return dirty},confirmDiscard(){return true}},
  TripFreeStopForm:{close(options){assert.strictEqual(options.force,true);dirty=false;closed+=1}},confirm(){return true},
  ApiClient:{async getTripPlan(){return p2}},renderCurrentTripPlan(){},renderTripMap(){},
  TripPlannerModule:{renderVisitExecution(){}}};context.window=context;vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-duration.js','utf8'),context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-leg-overrides.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planning-draft.js','utf8'),context);
 context.TripPlanningDraft.hydrate(p1,{committed:true});closed=0;
 context.populateTripPlanForm=(plan,options={})=>context.TripPlanningDraft.hydrate(plan,options);
@@ -182,7 +185,8 @@ const fs=require('fs'); const vm=require('vm'); const assert=require('assert');
 const roots={ 'trip-suggest-route':{disabled:false,textContent:'',setAttribute(){}},
  'trip-suggestion-status':{textContent:''}, 'trip-leg-suggestions-0':{innerHTML:''} };
 let writes=0; const plan={id:'p1',stops:[{id:'a',stay_days:1}],legs:[{leg_key:'origin>a',from_label:'PVG',to_label:'Lyon'}]};
-const context={console,Date,URL,encodeURIComponent,decodeURIComponent,
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,Date,URL,encodeURIComponent,decodeURIComponent,
+ TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},
  State:{currentTripPlan:plan}, document:{getElementById:id=>roots[id]||null},
  I18n:{t:(text,params={})=>{const zh={Low:'低','Local estimate':'本地估算'};let value=zh[text]||text;
    return Object.entries(params).reduce((v,[k,x])=>v.replace(`{${k}}`,x),value)},locale:()=> 'zh-CN'},
@@ -190,7 +194,7 @@ const context={console,Date,URL,encodeURIComponent,decodeURIComponent,
  TripTransportView:{render(){}}, notify(){}, alert(message){throw new Error(message)},
  ApiClient:new Proxy({}, {get(){return ()=>{writes+=1}}}), readTripItineraryPayload(){return{};} };
 context.window=context; vm.createContext(context);
-for(const file of ['trip-duration.js','trip-suggestion-state.js','trip-planning-draft.js','trip-suggestion-view.js','trip-suggestion-actions.js'])
+for(const file of ['trip-duration.js','trip-suggestion-state.js','trip-leg-overrides.js','trip-planning-draft.js','trip-suggestion-view.js','trip-suggestion-actions.js'])
  vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 context.TripPlanningDraft.hydrate(plan,{committed:true}); const rev=context.TripPlanningDraft.revision();
 const req=context.TripSuggestionState.begin('p1',rev,'origin>a');
@@ -219,7 +223,7 @@ def check_removing_final_free_stop_does_not_strand_dirty_draft() -> None:
 const fs=require('fs'); const vm=require('vm'); const assert=require('assert');
 const stop={id:'f1',stop_kind:'free',location_name:'Rest',stay_days:1,row_version:2};
 const plan={id:'p1',row_version:4,stops:[stop],legs:[]}; let previews=0;
-const context={console, State:{currentTripPlan:plan,tripPlans:[{id:'p1',stop_count:1}],tripBusy:false},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console, State:{currentTripPlan:plan,tripPlans:[{id:'p1',stop_count:1}],tripBusy:false},
  document:{getElementById(){return null;}}, TripTransportView:{render(){}},
  I18n:{t:(text,params={})=>Object.entries(params).reduce((v,[k,x])=>v.replace(`{${k}}`,x),text)},
  confirm(){return true}, notify(){}, setTripBusy(){}, renderTripPlans(){}, renderCurrentTripPlan(){}, renderTripMap(){},
@@ -229,8 +233,10 @@ const context={console, State:{currentTripPlan:plan,tripPlans:[{id:'p1',stop_cou
  ApiClient:{async archiveTripFreeStop(){return{id:'p1',row_version:5,stops:[],legs:[]}}} };
 context.window=context; vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-duration.js','utf8'),context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-leg-overrides.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planning-draft.js','utf8'),context);
 context.populateTripPlanForm=(next,options={})=>context.TripPlanningDraft.hydrate(next,options);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-plan-list-sync.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-free-stop-actions.js','utf8'),context);
 context.TripPlanningDraft.hydrate(plan,{committed:true}); context.TripPlanningDraft.change(d=>{d.header.title='Unsaved'});
 (async()=>{await context.TripFreeStopActions.archive('f1');
@@ -251,7 +257,7 @@ const ids=['trip-free-stop-editor','trip-free-stop-editor-title','trip-free-stop
 const elements=new Map(ids.map(id=>[id,{value:'',hidden:false,innerHTML:'',textContent:'',className:'',disabled:false,
  setAttribute(){},addEventListener(){},focus(){}}])); elements.get('trip-free-stop-stay').value='1';
 let resolveSearch; const deferred=new Promise(resolve=>{resolveSearch=resolve});
-const context={console,navigator:{onLine:true},State:{currentTripPlan:{id:'p1',stops:[]},tripBusy:false},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,navigator:{onLine:true},State:{currentTripPlan:{id:'p1',stops:[]},tripBusy:false},
  document:{readyState:'complete',getElementById:id=>elements.get(id)||null},
  I18n:{t:value=>value},escapeHtml:value=>String(value??''),alert(message){throw new Error(message)},
  ApiClient:{searchGeocode(){return deferred}},setTripBusy(){},handleTripError(){},confirm(){return true}};
@@ -274,7 +280,7 @@ def check_removing_final_customer_stop_does_not_strand_dirty_draft() -> None:
 const fs=require('fs'); const vm=require('vm'); const assert=require('assert');
 const stop={id:'c1',stop_kind:'customer',customer_name:'Demo customer',stay_days:1,row_version:2};
 const plan={id:'p1',row_version:4,stops:[stop],legs:[]}; let previews=0,archives=0,closed=0,blocked=true;
-const context={console,State:{currentTripPlan:plan,tripBusy:false,tripCandidatePagination:{offset:0}},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{currentTripPlan:plan,tripBusy:false,tripCandidatePagination:{offset:0}},
  document:{getElementById(){return null;}},TripTransportView:{render(){}},
  TripTransportActions:{cancelScheduledPreview(){},schedulePreview(){}},I18n:{t:(text,params={})=>Object.entries(params).reduce((v,[k,x])=>v.replace(`{${k}}`,x),text)},
  confirm(){return true},notify(){},setTripBusy(){},handleTripError(){},async loadTripPlanner(){},
@@ -284,6 +290,7 @@ const context={console,State:{currentTripPlan:plan,tripBusy:false,tripCandidateP
  previewCurrentTripItinerary(){previews+=1}};
 context.window=context;vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-duration.js','utf8'),context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-leg-overrides.js','utf8'),context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planning-draft.js','utf8'),context);
 context.populateTripPlanForm=(next,options={})=>context.TripPlanningDraft.hydrate(next,options);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-stop-removal-actions.js','utf8'),context);
@@ -303,7 +310,7 @@ def check_dynamic_schedule_is_bilingual() -> None:
     _node(r"""
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 const pairs={'{start} to {end}':'{start} 至 {end}','From {location}: {mode}, {distance} km, {hours}h':'从 {location} 出发：{mode}，{distance} 公里，{hours} 小时','Drive':'驾车','Not scheduled':'尚未排程'};
-const context={console,document:{getElementById(){return null},querySelectorAll(){return[]}},escapeHtml:v=>String(v??''),
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,document:{getElementById(){return null},querySelectorAll(){return[]}},escapeHtml:v=>String(v??''),
  I18n:{t:(text,params={})=>Object.entries(params).reduce((value,[key,item])=>value.replace(`{${key}}`,item),pairs[text]||text)}};
 context.window=context;vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-itinerary-view.js','utf8'),context);
@@ -325,7 +332,7 @@ const initial={id:'p1',row_version:1,route_order_mode:'auto',legs:[],stops:[
  {id:'f1',stop_kind:'free',sequence_no:2,location_name:'Rest stop',category:'hotel',stay_days:1},
  {id:'c2',stop_kind:'customer',sequence_no:3,customer_name:'Customer two',stay_days:1},
 ]};
-const context={console,State:{tripBusy:false,currentTripPlan:initial,tripCandidatePagination:{limit:25,offset:0}},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{tripBusy:false,currentTripPlan:initial,tripCandidatePagination:{limit:25,offset:0}},
  document:{getElementById:id=>elements.get(id)||null,querySelectorAll(){return[]}},
  I18n:{t:(text,params={})=>Object.entries(params).reduce((value,[key,item])=>value.replace(`{${key}}`,item),text)},
  escapeHtml:value=>String(value??''),TripTransportView:{render(){}},TripTransportActions:{schedulePreview(){}},
@@ -334,7 +341,7 @@ const context={console,State:{tripBusy:false,currentTripPlan:initial,tripCandida
  numericOrNull(value){if(value===''||value==null)return null;const number=Number(value);return Number.isFinite(number)?number:null;},
  parseHolidayInput(){return[]},tripDateTimeLocalValue(value){return value||''}};
 context.window=context;vm.createContext(context);
-for(const file of ['trip-duration.js','trip-stop-schedule-controls.js','trip-form.js','trip-stop-duration-payload.js','trip-planning-draft.js','trip-itinerary-view.js','trip-itinerary-actions.js'])
+for(const file of ['trip-duration.js','trip-stop-schedule-controls.js','trip-form.js','trip-stop-duration-payload.js','trip-leg-overrides.js','trip-planning-draft.js','trip-itinerary-view.js','trip-plan-list-sync.js','trip-itinerary-actions.js'])
  vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 context.populateTripPlanForm(initial,{committed:true});
 
@@ -393,7 +400,7 @@ const elements=new Map([
  ['trip-departure-window-end',{value:''}],['trip-return-window-start',{value:''}],
  ['trip-return-window-end',{value:''}],
 ]);
-const context={console,State:{currentTripPlan:{stops:[]}},document:{getElementById:id=>elements.get(id)||null},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{currentTripPlan:{stops:[]}},document:{getElementById:id=>elements.get(id)||null},
  numericOrNull:value=>value===''?null:Number(value),parseHolidayInput:()=>[]};
 context.window=context;context.TripPlanningDraft={get:()=>({header:{title:'Stale title',description:null},routeOrderMode:'auto',transportModePriority:['flight'],departureWindowStart:'',departureWindowEnd:'',returnWindowStart:'',returnWindowEnd:''}),itineraryPayload:()=>({title:'Stale title',description:null,route_order_mode:'auto',transport_mode_priority:['flight']})};
 vm.createContext(context);vm.runInContext(fs.readFileSync('frontend/js/modules/trip-form.js','utf8'),context);vm.runInContext(fs.readFileSync('frontend/js/modules/trip-stop-duration-payload.js','utf8'),context);

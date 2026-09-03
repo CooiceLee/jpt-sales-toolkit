@@ -2228,26 +2228,36 @@ html, body {
   border-top: 1px solid var(--border-color);
 }
 
-.trip-leg-airport {
+.trip-leg-airport { display: grid; gap: 6px; margin-bottom: 10px; }
+
+.trip-leg-airport-find {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
-  align-items: end;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
   gap: 6px;
 }
 
-.trip-leg-airport > .trip-free-stop-status,
-.trip-leg-airport > .trip-free-stop-candidates {
-  grid-column: 1 / -1;
+/* One row per part of the transfer, as many across as the panel can hold. */
+.trip-leg-airport-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--cream-50);
 }
 
 .trip-leg-airport-label {
   color: var(--ink-500);
   font-size: 11px;
-  padding-bottom: 8px;
 }
 
 @media (max-width: 900px) {
-  .trip-leg-airport { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .trip-leg-airport-find {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
 }
 
 .trip-stop-waypoint {
@@ -2334,7 +2344,7 @@ html, body {
 
 .trip-schedule-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(440px, .72fr);
+  grid-template-columns: minmax(0, 1fr) minmax(480px, .95fr);
   gap: 16px;
   align-items: start;
   margin-top: 14px;
@@ -2345,7 +2355,7 @@ html, body {
 }
 
 .trip-schedule-list {
-  max-height: min(720px, calc(100vh - 150px));
+  max-height: min(1100px, calc(100vh - 150px));
   overflow: auto;
   padding-right: 4px;
 }
@@ -2365,7 +2375,7 @@ html, body {
 .trip-schedule-empty { padding: 18px 8px; color: var(--ink-400); font-size: 11px; text-align: center; }
 
 .trip-briefing-editor {
-  height: min(720px, calc(100vh - 150px));
+  height: min(1100px, calc(100vh - 150px));
   min-height: 560px;
   display: flex;
   flex-direction: column;
@@ -2454,6 +2464,21 @@ html, body {
   font-weight: 800;
 }
 
+.trip-export-group + .trip-export-group { margin-top: 12px; }
+
+.trip-export-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--wine-700);
+  letter-spacing: .02em;
+}
+
+.trip-export-group-note {
+  margin: 2px 0 6px;
+  font-size: 11px;
+  color: var(--ink-600);
+}
+
 .trip-export-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -2538,6 +2563,25 @@ html, body {
 .trip-export-status.success { color: #27613b; }
 .trip-export-status.error { color: var(--danger); }
 .trip-export-status.busy { color: var(--wine-700); }
+
+.trip-working-import-panel {
+    margin-top: 18px;
+    padding: 18px;
+    border: 1px solid var(--border-color, #d9dde5);
+    border-radius: 12px;
+    background: var(--surface-muted, #f8fafc);
+}
+.trip-working-import-panel h3 { margin: 4px 0 6px; }
+.trip-working-import-panel p { margin: 0 0 12px; color: var(--text-muted, #667085); }
+.trip-working-import-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.trip-working-import-result { margin-top: 12px; }
+.trip-working-row { margin-top: 8px; padding: 8px 10px; background: #fff; border-radius: 8px; }
+.trip-working-row table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 0.86rem; }
+.trip-working-row th, .trip-working-row td { padding: 6px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+.trip-working-row select { max-width: 140px; }
+.trip-working-conflict { background: #fff7ed; }
+.trip-working-impact { margin-top: 8px; color: var(--text-muted, #667085); }
+.trip-working-impact ul { margin: 4px 0 0 18px; }
 
 .trip-export-other {
   margin-top: 2px;
@@ -3863,3 +3907,37 @@ html, body {
 .trip-team-state { grid-column: 2; justify-self: start; padding: 1px 7px;
     border-radius: 10px; background: var(--cream-200); color: var(--ink-600);
     font-size: 11px; }
+
+.trip-free-stop-people { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 6px 0; }
+.trip-free-stop-people legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
+#trip-free-stop-people-list { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.trip-free-stop-person { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+
+.trip-team-departure { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-left: auto; }
+.trip-team-departure input { width: 140px; padding: 3px 6px; font-size: 12px; }
+
+/* Rows fill the width they are given. One column per row wastes most of a wide
+   panel and turns a handful of attendees into a long scroll. */
+[data-briefing-array] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+.trip-briefing-row { margin-bottom: 0; }
+.trip-briefing-row-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.trip-briefing-empty { grid-column: 1 / -1; }
+
+.trip-map-lane { display: inline-flex; align-items: center; gap: 6px; }
+.trip-lane-swatch {
+  width: 10px; height: 10px; border-radius: 2px; flex: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .2);
+}
+
+.trip-leg-airport-legend {
+  grid-column: 1 / -1;
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-500);
+}

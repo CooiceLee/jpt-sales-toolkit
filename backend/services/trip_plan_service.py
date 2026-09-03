@@ -32,13 +32,47 @@ from .trip_transport_suggestions import get_transport_suggestion_service
 from .trip_transport_suggestions.route_adapter import requests_from_preview
 from .trip_export_html import render_trip_html
 from .trip_export_ics import render_trip_ics
-from .trip_export_model import build_trip_export_model
+from .trip_export_working import build_working_model
+from .trip_export_working_xlsx import render_working_xlsx
+from .trip_export_model import (
+    FULL_VARIANT, SHARED_VARIANT, build_trip_export_model,
+)
 from .trip_export_visit import (
     CHANNEL_PARTNER_COMPANIONS_HEADER,
     CUSTOMER_PERSONNEL_HEADER,
     formal_visit_row,
 )
 from .trip_export_xlsx import render_trip_xlsx
+
+# A visit records whether a sample and whether a quote are needed. Neither has
+# to be answered, so the stored value has three states and every place that
+# prints one has to be able to say so.
+ANSWER_TEXT = {None: "未填写 / Not answered", 1: "是 / Yes", 0: "否 / No"}
+
+# Once somebody says a visit happened, when it happened is part of saying it.
+RESULT_STATUS_NEEDING_ACTUAL_TIME = ("Visited", "Follow-up Needed")
+
+# What a visit records about how it went. Editing any of these is reporting on
+# the visit, so the rule above applies to all of them and not only to the
+# status - a caller that sends just the fields it changed must not be able to
+# report a result while leaving out when it happened.
+EXECUTION_RESULT_FIELDS = (
+    "result_status", "result_notes",
+    "actual_visit_date", "actual_visit_period",
+    "visit_customer_needs", "visit_competitor", "visit_budget",
+    "visit_decision_maker", "visit_next_action", "visit_followup_due_date",
+    "visit_sample_needed", "visit_quote_needed",
+)
+
+
+def _answer_text(value) -> str:
+    return ANSWER_TEXT[None if value is None else int(bool(value))]
+
+
+def _answer_value(value):
+    """The stored answer as JSON sees it: unanswered, yes or no."""
+    return None if value is None else bool(value)
+
 
 def _participant_ids(rows) -> frozenset:
     """Who attends, as a set: the same people in another order is no change."""
@@ -539,6 +573,31 @@ class TripPlanService:
             raise
         return self.core.get_trip_plan(plan_id, actor_id, actor_role)
 
+    def _require_actual_visit_time(self, current: dict, update_data: dict) -> None:
+        """A visit reported as done has to say when it actually happened.
+
+        Stops already saved as done before this rule existed are left alone
+        until somebody reports on them again - refusing to open them would make
+        history unreachable rather than complete. Reporting means touching any
+        of the fields that describe how the visit went, not only its status:
+        a caller that sends only what changed must not be able to edit a result
+        while leaving out when it happened.
+        """
+        status = update_data.get("result_status", current.get("result_status"))
+        if status not in RESULT_STATUS_NEEDING_ACTUAL_TIME:
+            return
+        if not any(key in update_data for key in EXECUTION_RESULT_FIELDS):
+            return
+        date = update_data.get("actual_visit_date", current.get("actual_visit_date"))
+        period = update_data.get(
+            "actual_visit_period", current.get("actual_visit_period")
+        )
+        if not date or not period:
+            raise ValueError(
+                f"A visit saved as {status} needs the date and the half-day it "
+                "actually happened on"
+            )
+
     def _briefing_suggestions(self, stop: dict) -> dict:
         equipment = []
         demo_text = " / ".join(
@@ -600,8 +659,28 @@ class TripPlanService:
             },
         }
 
+    def _briefing_participants(self, plan: dict, actor_id: str) -> list:
+        """Who can be put on this visit.
+
+        On a team trip that is the people travelling, not the account list: the
+        directory offers colleagues who are not on this trip, and naming one is
+        not a visit anybody attends. A single-traveller plan has no team, so the
+        directory is the only list there is.
+        """
+        directory = self.briefing_repo.available_participants(actor_id)
+        if plan.get("planning_mode") != "team":
+            return directory
+        travelling = {
+            member["user_id"]
+            for member in self.member_repo.list_active(plan["id"])
+        }
+        return [
+            person for person in directory
+            if str(person.get("user_id") or person.get("id")) in travelling
+        ]
+
     def _briefing_response(
-        self, stop: dict, briefing: dict, actor_id: str
+        self, stop: dict, briefing: dict, actor_id: str, plan: dict
     ) -> dict:
         return {
             **briefing,
@@ -611,8 +690,8 @@ class TripPlanService:
             "available_contacts": self.briefing_repo.available_contacts(
                 stop["customer_id"]
             ),
-            "available_participants": self.briefing_repo.available_participants(
-                actor_id
+            "available_participants": self._briefing_participants(
+                plan, actor_id
             ),
             "suggestions": self._briefing_suggestions(stop),
             "effective_location": self.briefing_repo.effective_location(stop, briefing),
@@ -638,7 +717,7 @@ class TripPlanService:
         if not stop:
             return None
         briefing = self.briefing_repo.decode(self.briefing_repo.get_row(stop_id))
-        return self._briefing_response(stop, briefing, actor_id)
+        return self._briefing_response(stop, briefing, actor_id, plan)
 
     def put_trip_visit_briefing(
         self,
@@ -750,7 +829,7 @@ class TripPlanService:
         updated = self.core._get_trip_stop(stop_id)
         briefing = self.briefing_repo.decode(self.briefing_repo.get_row(stop_id))
         return (
-            self._briefing_response(updated, briefing, actor_id)
+            self._briefing_response(updated, briefing, actor_id, plan)
             if updated else None
         )
 
@@ -1227,6 +1306,8 @@ class TripPlanService:
             "visit_followup_due_date",
             "visit_sample_needed",
             "visit_quote_needed",
+            "actual_visit_date",
+            "actual_visit_period",
             "lead_id",
         }
         update_data = {key: value for key, value in data.items() if key in allowed}
@@ -1269,9 +1350,13 @@ class TripPlanService:
             update_data["planned_time_accepted"] = (
                 1 if update_data["planned_time_accepted"] else 0
             )
-        for bool_key in ("visit_sample_needed", "visit_quote_needed"):
-            if bool_key in update_data:
-                update_data[bool_key] = 1 if update_data[bool_key] else 0
+        for answer_key in ("visit_sample_needed", "visit_quote_needed"):
+            if answer_key in update_data:
+                # Nobody has to answer these. Sent as nothing they stay
+                # unanswered, which is not the same as answering "no".
+                value = update_data[answer_key]
+                update_data[answer_key] = None if value is None else int(bool(value))
+        self._require_actual_visit_time(current, update_data)
         if "lead_id" in update_data and update_data["lead_id"]:
             lead = self.core._visible_lead_by_id(update_data["lead_id"], actor_id, actor_role)
             if not lead or lead["customer_id"] != current["customer_id"]:
@@ -1289,6 +1374,8 @@ class TripPlanService:
                 "visit_next_action",
                 "visit_sample_needed",
                 "visit_quote_needed",
+                "actual_visit_date",
+                "actual_visit_period",
             )
         )
         schedule_changed = requested_sequence is not None or any(
@@ -1587,21 +1674,33 @@ class TripPlanService:
         """
         plan_id = plan["id"]
         summary = calculate_team_itinerary(self.core, self.member_repo, plan, data)
+        # Saving the route saves what the route was planned from. The dates, the
+        # endpoints and the transport preferences arrive in the same request and
+        # single-traveller planning has always written them; leaving them out
+        # here is how a changed start date came back as the old one.
+        plan_updates = self.core._prepare_trip_plan_data(
+            {
+                **data,
+                "itinerary_generated_at": now_iso(),
+                "itinerary_summary": summary,
+            },
+            include_system_fields=True,
+        )
         conn = self.core.lead_repo.conn
         now = now_iso()
         try:
             persist_team_itinerary(self, plan_id, summary, actor_id, now)
+            plan_updates["updated_at"] = now
+            plan_updates["updated_by"] = actor_id
+            plan_updates["row_version"] = int(plan.get("row_version") or 1) + 1
+            assignments = ", ".join(f"{key} = ?" for key in plan_updates)
             conn.execute(
-                """
-                UPDATE trip_plans
-                SET itinerary_summary = ?, itinerary_generated_at = ?,
-                    updated_at = ?, updated_by = ?, row_version = row_version + 1
-                WHERE id = ?
+                f"""
+                UPDATE trip_plans SET {assignments} WHERE id = ?
                 """
                 + (" AND row_version = ?" if expected_version is not None else ""),
                 (
-                    json.dumps(summary, ensure_ascii=False), now, now, actor_id,
-                    plan_id,
+                    *plan_updates.values(), plan_id,
                     *([expected_version] if expected_version is not None else []),
                 ),
             )
@@ -1776,9 +1875,14 @@ class TripPlanService:
             f"- Region: {plan.get('region') or '-'}",
             f"- Owner: {plan.get('owner_name') or '-'}",
             f"- Origin: {plan.get('origin_name') or '-'}",
-            f"- Departure Window: {plan.get('departure_window_start') or '-'} to {plan.get('departure_window_end') or '-'}",
             f"- Destination: {plan.get('destination_name') or '-'}",
-            f"- Return Window: {plan.get('return_window_start') or '-'} to {plan.get('return_window_end') or '-'}",
+            # The shared travel windows describe the whole team leaving at once,
+            # which a team trip does not do: each member's own dates are in the
+            # travel team table below instead.
+            *([] if team_export.is_team(plan) else [
+                f"- Departure Window: {plan.get('departure_window_start') or '-'} to {plan.get('departure_window_end') or '-'}",
+                f"- Return Window: {plan.get('return_window_start') or '-'} to {plan.get('return_window_end') or '-'}",
+            ]),
             f"- Travel Mode: {plan.get('travel_mode') or 'auto'}",
             f"- Planning Notes: {plan.get('description') or '-'}",
             "",
@@ -2096,8 +2200,10 @@ class TripPlanService:
                     f"- Budget: {stop.get('visit_budget') or '-'}",
                     f"- Decision Maker: {stop.get('visit_decision_maker') or '-'}",
                     f"- Next Action: {stop.get('visit_next_action') or '-'}",
-                    f"- Sample Needed: {'Yes' if stop.get('visit_sample_needed') else 'No'}",
-                    f"- Quote Needed: {'Yes' if stop.get('visit_quote_needed') else 'No'}",
+                    f"- Actually visited: "
+                    f"{' '.join(str(value) for value in (stop.get('actual_visit_date'), stop.get('actual_visit_period')) if value) or '-'}",
+                    f"- Sample Needed: {_answer_text(stop.get('visit_sample_needed'))}",
+                    f"- Quote Needed: {_answer_text(stop.get('visit_quote_needed'))}",
                     f"- Notes: {stop.get('result_notes') or stop.get('notes') or '-'}",
                     "",
                 ]
@@ -2143,7 +2249,8 @@ class TripPlanService:
             "travel_mode", "travel_distance_km", "travel_time_hours",
             "travel_days", "purpose", "result_status", "result_notes",
             "customer_needs", "competitor", "budget", "decision_maker",
-            "next_action", "sample_needed", "quote_needed", "notes",
+            "next_action", "sample_needed", "quote_needed",
+            "actual_visit_date", "actual_visit_period", "notes",
         ]
         # In team planning a stop without who attended it and how its time was
         # decided is not a usable record.
@@ -2179,10 +2286,17 @@ class TripPlanService:
             "plan_end_date": plan.get("end_date"),
             "plan_origin": plan.get("origin_name"),
             "plan_destination": plan.get("destination_name"),
-            "departure_window_start": plan.get("departure_window_start"),
-            "departure_window_end": plan.get("departure_window_end"),
-            "return_window_start": plan.get("return_window_start"),
-            "return_window_end": plan.get("return_window_end"),
+            # Blank on a team trip: the shared windows describe the whole team
+            # leaving at once, which it does not do. Each member's own dates are
+            # in the member columns. The columns stay so the file shape does not
+            # change between one kind of plan and the other.
+            **{
+                field: None if team_export.is_team(plan) else plan.get(field)
+                for field in (
+                    "departure_window_start", "departure_window_end",
+                    "return_window_start", "return_window_end",
+                )
+            },
         }
 
         def write_row(row: dict) -> None:
@@ -2256,8 +2370,10 @@ class TripPlanService:
                     "budget": stop.get("visit_budget"),
                     "decision_maker": stop.get("visit_decision_maker"),
                     "next_action": stop.get("visit_next_action"),
-                    "sample_needed": "Yes" if stop.get("visit_sample_needed") else "No",
-                    "quote_needed": "Yes" if stop.get("visit_quote_needed") else "No",
+                    "sample_needed": _answer_text(stop.get("visit_sample_needed")),
+                    "quote_needed": _answer_text(stop.get("visit_quote_needed")),
+                    "actual_visit_date": stop.get("actual_visit_date"),
+                    "actual_visit_period": stop.get("actual_visit_period"),
                     "notes": stop.get("notes"),
                     **plan_cells,
                 }
@@ -2292,41 +2408,86 @@ class TripPlanService:
             )
         return output.getvalue()
 
-    def _formal_trip_export(self, plan_id: str, actor_id: str, actor_role: str):
+    def _formal_trip_export(self, plan_id: str, actor_id: str, actor_role: str,
+                            variant: str = FULL_VARIANT):
         plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
         if not plan:
             return None, None
         self._assert_itinerary_exportable(plan)
-        if team_export.is_team(plan):
-            # These three are built from a model with no member dimension, and
-            # its timeline looks legs up by their key alone - two colleagues
-            # travelling the same pair of places overwrite each other, and the
-            # file would state one member's journey as both of theirs. Refusing
-            # is better than a document that is quietly wrong; Markdown, CSV and
-            # the daily report carry the team correctly.
-            raise ValueError(
-                "Excel, offline HTML and calendar files do not carry the "
-                "travel team yet. Use the Markdown, CSV or daily report export "
-                "for a team trip."
-            )
         model = build_trip_export_model(
-            plan, self._trip_leg_confirmation
+            plan, self._trip_leg_confirmation, variant
         )
         return plan, model
 
-    def export_trip_plan_xlsx(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+    def export_trip_plan_xlsx(self, plan_id: str, actor_id: str, actor_role: str,
+                              variant: str = FULL_VARIANT) -> Optional[bytes]:
         """Export a trip plan as a styled Excel workbook."""
-        _, model = self._formal_trip_export(plan_id, actor_id, actor_role)
+        _, model = self._formal_trip_export(plan_id, actor_id, actor_role, variant)
         return None if model is None else render_trip_xlsx(model)
 
-    def export_trip_plan_html(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
+    def export_trip_plan_html(self, plan_id: str, actor_id: str, actor_role: str,
+                              variant: str = FULL_VARIANT) -> Optional[bytes]:
         """Export a trip plan as a self-contained printable page."""
-        _, model = self._formal_trip_export(plan_id, actor_id, actor_role)
+        _, model = self._formal_trip_export(plan_id, actor_id, actor_role, variant)
         return None if model is None else render_trip_html(model)
 
+    def export_trip_working_xlsx(
+        self, plan_id: str, actor_id: str, actor_role: str
+    ) -> Optional[bytes]:
+        """The workbook the field team fills in and sends back.
+
+        It is built from the same saved plan as the other files, but it is a
+        contract rather than a view: the guards that stop an out-of-date route
+        being published apply here too, because a result reported against a
+        route nobody saved cannot be matched back to it.
+        """
+        plan, _ = self._formal_trip_export(
+            plan_id, actor_id, actor_role, SHARED_VARIANT
+        )
+        if plan is None:
+            return None
+        workbook_id = generate_uuid()
+        model = build_working_model(plan, now_iso(), workbook_id)
+        self._record_working_export(model, actor_id)
+        return render_working_xlsx(model)
+
+    def _record_working_export(self, model: dict, actor_id: str) -> None:
+        """Keep what this workbook was issued with, where the file cannot reach.
+
+        Issuing a workbook is a promise about what comes back, so the promise
+        is written down here rather than inside the file: a returned workbook
+        is matched against this, and nothing it says about which visit a row is
+        or what the row held is believed.
+        """
+        conn = self.core.lead_repo.conn
+        stamp = now_iso()
+        conn.execute(
+            "INSERT INTO trip_working_exports "
+            "(workbook_id, plan_id, format, created_at, created_by) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (model["workbook_id"], model["plan_id"], model["format"], stamp, actor_id),
+        )
+        conn.executemany(
+            "INSERT INTO trip_working_export_rows "
+            "(workbook_id, row_token, stop_id, row_version, baseline_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                (model["workbook_id"], row["row_token"], row["stop_id"],
+                 row["row_version"], json.dumps(row["baseline"], ensure_ascii=False))
+                for row in model["manifest"]
+            ],
+        )
+        conn.commit()
+
     def export_trip_plan_ics(self, plan_id: str, actor_id: str, actor_role: str) -> Optional[bytes]:
-        """Export half-day itinerary slots as all-day calendar events."""
-        plan, model = self._formal_trip_export(plan_id, actor_id, actor_role)
+        """Export half-day itinerary slots as all-day calendar events.
+
+        A calendar is imported and forwarded on its own, so it carries the
+        shared arrangement: where everyone is, when, and how they travel.
+        """
+        plan, model = self._formal_trip_export(
+            plan_id, actor_id, actor_role, SHARED_VARIANT
+        )
         if model is None:
             return None
-        return render_trip_ics(model, plan.get("schedule_items") or [])
+        return render_trip_ics(model)

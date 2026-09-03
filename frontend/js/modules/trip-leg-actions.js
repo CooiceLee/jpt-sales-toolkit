@@ -8,7 +8,7 @@
 
     function change(index, schedulePreview) {
         if (State.tripBusy) return;
-        const leg = State.currentTripPlan?.legs?.[index];
+        const leg = TripTransportView.legAt(index);
         if (!leg?.leg_key) return;
         const selectedInput = document.getElementById(`trip-leg-mode-${index}`);
         const locked = Boolean(document.getElementById(`trip-leg-lock-${index}`)?.checked);

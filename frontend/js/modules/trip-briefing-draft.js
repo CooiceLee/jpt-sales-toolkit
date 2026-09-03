@@ -22,7 +22,7 @@
             ...effectiveLocation,
             ...Object.fromEntries(Object.entries(savedLocation).filter(([, value]) => value !== null && value !== '')),
         };
-        return {
+        const record = {
             ...data, row_version: data.row_version ?? null, stop_row_version: data.stop_row_version ?? null,
             confirmation_status: data.confirmation_status || 'unconfirmed', timezone: data.timezone || '',
             location: {
@@ -33,6 +33,42 @@
             },
             ...Object.fromEntries(ARRAYS.map(key => [key, Array.isArray(data[key]) ? clone(data[key]) : []])),
         };
+        // On a team trip, a visit that names nobody is attended by everybody.
+        // Shown as an empty list that reads as "nobody is going", so the team
+        // is filled in - but only for reading. The plan keeps meaning "whoever
+        // is travelling" until the reader actually changes the list, so a
+        // member who joins the trip later still joins this visit.
+        if (!record.participants.length
+            && State.currentTripPlan?.planning_mode === 'team') {
+            record.participants = (State.currentTripPlan.members || []).map(
+                (member, index) => ({
+                    user_id: member.user_id,
+                    display_name: member.display_name || member.user_id,
+                    role: member.role || '', responsibility: '',
+                    sequence_no: index + 1,
+                })
+            );
+        }
+        return record;
+    }
+
+    /** Whether this list still means "whoever is travelling on this trip".
+
+    Compared against the team rather than tracked as a flag: a flag has to be
+    cleared everywhere the list can be touched, and one missed place turns the
+    inherited list into a fixed one without anybody noticing.
+    */
+    function isWholeTeam(participants) {
+        if (State.currentTripPlan?.planning_mode !== 'team') return false;
+        const members = State.currentTripPlan.members || [];
+        const rows = participants || [];
+        if (!members.length || rows.length !== members.length) return false;
+        // Anything typed onto a row is a decision about that person, so the
+        // list is no longer simply whoever happens to be travelling.
+        if (rows.some(row => String(row.responsibility || '').trim()
+            || String(row.notes || '').trim())) return false;
+        const going = new Set(members.map(member => member.user_id));
+        return rows.every(row => going.has(row.user_id));
     }
 
     function blankRow(kind) {
@@ -94,6 +130,7 @@
 
     window.TripBriefingDraft = Object.freeze({
         load, markDirty, markClean, reset, guard, confirmDiscard,
+        isWholeTeam,
         isDirty: () => dirty, getStopId: () => stopId, getRecord: () => record,
         setStatus: renderStatus, normalizeRecord, blankRow,
     });

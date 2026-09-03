@@ -109,7 +109,14 @@
     }
 
     function internalParticipantsLine(stop = {}) {
-        return peopleLine(stop.briefing?.participants, ['display_name', 'role', 'responsibility']);
+        const named = stop.briefing?.participants;
+        if (!named?.length && State.currentTripPlan?.planning_mode === 'team') {
+            // Naming nobody means the whole team goes, so say who that is
+            // rather than showing a dash that reads as nobody.
+            return (State.currentTripPlan.members || [])
+                .map(member => member.display_name || member.user_id).join(' · ');
+        }
+        return peopleLine(named, ['display_name', 'role', 'responsibility']);
     }
 
     function agendaLine(stop = {}) {

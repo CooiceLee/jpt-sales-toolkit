@@ -41,7 +41,7 @@
         TripSuggestionView.render(State.currentTripPlan);
     }
     function searchLeg(index) {
-        const leg = State.currentTripPlan?.legs?.[index];
+        const leg = TripTransportView.legAt(index);
         if (leg?.leg_key) searchRoute(false, leg.leg_key);
     }
     function apply(token) {
@@ -64,6 +64,10 @@
         TripPlanningDraft.change(draft => {
             const current = draft.legOverrides[item.leg_key] || {};
             draft.legOverrides[item.leg_key] = {
+                // A suggestion says how far and how long, never which airports:
+                // taking the whole override away with it silently undoes the
+                // airports the user searched for and confirmed.
+                ...(window.TripLegAirports?.pick?.(current) || {}),
                 selected_mode: item.mode, mode_locked: true,
                 manual_distance_km: numberOrNull(item.distance_km), manual_time_hours: hours,
                 manual_travel_half_days: halfDays,

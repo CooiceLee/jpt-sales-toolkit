@@ -31,8 +31,8 @@
         if (action === 'remove' && index >= 0) items.splice(index, 1);
         if (action === 'up' && index > 0) [items[index - 1], items[index]] = [items[index], items[index - 1]];
         if (action === 'down' && index >= 0 && index < items.length - 1) [items[index + 1], items[index]] = [items[index], items[index + 1]];
-        TripBriefingDraft.markDirty();
-        render();
+        TripBriefingDraft.markDirty(); render();
+        if (action === 'add') TripBriefingScroll.focusRow(kind, items.length - 1);
     }
 
     function chooseContact(index, id) {

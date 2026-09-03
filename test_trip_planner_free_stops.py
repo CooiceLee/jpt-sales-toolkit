@@ -775,7 +775,7 @@ def check_permissions_and_validation(client: TestClient, ctx: dict) -> None:
 
 
 def check_schema4_to_current_upgrade() -> None:
-    assert APP_SCHEMA_VERSION == 9
+    assert APP_SCHEMA_VERSION == 14
     with tempfile.TemporaryDirectory(prefix="jpt_trip_schema4_to_current_") as temp:
         data_dir = Path(temp) / "data"
         data_dir.mkdir()

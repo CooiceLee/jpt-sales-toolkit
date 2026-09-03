@@ -29,6 +29,11 @@ from .trip_planning_schema import (
     apply_trip_planning_schema_v7,
     apply_trip_planning_schema_v8,
     apply_trip_planning_schema_v9,
+    apply_trip_planning_schema_v10,
+    apply_trip_planning_schema_v11,
+    apply_trip_planning_schema_v12,
+    apply_trip_planning_schema_v13,
+    apply_trip_planning_schema_v14,
 )
 
 # Database connection singleton
@@ -36,7 +41,7 @@ _db_path: Optional[Path] = None
 _connection: Optional[sqlite3.Connection] = None
 _connection_init_lock = threading.RLock()
 _SQLITE_BUSY_TIMEOUT_MS = 5000
-APP_SCHEMA_VERSION = 9
+APP_SCHEMA_VERSION = 14
 APP_SCHEMA_MIGRATIONS = (
     # Historical migration numbers are immutable. Future schema versions must
     # append a new explicit tuple instead of rebinding the v1 record.
@@ -49,6 +54,11 @@ APP_SCHEMA_MIGRATIONS = (
     (7, "trip_plan_flight_airports_v1"),
     (8, "trip_plan_team_members_v1"),
     (9, "trip_plan_accepted_times_v1"),
+    (10, "trip_plan_member_departure_v1"),
+    (11, "trip_plan_leg_transfer_v1"),
+    (12, "trip_plan_leg_transfer_detail_v1"),
+    (13, "trip_plan_stop_result_tristate_v1"),
+    (14, "trip_working_export_manifest_v1"),
 )
 _APP_SCHEMA_LEDGER_DDL = """
 CREATE TABLE IF NOT EXISTS app_schema_migrations (
@@ -73,6 +83,8 @@ _RUNTIME_REQUIRED_TABLES = {
     "trip_plan_stops",
     "trip_plan_legs",
     "trip_plan_free_stops",
+    "trip_working_exports",
+    "trip_working_export_rows",
     "trip_visit_briefings",
     "trip_plan_members",
     "tech_task_exchange_batches",
@@ -104,6 +116,7 @@ _RUNTIME_REQUIRED_COLUMNS = {
     "trip_plan_stops": {
         "duration_half_days", "preferred_period", "planned_start_period",
         "planned_end_period", "schedule_locked", "confirmation_status",
+        "actual_visit_date", "actual_visit_period",
     },
     "trip_plan_free_stops": {
         "duration_half_days", "preferred_period", "planned_start_period",
@@ -114,6 +127,7 @@ _RUNTIME_REQUIRED_COLUMNS = {
         "manual_travel_half_days", "planned_start_date", "planned_start_period",
         "planned_end_date", "planned_end_period",
     },
+    "trip_plan_members": {"departure_date"},
     "trip_visit_briefings": {
         "stop_id", "timezone", "location_json", "customer_team_json",
         "contacts_json", "participants_json", "channel_partner_companions_json",
@@ -327,6 +341,31 @@ def _apply_runtime_schema_v9(conn: sqlite3.Connection) -> None:
     apply_trip_planning_schema_v9(conn)
 
 
+def _apply_runtime_schema_v10(conn: sqlite3.Connection) -> None:
+    """Let a member leave on a day of their own."""
+    apply_trip_planning_schema_v10(conn)
+
+
+def _apply_runtime_schema_v11(conn: sqlite3.Connection) -> None:
+    """Let the transfers to and from an airport carry a chosen time."""
+    apply_trip_planning_schema_v11(conn)
+
+
+def _apply_runtime_schema_v12(conn: sqlite3.Connection) -> None:
+    """Let each airport transfer carry its own mode and hours."""
+    apply_trip_planning_schema_v12(conn)
+
+
+def _apply_runtime_schema_v13(conn: sqlite3.Connection) -> None:
+    """Let a visit stay unanswered, and record when it actually happened."""
+    apply_trip_planning_schema_v13(conn)
+
+
+def _apply_runtime_schema_v14(conn: sqlite3.Connection) -> None:
+    """Keep, on this machine, what each field workbook was issued with."""
+    apply_trip_planning_schema_v14(conn)
+
+
 def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     """Reapply every idempotent runtime step when drift is detected."""
     _apply_runtime_schema_v1(conn)
@@ -338,10 +377,25 @@ def _repair_current_runtime_schema(conn: sqlite3.Connection) -> None:
     _apply_runtime_schema_v7(conn)
     _apply_runtime_schema_v8(conn)
     _apply_runtime_schema_v9(conn)
+    _apply_runtime_schema_v10(conn)
+    _apply_runtime_schema_v11(conn)
+    _apply_runtime_schema_v12(conn)
+    _apply_runtime_schema_v13(conn)
+    _apply_runtime_schema_v14(conn)
 
 
 def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> None:
-    """Apply audited, transactional and idempotent runtime migrations."""
+    """Apply audited, transactional and idempotent runtime migrations.
+
+    SQLite cannot rebuild a table other tables point at while it is enforcing
+    those references, and that switch may only be thrown outside a transaction.
+    This connection is closed as soon as the migrations finish and every
+    connection the application opens turns enforcement on for itself, so the
+    switch does not outlive the upgrade. What the steps left behind is read
+    back by ``validate_database_file`` before startup accepts the database, and
+    a failure there restores the backup taken beforehand.
+    """
+    conn.execute("PRAGMA foreign_keys = OFF")
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute(_APP_SCHEMA_LEDGER_DDL)
@@ -357,6 +411,11 @@ def _apply_runtime_migrations(conn: sqlite3.Connection, app_version: str) -> Non
             7: _apply_runtime_schema_v7,
             8: _apply_runtime_schema_v8,
             9: _apply_runtime_schema_v9,
+            10: _apply_runtime_schema_v10,
+            11: _apply_runtime_schema_v11,
+            12: _apply_runtime_schema_v12,
+            13: _apply_runtime_schema_v13,
+            14: _apply_runtime_schema_v14,
         }
         for version, name in APP_SCHEMA_MIGRATIONS:
             if version <= current:

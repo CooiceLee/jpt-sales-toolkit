@@ -26,8 +26,11 @@ def render_trip_html(model: dict) -> bytes:
         f"<div><dt>{escape(str(label))}</dt><dd>{escape(str(value or '—'))}</dd></div>"
         for label, value in model["metadata"]
     )
+    # The shared reading of a trip is the arrangement. What each visit is
+    # prepared for belongs to the people making it and travels separately.
     body = "".join((
-        _table("拜访计划 / Visit Schedule", VISIT_HEADERS, model["visits"]),
+        _table("拜访计划 / Visit Schedule", VISIT_HEADERS, model["visits"])
+        if model.get("visits") else "",
         _table("完整日程 / Full Itinerary", TIMELINE_HEADERS, model["timeline"]),
         _table("交通行程 / Travel Legs", LEG_HEADERS, model["legs"]),
     ))

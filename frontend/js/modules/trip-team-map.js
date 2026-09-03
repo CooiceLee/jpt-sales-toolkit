@@ -29,13 +29,16 @@
             return;
         }
         const active = view();
-        const button = (value, label) => `<button type="button"
-            class="btn btn-sm ${value === active ? 'btn-primary' : 'btn-secondary'}"
+        const button = (value, label, color = '') => `<button type="button"
+            class="btn btn-sm trip-map-lane ${value === active ? 'btn-primary' : 'btn-secondary'}"
             aria-pressed="${value === active}"
-            onclick="TripTeamMap.setView('${h(value)}')">${h(label)}</button>`;
+            onclick="TripTeamMap.setView('${h(value)}')">${color
+                ? `<i class="trip-lane-swatch" style="background:${h(color)}"></i>` : ''
+            }${h(label)}</button>`;
         target.innerHTML = button('all', t('All team')) + members
             .map(member => button(
-                member.user_id, member.display_name || member.user_id
+                member.user_id, member.display_name || member.user_id,
+                TripTeamColors.colorOf(plan, member.user_id)
             )).join('');
     }
 
@@ -47,13 +50,12 @@
             journey.points.forEach(point => bounds.push(point));
             const who = journey.members.length
                 ? journey.members.join(' · ') : t('Unassigned');
-            L.polyline(journey.points, {
-                color: '#1f5135', weight: journey.members.length > 1 ? 5 : 3,
-                opacity: 0.75,
-            })
-                .bindTooltip(h(`${who} · ${journey.label} · ${
-                    modeLabel(journey.mode)}`))
-                .addTo(layer);
+            const tooltip = h(`${who} · ${journey.label} · ${
+                modeLabel(journey.mode)}`);
+            TripTeamColors.bandsFor(plan, journey.memberIds).forEach(band => {
+                L.polyline(journey.points, { ...band, opacity: 0.8 })
+                    .bindTooltip(tooltip).addTo(layer);
+            });
         });
         const stranded = window.TripTeamJourneys.incompleteMembers(plan, active);
         const notice = document.getElementById('trip-map-notice');

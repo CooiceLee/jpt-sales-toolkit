@@ -8,12 +8,14 @@ window.createTripPlanFromForm = async function() {
             'Discard unsaved personal stop changes and create a new plan?'
         )) return;
     const payload = { ...readTripPlanFormPayload(), status: 'Draft' };
+    const token = TripPlanIdentity.intend();
     try {
-        State.currentTripPlan = await ApiClient.createTripPlan(payload);
+        const created = await ApiClient.createTripPlan(payload);
+        if (!TripPlanIdentity.accept(token, created)) return;
         populateTripPlanForm(State.currentTripPlan, { committed: true });
         notify(I18n.t('Trip plan created'));
         State.tripCandidatePagination.offset = 0;
-        await loadTripPlanner();
+        await loadTripPlanner({ token });
     } catch (err) {
         console.error('Create trip plan error:', err);
         alert(I18n.t('Error creating trip plan: {error}', {
@@ -33,7 +35,9 @@ window.selectTripPlan = async function(planId) {
         )) return;
     try {
         if (State.currentTripPlan?.id !== planId) window.TripVisitDraft?.reset?.();
-        State.currentTripPlan = await ApiClient.getTripPlan(planId);
+        const token = TripPlanIdentity.intend();
+        const plan = await ApiClient.getTripPlan(planId);
+        if (!TripPlanIdentity.accept(token, plan)) return;
         populateTripPlanForm(State.currentTripPlan, { committed: true });
         renderTripPlans();
         renderCurrentTripPlan();
@@ -69,14 +73,6 @@ function renderTripPlans() {
     `).join('');
 }
 
-function formatTripPlanDateRange(plan) {
-    const start = plan.start_date ? formatDate(plan.start_date) : '';
-    const end = plan.end_date ? formatDate(plan.end_date) : '';
-    if (!start && !end) return I18n.t('No dates');
-    if (!start || !end) return start || end;
-    return I18n.t('{start} to {end}', { start, end });
-}
-
 window.archiveTripPlan = async function(planId, rowVersion) {
     if (State.currentTripPlan?.id === planId && window.TripBriefingDraft?.guard?.()) return;
     if (State.currentTripPlan?.id === planId && window.TripVisitDraft?.guard?.()) return;
@@ -90,12 +86,14 @@ window.archiveTripPlan = async function(planId, rowVersion) {
     if (!plan || !confirm(I18n.t('Archive trip plan “{title}”?', {
         title: plan.title || I18n.t('Untitled')
     }))) return;
+    const token = TripPlanIdentity.intend();
     try {
         await ApiClient.archiveTripPlan(planId, rowVersion);
-        if (State.currentTripPlan?.id === planId) State.currentTripPlan = null;
+        // Both steps below check this action's number themselves.
+        if (State.currentTripPlan?.id === planId) TripPlanIdentity.clear(token);
         notify(I18n.t('Trip plan archived'));
         State.tripCandidatePagination.offset = 0;
-        await loadTripPlanner();
+        await loadTripPlanner({ token });
     } catch (err) {
         console.error('Archive trip plan error:', err);
         await handleTripError(err, 'Archive trip plan');
@@ -128,16 +126,18 @@ window.addCandidateToCurrentPlan = async function(index) {
     let shouldPreview = false;
     try {
         setTripBusy(true);
-        State.currentTripPlan = await ApiClient.addTripStop(State.currentTripPlan.id, {
+        const token = TripPlanIdentity.intend();
+        const withStop = await ApiClient.addTripStop(State.currentTripPlan.id, {
             customer_id: item.customer_id,
             lead_id: item.primary_lead_id || null,
             duration_half_days: 2,
             visit_purpose: (item.reasons || []).slice(0, 3).join(', ') || 'Customer visit',
             allow_duplicate: allowDuplicate
         });
+        if (!TripPlanIdentity.accept(token, withStop)) return;
         notify(I18n.t('Stop added'));
         State.tripCandidatePagination.offset = 0;
-        await loadTripPlanner();
+        await loadTripPlanner({ token });
         shouldPreview = Boolean(State.currentTripPlan?.stops?.length);
         if (shouldPreview) TripPlanningDraft.change(() => {});
     } catch (err) {

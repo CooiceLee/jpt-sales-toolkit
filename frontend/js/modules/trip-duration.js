@@ -79,7 +79,7 @@
         return modes.includes(legacyMode) ? [legacyMode] : [...defaults];
     }
 
-    function cleanLegOverride(value = {}, modes = []) {
+    function cleanLegOverride(value = {}, modes = [], keep = []) {
         const mode = modes.includes(value.selected_mode) ? value.selected_mode : null;
         const number = key => {
             if (value[key] == null || value[key] === '') return null;
@@ -97,6 +97,12 @@
                 ? (legacyDays == null ? null : fromDisplayTravelDays(legacyDays))
                 : normalizeTravelHalfDays(explicitHalfDays),
             notes: String(value.notes || '').trim() || null,
+            // Airports and their transfers are carried through untouched. They
+            // are not route arithmetic, and dropping them here is how a saved
+            // airport came back empty on the next draw.
+            ...Object.fromEntries(keep
+                .filter(field => value[field] != null && value[field] !== '')
+                .map(field => [field, value[field]])),
         };
     }
 

@@ -7,7 +7,7 @@ they do not, the plan's own origin and destination apply.
 
 from __future__ import annotations
 
-from ..repositories.base import generate_uuid, now_iso
+from ..repositories.base import ConflictError, generate_uuid, now_iso
 
 OVERRIDE_FIELDS = (
     "origin_name_override",
@@ -16,6 +16,7 @@ OVERRIDE_FIELDS = (
     "destination_name_override",
     "destination_lat_override",
     "destination_lng_override",
+    "departure_date",
 )
 
 
@@ -72,7 +73,7 @@ class TripMemberRepository:
             INSERT INTO trip_plan_members (
                 id, plan_id, user_id, {", ".join(OVERRIDE_FIELDS)},
                 created_at, created_by, updated_at, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES ({", ".join(["?"] * (len(OVERRIDE_FIELDS) + 7))})
             """,
             (member_id, plan_id, user_id, *values, now, actor_id, now, actor_id),
         )
@@ -80,6 +81,12 @@ class TripMemberRepository:
         return self.get(member_id)
 
     def update(self, member_id: str, overrides: dict, actor_id: str) -> dict | None:
+        """Change where and when one member travels.
+
+        A row version, when given, is checked: two people editing the same
+        member, or one browser sending two changes whose answers come back out
+        of order, would otherwise leave the later write silently lost.
+        """
         changes = {
             field: (overrides or {}).get(field)
             for field in OVERRIDE_FIELDS
@@ -87,16 +94,28 @@ class TripMemberRepository:
         }
         if not changes:
             return self.get(member_id)
+        expected = (overrides or {}).get("row_version")
         assignments = ", ".join(f"{field} = ?" for field in changes)
-        self.conn.execute(
+        cursor = self.conn.execute(
             f"""
             UPDATE trip_plan_members
             SET {assignments}, updated_at = ?, updated_by = ?,
                 row_version = row_version + 1
             WHERE id = ?
-            """,
-            (*changes.values(), now_iso(), actor_id, member_id),
+            """ + (" AND row_version = ?" if expected is not None else ""),
+            (
+                *changes.values(), now_iso(), actor_id, member_id,
+                *([int(expected)] if expected is not None else []),
+            ),
         )
+        if expected is not None and not cursor.rowcount:
+            self.conn.rollback()
+            # The same conflict shape the rest of the app raises, so the browser
+            # gets 409 and the message it already knows how to show.
+            current = self.get(member_id) or {}
+            raise ConflictError(
+                int(current.get("row_version") or 0), int(expected), current
+            )
         self.conn.commit()
         return self.get(member_id)
 
@@ -120,6 +139,22 @@ class TripMemberRepository:
             )
         self.conn.commit()
         return bool(cursor.rowcount)
+
+    def departure_slots(self, plan_id: str) -> dict:
+        """The day each member leaves, for those who do not leave with the team.
+
+        Only a date is stored: a member leaving on their own day still leaves at
+        the start of it, and asking for a half-day here would be a second thing
+        to get wrong for no gain.
+        """
+        return {
+            row["user_id"]: row["departure_date"]
+            for row in self.conn.execute(
+                "SELECT user_id, departure_date FROM trip_plan_members "
+                "WHERE plan_id = ? AND departure_date IS NOT NULL",
+                (plan_id,),
+            ).fetchall()
+        }
 
     def points(self, plan_id: str, plan: dict) -> tuple:
         """Each member's departure and return points, falling back to the plan."""

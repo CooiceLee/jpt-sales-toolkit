@@ -160,25 +160,88 @@ def _record_travel(ctx: TeamScheduleContext, user, leg, from_slot, elapsed):
     leg["planned_end_period"] = slots[-1][1] if elapsed else None
     if not elapsed:
         return
-    for segment in leg.get("segments") or [None]:
-        part = segment or leg
-        ctx.result.schedule_items.append(
+    _record_journey_parts(ctx, user, leg, from_slot, elapsed)
+
+
+def _travel_items(ctx, user, leg, part, slots, role=None):
+    """One movement, on every half-day it occupies.
+
+    A journey that runs from Sunday afternoon to Tuesday morning appears on all
+    four of those half-days, the way a visit of the same length does. Recording
+    only the first leaves the days in between looking free, and a two-day drive
+    reading as half a day.
+    """
+    order = _next_order(ctx, user)
+    return [
+        {
+            "member_id": user,
+            "lane_order": order,
+            "source_id": leg["leg_key"] if role is None
+            else f"{leg['leg_key']}#{role}",
+            "date": slot[0].isoformat(),
+            "period": slot[1],
+            "item_type": "leg",
+            "title": (
+                f"{part.get('from_label') or '-'} → "
+                f"{part.get('to_label') or '-'}"
+            ),
+            "selected_mode": part.get("selected_mode"),
+            "half_day_index": index,
+            "half_day_count": len(slots),
+            "inbound_travel_resolved": True,
+        }
+        for index, slot in enumerate(slots, start=1)
+    ]
+
+
+def _record_journey_parts(ctx: TeamScheduleContext, user, leg, from_slot,
+                          elapsed):
+    """Each movement at its own hour, and each airport wait between them.
+
+    A flown connection is a drive to the airport, the flight, and a drive at the
+    other end. Recording them all at the departure half-day says the whole of
+    Shenzhen to Germany happened before lunch, and leaves the days it really
+    takes looking free for something else to be booked into.
+    """
+    segments = leg.get("segments")
+    if not segments:
+        ctx.result.schedule_items.extend(
+            _travel_items(ctx, user, leg, leg, _spread_slots(from_slot, elapsed))
+        )
+        return
+    cursor = from_slot
+    for segment in segments:
+        # A part somebody said takes no scheduled time is still a movement and
+        # is still shown, but it must not push the rest of the trip along.
+        span = int(segment.get("travel_half_days") or 0)
+        slots = _spread_slots(cursor, span) if span else [cursor]
+        ctx.result.schedule_items.extend(
+            _travel_items(ctx, user, leg, segment, slots, segment["role"])
+        )
+        for _ in range(span):
+            cursor = next_slot(cursor)
+        waiting = int(segment.get("stay_half_days") or 0)
+        if not waiting:
+            continue
+        waits = _spread_slots(cursor, waiting)
+        order = _next_order(ctx, user)
+        ctx.result.schedule_items.extend(
             {
                 "member_id": user,
-                "lane_order": _next_order(ctx, user),
-                "source_id": leg["leg_key"] if segment is None
-                else f"{leg['leg_key']}#{segment['role']}",
-                "date": slots[0][0].isoformat(),
-                "period": slots[0][1],
-                "item_type": "leg",
-                "title": (
-                    f"{part.get('from_label') or '-'} → "
-                    f"{part.get('to_label') or '-'}"
-                ),
-                "selected_mode": part.get("selected_mode"),
+                "lane_order": order,
+                "source_id": f"{leg['leg_key']}#{segment['role']}-stay",
+                "date": slot[0].isoformat(),
+                "period": slot[1],
+                "item_type": "airport",
+                "title": segment.get("stay_label") or segment.get("to_label"),
+                "half_day_index": index,
+                "half_day_count": len(waits),
                 "inbound_travel_resolved": True,
             }
+            for index, slot in enumerate(waits, start=1)
         )
+        for _ in range(waiting):
+            cursor = next_slot(cursor)
 
 
 def _record_event(ctx: TeamScheduleContext, event, user, slots,
@@ -230,8 +293,16 @@ def _lose_position(ctx: TeamScheduleContext, user):
 
 
 def _initialize_team_context(team: tuple, events: list, origins: dict,
-                             start_slot: tuple) -> TeamScheduleContext:
-    """Everybody at their departure point, and what the appointments imply."""
+                             start_slot: tuple,
+                             departures: dict | None = None
+                             ) -> TeamScheduleContext:
+    """Everybody at their departure point, and what the appointments imply.
+
+    A member with a departure day of their own starts there instead of on the
+    team's. Somebody joining the trip a week in has not been travelling for
+    that week, and showing them as having left with everybody else puts a
+    flight on a day they were still at their desk.
+    """
     result = TeamPlanResult()
     result.risks.extend(staffing_risks(events, team))
     return TeamScheduleContext(
@@ -240,7 +311,7 @@ def _initialize_team_context(team: tuple, events: list, origins: dict,
         states={
             user: MemberState(
                 user, origins.get(user) or origins.get("__default__"),
-                start_slot, True,
+                (departures or {}).get(user) or start_slot, True,
             )
             for user in team
         },
@@ -440,7 +511,8 @@ def _finalize_member_totals(ctx: TeamScheduleContext) -> None:
 def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
                         start_slot: tuple, priority: list,
                         destinations: dict | None = None,
-                        leg_settings: dict | None = None) -> TeamPlanResult:
+                        leg_settings: dict | None = None,
+                        departures: dict | None = None) -> TeamPlanResult:
     """Walk every member through the events they attend, and home again.
 
     A booked appointment is a fact: it says where somebody is at a given hour
@@ -448,7 +520,9 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
     become unknown back on the map. An estimate that cannot make it in time
     produces a risk, never a refusal and never a delayed appointment.
     """
-    ctx = _initialize_team_context(team, events, origins, start_slot)
+    ctx = _initialize_team_context(
+        team, events, origins, start_slot, departures
+    )
     for event in ordered_events(events):
         _schedule_team_event(core, ctx, event, priority, leg_settings)
     for user in team:

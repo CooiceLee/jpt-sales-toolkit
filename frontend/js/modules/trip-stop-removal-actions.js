@@ -17,9 +17,11 @@
         let shouldPreview = false;
         try {
             setTripBusy(true);
-            State.currentTripPlan = await ApiClient.archiveTripStop(
+            const token = TripPlanIdentity.intend();
+            const trimmed = await ApiClient.archiveTripStop(
                 State.currentTripPlan.id, stopId, stop.row_version || null
             );
+            if (!TripPlanIdentity.accept(token, trimmed)) return;
             if (window.TripFreeStopForm?.isOpen?.()) {
                 window.TripFreeStopForm.close({ force: true });
             }
@@ -28,7 +30,7 @@
             }
             notify(I18n.t('Stop removed'));
             State.tripCandidatePagination.offset = 0;
-            await loadTripPlanner();
+            await loadTripPlanner({ token });
             shouldPreview = Boolean(State.currentTripPlan?.stops?.length);
             if (shouldPreview) TripPlanningDraft.change(() => {});
         } catch (error) {

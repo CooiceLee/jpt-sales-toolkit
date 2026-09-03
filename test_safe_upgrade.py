@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from backend.config import APP_VERSION, init_settings
 from backend.repositories import APP_SCHEMA_VERSION, close_db, read_app_schema_version
+from backend.repositories import base
 from backend.repositories.base import APP_SCHEMA_MIGRATIONS
 from backend.services.admin_service import AdminService
 from backend.startup_upgrade import initialize_database_safely
@@ -250,6 +251,11 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
                 7: APP_VERSION,
                 8: APP_VERSION,
                 9: APP_VERSION,
+                10: APP_VERSION,
+                11: APP_VERSION,
+                12: APP_VERSION,
+                13: APP_VERSION,
+                14: APP_VERSION,
             }
             conn.executemany(
                 "INSERT INTO app_schema_migrations "
@@ -452,10 +458,11 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
     }
 
 
-# Every schema an installed release could be sitting on. 0.11.9 shipped schema 3
-# and 0.12.0 shipped schema 6; 7 and 8 were reached on the way to this release
-# and are covered so a later migration cannot skip them.
-INTERMEDIATE_SCHEMA_BASELINES = (6, 7, 8)
+# Every schema an installed release could be sitting on. 0.11.9 shipped schema 3,
+# 0.12.0 shipped schema 6 and 0.13.0 shipped schema 9; 7 and 8 were reached on the
+# way and are covered so a later migration cannot skip them. Schema 9 matters most
+# here: it is what the team is running right now.
+INTERMEDIATE_SCHEMA_BASELINES = (6, 7, 8, 9, 10, 11, 12, 13)
 
 # What each migration added, so a fixture can be wound back to an earlier shape.
 _SCHEMA_ADDITIONS = {
@@ -476,7 +483,121 @@ _SCHEMA_ADDITIONS = {
         ("trip_plan_stops", ("planned_time_accepted",)),
         ("trip_plan_free_stops", ("planned_time_accepted",)),
     ),
+    10: (
+        ("trip_plan_members", ("departure_date",)),
+    ),
+    11: (
+        ("trip_plan_legs", ("departure_transfer_half_days",
+                            "arrival_transfer_half_days")),
+    ),
+    12: (
+        ("trip_plan_legs", ("departure_transfer_mode",
+                            "departure_transfer_time_hours",
+                            "arrival_transfer_mode",
+                            "arrival_transfer_time_hours")),
+    ),
+    13: (
+        ("trip_plan_stops", ("actual_visit_date", "actual_visit_period")),
+    ),
+    14: (),
 }
+
+# The shape a stop had before schema 13, so a fixture can be a real pre-13
+# database: the two answers were stored as a plain 0 or 1 that could not say
+# "not answered", which is what the migration has to undo.
+_TRIP_PLAN_STOPS_SCHEMA12_DDL = """
+CREATE TABLE trip_plan_stops_schema12 (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    customer_id TEXT NOT NULL REFERENCES customers(id),
+    lead_id TEXT REFERENCES leads(id),
+    sequence_no INTEGER NOT NULL DEFAULT 1,
+    planned_date TEXT,
+    planned_end_date TEXT,
+    stay_days INTEGER NOT NULL DEFAULT 1,
+    duration_half_days INTEGER NOT NULL DEFAULT 2 CHECK (
+        duration_half_days BETWEEN 1 AND 60
+    ),
+    preferred_period TEXT NOT NULL DEFAULT 'auto' CHECK (
+        preferred_period IN ('auto', 'AM', 'PM')
+    ),
+    planned_start_period TEXT CHECK (planned_start_period IN ('AM', 'PM')),
+    planned_end_period TEXT CHECK (planned_end_period IN ('AM', 'PM')),
+    schedule_locked INTEGER NOT NULL DEFAULT 0 CHECK (schedule_locked IN (0, 1)),
+    planned_time_accepted INTEGER NOT NULL DEFAULT 0 CHECK (planned_time_accepted IN (0, 1)),
+    confirmation_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
+        confirmation_status IN (
+            'unconfirmed', 'tentative', 'confirmed',
+            'needs_reconfirmation', 'cancelled'
+        )
+    ),
+    travel_from_label TEXT,
+    travel_mode TEXT,
+    travel_distance_km REAL,
+    travel_time_hours REAL,
+    travel_days INTEGER,
+    visit_purpose TEXT,
+    notes TEXT,
+    result_status TEXT NOT NULL DEFAULT 'Planned' CHECK (
+        result_status IN ('Planned', 'Visited', 'Follow-up Needed', 'Skipped')
+    ),
+    result_notes TEXT,
+    visit_customer_needs TEXT,
+    visit_competitor TEXT,
+    visit_budget TEXT,
+    visit_decision_maker TEXT,
+    visit_next_action TEXT,
+    visit_followup_due_date TEXT,
+    visit_sample_needed INTEGER NOT NULL DEFAULT 0 CHECK (
+        visit_sample_needed IN (0, 1)
+    ),
+    visit_quote_needed INTEGER NOT NULL DEFAULT 0 CHECK (
+        visit_quote_needed IN (0, 1)
+    ),
+    followup_activity_id TEXT REFERENCES lead_activities(id),
+    result_activity_id TEXT REFERENCES lead_activities(id),
+    archived_at TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    row_version INTEGER NOT NULL DEFAULT 1
+)
+"""
+
+
+def _restore_schema12_stops(conn: sqlite3.Connection) -> None:
+    """Put the trip stop table back into its pre-13 shape."""
+    # Reference enforcement can only be turned off outside a transaction, and
+    # seeding the fixture opened one.
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute(_TRIP_PLAN_STOPS_SCHEMA12_DDL)
+    carried = [
+        row[1] for row in conn.execute("PRAGMA table_info(trip_plan_stops_schema12)")
+    ]
+    values = [
+        f"COALESCE({name}, 0)"
+        if name in ("visit_sample_needed", "visit_quote_needed") else name
+        for name in carried
+    ]
+    conn.execute(
+        f"INSERT INTO trip_plan_stops_schema12 ({', '.join(carried)}) "
+        f"SELECT {', '.join(values)} FROM trip_plan_stops"
+    )
+    conn.execute("DROP TABLE trip_plan_stops")
+    conn.execute("ALTER TABLE trip_plan_stops_schema12 RENAME TO trip_plan_stops")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trip_stops_plan "
+        "ON trip_plan_stops(plan_id, sequence_no)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trip_stops_customer "
+        "ON trip_plan_stops(customer_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trip_stops_lead ON trip_plan_stops(lead_id)"
+    )
 
 
 def _wind_back_to_schema(conn: sqlite3.Connection, target: int) -> None:
@@ -484,6 +605,13 @@ def _wind_back_to_schema(conn: sqlite3.Connection, target: int) -> None:
     for version in sorted(_SCHEMA_ADDITIONS, reverse=True):
         if version <= target:
             continue
+        if version == 14:
+            # The manifest tables belong to schema 14 and nothing before it.
+            conn.execute("DROP TABLE IF EXISTS trip_working_export_rows")
+            conn.execute("DROP TABLE IF EXISTS trip_working_exports")
+        if version == 13:
+            # Losing NOT NULL is not a dropped column, so the table is rebuilt.
+            _restore_schema12_stops(conn)
         if version == 8:
             # The partial indexes name member_id, so they go before the column.
             conn.execute("DROP INDEX IF EXISTS idx_trip_legs_active_member_key")
@@ -543,7 +671,24 @@ def test_intermediate_schema_upgrade(baseline: int) -> None:
                 "sequence_no,created_at,created_by,updated_at,updated_by,"
                 "row_version) VALUES ('stop-b','plan-b','cust-b',1,?,?,?,?,1)",
                 (stamp, actor, stamp, actor))
+            conn.execute(
+                "INSERT INTO trip_plan_legs (id,plan_id,leg_key,sequence_no,"
+                "from_kind,from_stop_id,to_kind,selected_mode,created_at,"
+                "created_by,updated_at,updated_by,row_version) VALUES "
+                "('leg-b','plan-b','stop-b>destination',1,'stop','stop-b',"
+                "'destination','drive',?,?,?,?,1)",
+                (stamp, actor, stamp, actor))
+            conn.execute(
+                "INSERT INTO trip_visit_briefings (id,stop_id,created_at,"
+                "created_by,updated_at,updated_by,row_version) VALUES "
+                "('brief-b','stop-b',?,?,?,?,1)", (stamp, actor, stamp, actor))
             _wind_back_to_schema(conn, baseline)
+            # One answer somebody gave and one nobody could have given: before
+            # schema 13 an untouched box and a deliberate "no" were both 0.
+            conn.execute(
+                "UPDATE trip_plan_stops SET visit_sample_needed = 1, "
+                "visit_quote_needed = 0 WHERE id = 'stop-b'"
+            )
             conn.commit()
         finally:
             conn.close()
@@ -580,6 +725,33 @@ def test_intermediate_schema_upgrade(baseline: int) -> None:
             assert conn.execute(
                 "SELECT planned_time_accepted FROM trip_plan_stops"
             ).fetchone()[0] == 0
+            # Whatever pointed at the stop still does after the table it lives
+            # in was rebuilt.
+            assert conn.execute(
+                "SELECT from_stop_id FROM trip_plan_legs"
+            ).fetchone()[0] == "stop-b"
+            assert conn.execute(
+                "SELECT stop_id FROM trip_visit_briefings"
+            ).fetchone()[0] == "stop-b"
+            # Schema 13 keeps the answer that was given and stops claiming one
+            # that was not, and it does not invent a date the visit happened on.
+            sample, quote, actual_date, actual_period = conn.execute(
+                "SELECT visit_sample_needed, visit_quote_needed, "
+                "actual_visit_date, actual_visit_period FROM trip_plan_stops"
+            ).fetchone()
+            assert sample == 1, f"a given answer was lost: {sample!r}"
+            if baseline < 13:
+                # Before schema 13 a 0 could not say whether anyone answered.
+                assert quote is None, (
+                    f"an untouched box was upgraded into a deliberate no: {quote!r}"
+                )
+            else:
+                # From schema 13 on, a stored 0 is somebody answering "no".
+                assert quote == 0, f"a deliberate no was lost: {quote!r}"
+            assert actual_date is None and actual_period is None, (
+                "the planned date was written in as the date the visit happened: "
+                f"{actual_date!r} {actual_period!r}"
+            )
         finally:
             conn.close()
 
@@ -591,7 +763,7 @@ def test_intermediate_schema_upgrade(baseline: int) -> None:
 
 def test_current_schema_fixture() -> None:
     """A current development profile starts unchanged and without a backup."""
-    assert APP_SCHEMA_VERSION == 9
+    assert APP_SCHEMA_VERSION == 14
     close_db()
     with tempfile.TemporaryDirectory(prefix="jpt_current_schema_") as temp_dir:
         data_dir = Path(temp_dir) / "data"
@@ -788,6 +960,56 @@ def test_upgrade_fixture(source_version: str) -> None:
             assert _sha256(data_dir / "attachments" / "fixture.txt") == expected["attachment_sha"]
             assert _sha256(data_dir / "config" / "authorization_issuer.pem") == expected["config_sha"]
             _assert_integrity(settings.db_path)
+
+
+def test_a_migration_that_breaks_a_reference_is_refused() -> None:
+    """Enforcement is off while the tables are rebuilt, so the commit checks it.
+
+    A rebuild of a table other tables point at can only happen with reference
+    enforcement turned off. That leaves one thing standing between a broken
+    step and a saved database: the check before the commit.
+    """
+    close_db()
+    with tempfile.TemporaryDirectory(prefix="jpt_orphan_upgrade_") as temp_dir:
+        data_dir = Path(temp_dir) / "data"
+        expected = _seed_fixture(data_dir, "0.11.4-internal")
+        settings = init_settings(Path(temp_dir) / "app")
+        settings.data_dir = data_dir
+        settings.db_path = data_dir / "database.sqlite"
+        settings.upload_dir = data_dir / "attachments"
+        settings.backup_dir = data_dir / "backups"
+        settings.runtime_config_dir = data_dir / "config"
+        settings.backup_dir.mkdir()
+
+        real_step = base._apply_runtime_schema_v13
+
+        def leave_an_orphan(conn: sqlite3.Connection) -> None:
+            real_step(conn)
+            conn.execute(
+                "INSERT INTO trip_plans (id,title,owner_id,status,created_at,"
+                "updated_at,row_version) VALUES ('orphan-plan','Orphan',"
+                "'user-that-never-existed','Draft',?,?,1)", (NOW, NOW))
+
+        with patch.object(base, "_apply_runtime_schema_v13", leave_an_orphan):
+            try:
+                initialize_database_safely(settings)
+            except RuntimeError as exc:
+                assert "original database was restored" in str(exc), exc
+            else:
+                raise AssertionError(
+                    "a migration that left a row pointing at nothing was committed"
+                )
+
+        assert _counts(settings.db_path) == expected["counts"]
+        conn = sqlite3.connect(str(settings.db_path))
+        try:
+            assert conn.execute(
+                "SELECT COUNT(*) FROM trip_plans WHERE id = 'orphan-plan'"
+            ).fetchone()[0] == 0, "the broken row survived the restore"
+        finally:
+            conn.close()
+        _assert_integrity(settings.db_path)
+        print("PASS: a migration that breaks a reference is refused and restored")
 
 
 def test_failed_migration_restores_original() -> None:
@@ -1058,6 +1280,7 @@ def main() -> None:
         test_intermediate_schema_upgrade(baseline)
     test_current_schema_fixture()
     print("PASS: current-schema no-migration fixture")
+    test_a_migration_that_breaks_a_reference_is_refused()
     test_failed_migration_restores_original()
     print("PASS: failed migration restores validated original database")
     test_manual_recovery_is_scoped_and_preserves_current_database()

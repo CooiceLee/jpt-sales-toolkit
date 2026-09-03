@@ -7,10 +7,39 @@ import re
 from zipfile import ZIP_DEFLATED, ZipFile
 from xml.sax.saxutils import escape
 
-from .trip_export_model import LEG_HEADERS, TIMELINE_HEADERS, VISIT_HEADERS
+from .trip_export_model import (
+    LEG_HEADERS, OVERVIEW_HEADERS, TIMELINE_HEADERS, VISIT_HEADERS,
+)
 
 
 _ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+# A worksheet's children have a fixed order. Out of order, Excel does not
+# report a warning it can work around: it offers to repair the file and the
+# repair empties the sheet. Nothing in a ZIP or XML check sees this, so the
+# order lives in one list that every sheet is assembled through.
+WORKSHEET_ELEMENT_ORDER = (
+    "sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData",
+    "sheetCalcPr", "sheetProtection", "protectedRanges", "scenarios",
+    "autoFilter", "sortState", "dataConsolidate", "customSheetViews",
+    "mergeCells", "phoneticPr", "conditionalFormatting", "dataValidations",
+    "hyperlinks", "printOptions", "pageMargins", "pageSetup",
+)
+
+
+def _worksheet(**parts: str) -> str:
+    """One worksheet, with its children written in the order Excel reads them."""
+    unknown = set(parts) - set(WORKSHEET_ELEMENT_ORDER)
+    if unknown:
+        raise ValueError(f"worksheet element not in the reading order: {unknown}")
+    body = "".join(
+        parts[name] for name in WORKSHEET_ELEMENT_ORDER if parts.get(name)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"{body}</worksheet>"
+    )
 
 
 def _column(index: int) -> str:
@@ -63,8 +92,21 @@ def _sheet(headers: list[str], rows: list[dict], *, metadata=None) -> str:
     if merge_refs:
         cells = "".join(f'<mergeCell ref="{reference}"/>' for reference in merge_refs)
         merge = f'<mergeCells count="{len(merge_refs)}">{cells}</mergeCells>'
-    return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0"><pane ySplit="{header_row}" topLeftCell="A{header_row + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="18"/><cols>{cols}</cols><sheetData>{''.join(xml_rows)}</sheetData>{merge}<autoFilter ref="A{header_row}:{_column(width)}{last_row}"/><pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>'''
+    return _worksheet(
+        sheetPr='<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>',
+        sheetViews=(
+            '<sheetViews><sheetView workbookViewId="0">'
+            f'<pane ySplit="{header_row}" topLeftCell="A{header_row + 1}" '
+            'activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+        ),
+        sheetFormatPr='<sheetFormatPr defaultRowHeight="18"/>',
+        cols=f"<cols>{cols}</cols>",
+        sheetData=f"<sheetData>{''.join(xml_rows)}</sheetData>",
+        autoFilter=f'<autoFilter ref="A{header_row}:{_column(width)}{last_row}"/>',
+        mergeCells=merge,
+        pageMargins='<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>',
+        pageSetup='<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>',
+    )
 
 
 def _widths(count: int) -> list[int]:
@@ -85,28 +127,44 @@ def _row_height(row: dict, headers: list[str], widths: list[int]) -> int:
     return min(300, max(30, max_lines * 15 + 8))
 
 
+def _plan(model: dict) -> list[tuple[str, list[str], list[dict]]]:
+    """Which sheets this workbook has, in reading order.
+
+    The trip overview is a sheet of its own. It used to ride on top of whichever
+    sheet came first, so a workbook that leaves that sheet out would lose the
+    plan name, the travel team and the risks with it.
+    """
+    sheets = [("行程总览", OVERVIEW_HEADERS, model["overview"])]
+    if model.get("visits"):
+        sheets.append(("拜访计划", VISIT_HEADERS, model["visits"]))
+    sheets.append(("完整日程", TIMELINE_HEADERS, model["timeline"]))
+    sheets.append(("交通行程", LEG_HEADERS, model["legs"]))
+    return sheets
+
+
 def render_trip_xlsx(model: dict) -> bytes:
+    plan = _plan(model)
     sheets = [
-        _sheet(VISIT_HEADERS, model["visits"], metadata=(model["title"], model["metadata"])),
-        _sheet(TIMELINE_HEADERS, model["timeline"]),
-        _sheet(LEG_HEADERS, model["legs"]),
+        _sheet(headers, rows, metadata=(model["title"], []) if index == 0 else None)
+        for index, (_, headers, rows) in enumerate(plan)
     ]
+    names = [name for name, _, _ in plan]
     output = io.BytesIO()
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", _content_types())
+        archive.writestr("[Content_Types].xml", _content_types(len(sheets)))
         archive.writestr("_rels/.rels", _root_relationships())
         archive.writestr("docProps/app.xml", _app_properties())
         archive.writestr("docProps/core.xml", _core_properties())
-        archive.writestr("xl/workbook.xml", _workbook())
-        archive.writestr("xl/_rels/workbook.xml.rels", _workbook_relationships())
+        archive.writestr("xl/workbook.xml", _workbook(names))
+        archive.writestr("xl/_rels/workbook.xml.rels", _workbook_relationships(len(sheets)))
         archive.writestr("xl/styles.xml", _styles())
         for index, sheet in enumerate(sheets, start=1):
             archive.writestr(f"xl/worksheets/sheet{index}.xml", sheet)
     return output.getvalue()
 
 
-def _content_types() -> str:
-    sheets = "".join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1, 4))
+def _content_types(count: int) -> str:
+    sheets = "".join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1, count + 1))
     return f'''<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>{sheets}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>'''
 
 
@@ -114,15 +172,14 @@ def _root_relationships() -> str:
     return '''<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'''
 
 
-def _workbook() -> str:
-    names = ("拜访计划", "完整日程", "交通行程")
+def _workbook(names: list[str]) -> str:
     sheets = "".join(f'<sheet name="{name}" sheetId="{i}" r:id="rId{i}"/>' for i, name in enumerate(names, 1))
     return f'''<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>{sheets}</sheets></workbook>'''
 
 
-def _workbook_relationships() -> str:
-    sheets = "".join(f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1, 4))
-    return f'''<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{sheets}<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'''
+def _workbook_relationships(count: int) -> str:
+    sheets = "".join(f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1, count + 1))
+    return f'''<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{sheets}<Relationship Id="rId{count + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'''
 
 
 def _styles() -> str:

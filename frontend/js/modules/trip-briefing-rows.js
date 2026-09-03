@@ -134,7 +134,7 @@
         const root = document.getElementById('trip-briefing-editor');
         if (!root || !model) return;
         root.hidden = false;
-        root.innerHTML = `<div class="trip-briefing-head"><div><strong>${h(stop?.customer_name || I18n.t('Customer visit preparation'))}</strong>
+        TripBriefingScroll.replace(root, `<div class="trip-briefing-head"><div><strong>${h(stop?.customer_name || I18n.t('Customer visit preparation'))}</strong>
             <small>${h([stop?.planned_date, stop?.planned_start_period].filter(Boolean).join(' ') || I18n.t('Not scheduled'))}</small></div>
             <button type="button" class="trip-free-stop-close" onclick="TripBriefingActions.close()" aria-label="${h(I18n.t('Close'))}">&times;</button></div>
             <div class="trip-briefing-scroll" oninput="TripBriefingDraft.markDirty()" onchange="TripBriefingDraft.markDirty()">
@@ -152,7 +152,7 @@
             </div><div id="trip-briefing-draft-status" class="trip-briefing-draft-status" role="status" aria-live="polite"></div>
             <div class="trip-briefing-footer"><button type="button" class="btn btn-secondary" id="trip-briefing-refresh" onclick="TripBriefingActions.refreshLatest()">${h(I18n.t('Refresh latest'))}</button>
                 <button type="button" class="btn btn-secondary" onclick="TripBriefingActions.close()">${h(I18n.t('Cancel'))}</button>
-                <button type="button" class="btn btn-primary" id="trip-briefing-save" onclick="TripBriefingActions.save()">${h(I18n.t('Save preparation'))}</button></div>`;
+                <button type="button" class="btn btn-primary" id="trip-briefing-save" onclick="TripBriefingActions.save()">${h(I18n.t('Save preparation'))}</button></div>`);
         TripBriefingDraft.setStatus();
     }
 

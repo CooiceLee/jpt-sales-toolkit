@@ -774,6 +774,18 @@
                                             <option value="cancelled">Cancelled</option>
                                         </select></label>
                                     </div>
+                                    <div class="trip-free-stop-grid" id="trip-free-stop-team-timing" hidden>
+                                        <label class="trip-field-label"><span>Stay starts on</span><input type="date" class="form-input" id="trip-free-stop-start-date" onchange="TripFreeStopDraft.mark()"></label>
+                                        <label class="trip-field-label"><span>Starting half-day</span><select class="form-input" id="trip-free-stop-start-period" onchange="TripFreeStopDraft.mark()">
+                                            <option value="AM">Morning (AM)</option><option value="PM">Afternoon (PM)</option>
+                                        </select></label>
+                                        <p class="trip-form-help">Leave the date empty to let the route decide when this stop happens.</p>
+                                    </div>
+                                    <fieldset class="trip-free-stop-people" id="trip-free-stop-people" hidden>
+                                        <legend>Who stops here</legend>
+                                        <div id="trip-free-stop-people-list"></div>
+                                        <small class="trip-form-help">Tick nobody and the whole team stops here.</small>
+                                    </fieldset>
                                     <label class="trip-field-label"><span>Notes</span><textarea class="form-input" rows="2" id="trip-free-stop-notes" maxlength="2000"></textarea></label>
                                     <div id="trip-free-stop-draft-status" class="trip-free-stop-draft-status" role="status" aria-live="polite"></div>
                                     <div class="trip-action-row">
@@ -799,39 +811,83 @@
                                         </div>
                                         <span class="trip-export-check" aria-hidden="true">&#10003;</span>
                                     </div>
-                                    <div class="trip-export-grid">
-                                        <button type="button" class="trip-export-option" data-trip-export-format="xlsx"
-                                            onclick="exportCurrentTripPlan('xlsx')">
-                                            <span class="trip-export-filetype">XLSX</span>
-                                            <span><strong>Excel itinerary</strong><small>Share, review and add notes with your team.</small></span>
-                                            <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
-                                        </button>
-                                        <button type="button" class="trip-export-option" data-trip-export-format="html"
-                                            onclick="exportCurrentTripPlan('html')">
-                                            <span class="trip-export-filetype">HTML</span>
-                                            <span><strong>Web itinerary</strong><small>Open offline in a browser or print a clean copy.</small></span>
-                                            <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
-                                        </button>
-                                        <button type="button" class="trip-export-option" data-trip-export-format="ics"
-                                            onclick="exportCurrentTripPlan('ics')">
-                                            <span class="trip-export-filetype">ICS</span>
-                                            <span><strong>Add to calendar</strong><small>Import each day and half-day arrangement into your calendar.</small></span>
-                                            <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
-                                        </button>
+                                    <div class="trip-export-group">
+                                        <div class="trip-export-group-title">Shared itinerary &#183; for everyone on this trip</div>
+                                        <p class="trip-export-group-note">Travellers, dates, places, full addresses and travel arrangements. No visit preparation inside.</p>
+                                        <div class="trip-export-grid">
+                                            <button type="button" class="trip-export-option" data-trip-export-format="xlsx"
+                                                onclick="exportCurrentTripPlan('xlsx', 'shared')">
+                                                <span class="trip-export-filetype">XLSX</span>
+                                                <span><strong>Shared itinerary</strong><small>The spreadsheet everyone confirms the trip against.</small></span>
+                                                <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                            </button>
+                                            <button type="button" class="trip-export-option" data-trip-export-format="html"
+                                                onclick="exportCurrentTripPlan('html', 'shared')">
+                                                <span class="trip-export-filetype">HTML</span>
+                                                <span><strong>Shared web itinerary</strong><small>Open offline in a browser or print a clean copy.</small></span>
+                                                <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                            </button>
+                                            <button type="button" class="trip-export-option" data-trip-export-format="ics"
+                                                onclick="exportCurrentTripPlan('ics')">
+                                                <span class="trip-export-filetype">ICS</span>
+                                                <span><strong>Add to calendar</strong><small>A snapshot of every day and half-day. After the plan changes, delete the calendar you imported last time before importing again.</small></span>
+                                                <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="trip-export-group">
+                                        <div class="trip-export-group-title">For the people making the visits</div>
+                                        <p class="trip-export-group-note">Everything above plus what each visit is prepared for: contacts, equipment and topics. Send these only to whoever is going.</p>
+                                        <div class="trip-export-grid">
+                                            <button type="button" class="trip-export-option" data-trip-export-format="xlsx"
+                                                onclick="exportCurrentTripPlan('xlsx', 'full')">
+                                                <span class="trip-export-filetype">XLSX</span>
+                                                <span><strong>Itinerary with visit preparation</strong><small>Adds the visit plan sheet to the shared spreadsheet.</small></span>
+                                                <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                            </button>
+                                            <button type="button" class="trip-export-option" data-trip-export-format="html"
+                                                onclick="exportCurrentTripPlan('html', 'full')">
+                                                <span class="trip-export-filetype">HTML</span>
+                                                <span><strong>Web itinerary with visit preparation</strong><small>The same page to read offline or print before going.</small></span>
+                                                <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="trip-export-group">
+                                        <div class="trip-export-group-title">To fill in during the visits</div>
+                                        <p class="trip-export-group-note">A workbook the people going fill in during the visits. Send it back to whoever owns the plan, who enters the results. Keep the hidden sheet it carries.</p>
+                                        <div class="trip-export-grid">
+                                            <button type="button" class="trip-export-option" data-trip-export-format="working"
+                                                onclick="exportCurrentTripPlan('working')">
+                                                <span class="trip-export-filetype">XLSX</span>
+                                                <span><strong>Field workbook</strong><small>One row per visit, with what to record and dropdowns for the answers.</small></span>
+                                                <span class="trip-export-arrow" aria-hidden="true">&#8595;</span>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div id="trip-export-status" class="trip-export-status" role="status" aria-live="polite">
                                         Select a saved itinerary to download.
                                     </div>
                                     <details class="trip-export-other">
-                                        <summary>Other formats</summary>
+                                        <summary>Data formats, with visit preparation</summary>
                                         <div class="trip-export-actions">
-                                            <p id="trip-export-team-note" class="trip-form-help" hidden>Excel, web and calendar files do not carry the travel team yet. Use Markdown, CSV or the daily report.</p>
                                             <button type="button" class="btn btn-secondary btn-sm" data-trip-export-format="md"
                                                 onclick="exportCurrentTripPlan('md')">Markdown</button>
                                             <button type="button" class="btn btn-secondary btn-sm" data-trip-export-format="csv"
                                                 onclick="exportCurrentTripPlan('csv')">CSV</button>
                                         </div>
                                     </details>
+                                </section>
+                                <section class="trip-working-import-panel" aria-labelledby="trip-working-import-title">
+                                    <div class="trip-export-kicker">Visit results</div>
+                                    <h3 id="trip-working-import-title">Enter the results from a field workbook</h3>
+                                    <p>Open the workbook the visitors sent back and see what it would change before anything is saved. Only the workbook this app issued can be read.</p>
+                                    <div class="trip-working-import-controls">
+                                        <input type="file" id="trip-working-import-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="trip-working-preflight-btn">See what would change</button>
+                                        <button type="button" class="btn btn-primary btn-sm" id="trip-working-commit-btn" disabled>Save these results</button>
+                                    </div>
+                                    <div id="trip-working-import-result" class="trip-working-import-result" role="status" aria-live="polite"></div>
                                 </section>
                             </div>
                         </div>
@@ -843,7 +899,7 @@
                             <div class="review-panel">
                                 <div class="card-title">Plan</div>
                                 <div class="trip-form">
-                                    <input type="text" class="form-input" id="trip-title" placeholder="Plan title">
+                                    <input type="text" class="form-input" id="trip-title" placeholder="Plan title" onchange="TripPlanTitleActions.titleChanged()">
                                     <div class="trip-date-row">
                                         <input type="date" class="form-input" id="trip-start-date">
                                         <input type="date" class="form-input" id="trip-end-date">
@@ -906,14 +962,14 @@
                                         <div id="trip-transport-priority"></div>
                                         <small class="trip-form-help">Search current travel options, then review a result before adding it to the route.</small>
                                     </div>
-                                    <div class="trip-subsection">
+                                    <div class="trip-subsection" data-single-traveller-only>
                                         <div class="trip-subsection-title">China departure window</div>
                                         <div class="trip-date-row">
                                             <label class="trip-field-label"><span>From</span><input type="datetime-local" class="form-input" id="trip-departure-window-start" onchange="TripTransportActions.headerChanged()"></label>
                                             <label class="trip-field-label"><span>To</span><input type="datetime-local" class="form-input" id="trip-departure-window-end" onchange="TripTransportActions.headerChanged()"></label>
                                         </div>
                                     </div>
-                                    <div class="trip-subsection">
+                                    <div class="trip-subsection" data-single-traveller-only>
                                         <div class="trip-subsection-title">Return to China window</div>
                                         <div class="trip-date-row">
                                             <label class="trip-field-label"><span>From</span><input type="datetime-local" class="form-input" id="trip-return-window-start" onchange="TripTransportActions.headerChanged()"></label>
@@ -1300,22 +1356,31 @@
     <script src="/static/js/modules/trip-form.js?v=1.0"></script>
     <script src="/static/js/modules/trip-form-compat.js?v=1.0"></script>
     <script src="/static/js/modules/trip-suggestion-state.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-leg-overrides.js?v=1.0"></script>
     <script src="/static/js/modules/trip-planning-draft.js?v=1.0"></script>
     <script src="/static/js/modules/trip-suggestion-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-suggestion-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-transport-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-leg-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-leg-airports.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-leg-airport-durations.js?v=1.0"></script>
     <script src="/static/js/modules/trip-leg-airports-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-transport-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-route-form.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidate-state.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-candidate-requests.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidates-list.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidates-map.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-plan-list-sync.js?v=1.0"></script>
     <script src="/static/js/modules/trip-plans.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-schedule-controls.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-appointment-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-plan-title-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-plan-identity.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-plan-refresh.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-reveal.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-scroll.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-draft.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-rows.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-form.js?v=1.0"></script>
@@ -1325,22 +1390,31 @@
     <script src="/static/js/modules/trip-team-risks.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-timeline.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-queue.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-journeys.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-colors.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-map.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-timeline-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-flexible-suggestions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-schedule-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-export-naming.js?v=1.0"></script>
     <script src="/static/js/modules/trip-export-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-working-import-text.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-working-import-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-working-import-refresh.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-working-import.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-removal-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-free-stop-draft.js?v=1.0"></script>
     <script src="/static/js/modules/trip-free-stop-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-free-stop-team-controls.js?v=1.0"></script>
     <script src="/static/js/modules/trip-free-stop-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-loader.js?v=1.0"></script>
     <script src="/static/js/modules/trip-visit-draft.js?v=1.0"></script>
     <script src="/static/js/modules/trip-visit-state.js?v=1.0"></script>
     <script src="/static/js/modules/trip-planner.js?v=1.1"></script>
+    <script src="/static/js/modules/trip-visit-answer.js?v=1.0"></script>
     <script src="/static/js/modules/trip-visit-actions.js?v=1.0"></script>
 
     <!-- Coordinate maintenance -->

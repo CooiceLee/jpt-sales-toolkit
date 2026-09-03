@@ -121,6 +121,11 @@ const ApiClient = (function() {
             this.currentVersion = detail.current_version;
             this.yourVersion = detail.your_version;
             this.currentData = detail.current_data;
+            // A conflict often arrives with what the caller has to show next -
+            // the new comparison to choose from. Dropping it here left the
+            // reader looking at the answer they gave to the old question.
+            this.details = detail;
+            this.status = 409;
         }
     }
 
@@ -763,9 +768,14 @@ const ApiClient = (function() {
         });
     }
 
-    async function exportTripPlan(planId, format = 'md') {
+    async function exportTripPlan(planId, format = 'md', variant = '') {
         const token = getToken();
-        const response = await fetch(`${API_BASE}/review/trip-plans/${planId}/export.${format}`, {
+        const query = variant ? `?variant=${encodeURIComponent(variant)}` : '';
+        // The field workbook is its own document, not a version of the others.
+        const path = format === 'working'
+            ? `working.xlsx`
+            : `export.${format}${query}`;
+        const response = await fetch(`${API_BASE}/review/trip-plans/${planId}/${path}`, {
             headers: {
                 ...(token ? { 'Authorization': `Bearer ${token}` } : {})
             }
@@ -782,6 +792,27 @@ const ApiClient = (function() {
         if (match) filename = decodeURIComponent(match[1].replace(/["']/g, ''));
         const blob = await response.blob();
         return { blob, filename };
+    }
+
+    async function preflightTripWorking(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        return request('/review/trip-working/preflight', {
+            method: 'POST',
+            body: formData,
+        });
+    }
+
+    async function importTripWorking(file, expectedSourceHash, previewDigest, resolutions = {}) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('expected_source_hash', expectedSourceHash);
+        formData.append('expected_preview_digest', previewDigest);
+        formData.append('resolutions_json', JSON.stringify(resolutions));
+        return request('/review/trip-working/import', {
+            method: 'POST',
+            body: formData,
+        });
     }
 
     async function getTripExecution(planId, date = null) {
@@ -1198,6 +1229,8 @@ const ApiClient = (function() {
         previewTripItinerary,
         archiveTripStop,
         exportTripPlan,
+        preflightTripWorking,
+        importTripWorking,
         getTripExecution,
         exportTripExecution,
 

@@ -24,11 +24,14 @@ def _fold(line: str) -> list[str]:
     return lines
 
 
-def _uid(model: dict, item: dict) -> str:
-    value = "|".join(str(item.get(key) or "") for key in (
-        "slot_key", "item_type", "source_id", "half_day_index",
-    ))
-    digest = sha256(f"{model['plan_id']}|{value}".encode()).hexdigest()[:24]
+def _uid(model: dict, key: str) -> str:
+    """The lasting name of one event.
+
+    Built from what the plan records, so a visit that moves, is renamed, is
+    travelled to differently or is attended by somebody else keeps its event
+    rather than leaving the old one behind and adding a second.
+    """
+    digest = sha256(f"{model['plan_id']}|{key}".encode()).hexdigest()[:24]
     return f"{digest}@jpt-sales-toolkit"
 
 
@@ -44,19 +47,54 @@ def _description(row: dict) -> str:
     return "\n".join(parts)
 
 
-def render_trip_ics(model: dict, schedule_items: list[dict]) -> bytes:
-    rows = model["timeline"]
+SNAPSHOT_NOTE = (
+    "本文件是该出差计划在导出时刻的完整快照。计划有变更时请先删除上次导入的"
+    "本日历，再导入新文件；本文件不包含删除或改派记录。 / "
+    "A complete snapshot of this trip plan at the time of export. When the plan "
+    "changes, remove the calendar imported last time before importing the new "
+    "file: cancellations and reassignments are not carried in it."
+)
+
+
+def render_trip_ics(model: dict) -> bytes:
+    """A complete snapshot of the trip, as a calendar.
+
+    Every traveller's place in the itinerary is an event that says whose it is.
+    Two colleagues on one flight are two events at the same hour, which is what
+    each of their days actually contains.
+
+    It is a snapshot, not a feed. An event keeps its name when the visit moves,
+    is renamed, is travelled to differently, or when colleagues split up or
+    start travelling together - so importing again updates those. What a
+    snapshot cannot express is something that is no longer there: a visit
+    deleted, shortened, or reassigned to somebody else leaves the event it used
+    to have with no instruction to remove it. Saying so in the file is honest;
+    claiming the import always tidies up after itself would not be.
+    """
+    # One entry per traveller, not the merged lines the documents print: a
+    # calendar keeps one event per name, and naming events per traveller means
+    # colleagues splitting up or starting to travel together changes how the
+    # document groups them without changing whose event is whose.
+    rows = model.get("calendar") or model["timeline"]
     generated_at = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     lines = [
         "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//JPT//Sales Toolkit//ZH-CN",
         "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
         f"X-WR-CALNAME:{_escape(model['title'])}",
+        f"X-WR-CALDESC:{_escape(SNAPSHOT_NOTE)}",
     ]
-    for item, row in zip(schedule_items, rows):
-        start = date.fromisoformat(str(item["date"]))
-        summary = f"[{item.get('period') or '-'}] {row.get('类型 / Type') or ''} · {item.get('title') or ''}"
+    for row in rows:
+        key = row.get("_key") or ""
+        start = date.fromisoformat(str(row["日期 / Date"]))
+        travellers = row.get("出行人 / Travellers") or ""
+        summary = " · ".join(part for part in (
+            f"[{row.get('时段 / Period') or '-'}]",
+            row.get("类型 / Type") or "",
+            row.get("事项 / Item") or "",
+            travellers,
+        ) if part)
         event = [
-            "BEGIN:VEVENT", f"UID:{_uid(model, item)}", f"DTSTAMP:{generated_at}",
+            "BEGIN:VEVENT", f"UID:{_uid(model, key)}", f"DTSTAMP:{generated_at}",
             f"DTSTART;VALUE=DATE:{start.strftime('%Y%m%d')}",
             f"DTEND;VALUE=DATE:{(start + timedelta(days=1)).strftime('%Y%m%d')}",
             f"SUMMARY:{_escape(summary)}", f"DESCRIPTION:{_escape(_description(row))}",

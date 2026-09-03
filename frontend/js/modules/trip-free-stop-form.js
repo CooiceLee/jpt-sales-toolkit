@@ -84,6 +84,7 @@
         renderCandidates([]);
         status('');
         categoryChanged();
+        window.TripFreeStopTeamControls?.render?.(stop);
         window.TripFreeStopDraft?.reset?.();
         const editor = el('trip-free-stop-editor');
         if (editor) editor.hidden = false;
@@ -126,6 +127,7 @@
                 ? value('trip-free-stop-period') : 'auto',
             confirmation_status: value('trip-free-stop-confirmation') || 'unconfirmed',
             visit_purpose: value('trip-free-stop-purpose') || null, notes: value('trip-free-stop-notes') || null,
+            ...(window.TripFreeStopTeamControls?.payload?.() || {}),
         };
     }
     function geocodeFields() {

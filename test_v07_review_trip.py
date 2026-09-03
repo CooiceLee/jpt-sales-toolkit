@@ -318,6 +318,8 @@ def check_trip_plan_activity_sync_and_csv_formula_escape(client: TestClient, ctx
         json={
             "result_status": "Visited",
             "result_notes": "=Customer confirmed next action",
+            "actual_visit_date": "2026-05-12",
+            "actual_visit_period": "AM",
         },
     )
     assert update_response.status_code == 200, update_response.text
@@ -335,6 +337,8 @@ def check_trip_plan_activity_sync_and_csv_formula_escape(client: TestClient, ctx
         json={
             "result_status": "Follow-up Needed",
             "result_notes": "=Customer confirmed next action",
+            "actual_visit_date": "2026-05-12",
+            "actual_visit_period": "AM",
             "visit_customer_needs": "Needs a higher power demo",
             "visit_competitor": "Competitor X",
             "visit_budget": "50000",

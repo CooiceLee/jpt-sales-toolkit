@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS trip_plan_members (
     destination_name_override TEXT,
     destination_lat_override REAL CHECK (destination_lat_override BETWEEN -90 AND 90),
     destination_lng_override REAL CHECK (destination_lng_override BETWEEN -180 AND 180),
+    departure_date TEXT,
     created_at TEXT NOT NULL,
     created_by TEXT REFERENCES users(id),
     updated_at TEXT NOT NULL,
@@ -374,3 +375,295 @@ def apply_trip_planning_schema_v9(conn: sqlite3.Connection) -> None:
                 "INTEGER NOT NULL DEFAULT 0 "
                 "CHECK (planned_time_accepted IN (0, 1))"
             )
+
+
+def apply_trip_planning_schema_v10(conn: sqlite3.Connection) -> None:
+    """Let a member leave on a day of their own.
+
+    Schema 9 has shipped, so this cannot be folded into the step that created
+    the team table: a database already at 9 would never run that step again. A
+    member who joins the trip a week in has not been travelling for that week,
+    and without a date of their own the plan flies everybody out on day one.
+    """
+    if "departure_date" not in _column_names(conn, "trip_plan_members"):
+        conn.execute(
+            "ALTER TABLE trip_plan_members ADD COLUMN departure_date TEXT"
+        )
+
+
+LEG_TRANSFER_COLUMNS = {
+    "departure_transfer_half_days": (
+        "INTEGER CHECK (departure_transfer_half_days BETWEEN 0 AND 60)"
+    ),
+    "arrival_transfer_half_days": (
+        "INTEGER CHECK (arrival_transfer_half_days BETWEEN 0 AND 60)"
+    ),
+}
+
+
+def apply_trip_planning_schema_v11(conn: sqlite3.Connection) -> None:
+    """Let the drive to and from an airport carry a time somebody chose.
+
+    A flown connection is three movements, and only the flight's own hours were
+    ever askable. The transfers were left as estimates the reader could see were
+    wrong and could not correct.
+    """
+    _add_columns(conn, "trip_plan_legs", LEG_TRANSFER_COLUMNS)
+
+
+LEG_TRANSFER_DETAIL_COLUMNS = {
+    "departure_transfer_mode": (
+        "TEXT CHECK (departure_transfer_mode IN "
+        "('drive', 'ground_public', 'other'))"
+    ),
+    "departure_transfer_time_hours": (
+        "REAL CHECK (departure_transfer_time_hours >= 0)"
+    ),
+    "arrival_transfer_mode": (
+        "TEXT CHECK (arrival_transfer_mode IN "
+        "('drive', 'ground_public', 'other'))"
+    ),
+    "arrival_transfer_time_hours": (
+        "REAL CHECK (arrival_transfer_time_hours >= 0)"
+    ),
+}
+
+
+def apply_trip_planning_schema_v12(conn: sqlite3.Connection) -> None:
+    """Let each airport transfer say how it is travelled and how long it takes.
+
+    Schema 11 gave the drives a length in days. How they are made was still the
+    plan's first ground mode for both ends at once, and the hours were always
+    estimated - so a train to the airport and a taxi at the other end could not
+    be described, and neither could a time the traveller already knows.
+    """
+    _add_columns(conn, "trip_plan_legs", LEG_TRANSFER_DETAIL_COLUMNS)
+
+
+STOPS_TRISTATE_TABLE = "trip_plan_stops"
+STOPS_REBUILD_TABLE = "trip_plan_stops_rebuild_v13"
+
+# A stop can only be described honestly once "not answered" is a value of its
+# own: a sample or a quote stored as 0 could never say whether somebody chose
+# "no" or never filled it in. And what a visit was planned for is not what
+# happened, so when it happened is recorded separately.
+STOPS_TRISTATE_DDL = f"""
+CREATE TABLE {STOPS_REBUILD_TABLE} (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    customer_id TEXT NOT NULL REFERENCES customers(id),
+    lead_id TEXT REFERENCES leads(id),
+    sequence_no INTEGER NOT NULL DEFAULT 1,
+    planned_date TEXT,
+    planned_end_date TEXT,
+    stay_days INTEGER NOT NULL DEFAULT 1,
+    duration_half_days INTEGER NOT NULL DEFAULT 2 CHECK (
+        duration_half_days BETWEEN 1 AND 60
+    ),
+    preferred_period TEXT NOT NULL DEFAULT 'auto' CHECK (
+        preferred_period IN ('auto', 'AM', 'PM')
+    ),
+    planned_start_period TEXT CHECK (planned_start_period IN ('AM', 'PM')),
+    planned_end_period TEXT CHECK (planned_end_period IN ('AM', 'PM')),
+    schedule_locked INTEGER NOT NULL DEFAULT 0 CHECK (schedule_locked IN (0, 1)),
+    planned_time_accepted INTEGER NOT NULL DEFAULT 0 CHECK (planned_time_accepted IN (0, 1)),
+    confirmation_status TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (
+        confirmation_status IN (
+            'unconfirmed', 'tentative', 'confirmed',
+            'needs_reconfirmation', 'cancelled'
+        )
+    ),
+    travel_from_label TEXT,
+    travel_mode TEXT,
+    travel_distance_km REAL,
+    travel_time_hours REAL,
+    travel_days INTEGER,
+    visit_purpose TEXT,
+    notes TEXT,
+    result_status TEXT NOT NULL DEFAULT 'Planned' CHECK (
+        result_status IN ('Planned', 'Visited', 'Follow-up Needed', 'Skipped')
+    ),
+    result_notes TEXT,
+    actual_visit_date TEXT,
+    actual_visit_period TEXT CHECK (actual_visit_period IN ('AM', 'PM')),
+    visit_customer_needs TEXT,
+    visit_competitor TEXT,
+    visit_budget TEXT,
+    visit_decision_maker TEXT,
+    visit_next_action TEXT,
+    visit_followup_due_date TEXT,
+    visit_sample_needed INTEGER CHECK (visit_sample_needed IN (0, 1)),
+    visit_quote_needed INTEGER CHECK (visit_quote_needed IN (0, 1)),
+    followup_activity_id TEXT REFERENCES lead_activities(id),
+    result_activity_id TEXT REFERENCES lead_activities(id),
+    archived_at TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    updated_at TEXT NOT NULL,
+    updated_by TEXT REFERENCES users(id),
+    row_version INTEGER NOT NULL DEFAULT 1
+)
+"""
+
+STOPS_INDEX_DDL = (
+    f"CREATE INDEX IF NOT EXISTS idx_trip_stops_plan "
+    f"ON {STOPS_TRISTATE_TABLE}(plan_id, sequence_no)",
+    f"CREATE INDEX IF NOT EXISTS idx_trip_stops_customer "
+    f"ON {STOPS_TRISTATE_TABLE}(customer_id)",
+    f"CREATE INDEX IF NOT EXISTS idx_trip_stops_lead "
+    f"ON {STOPS_TRISTATE_TABLE}(lead_id)",
+)
+
+# Columns whose stored meaning changes, and what each row becomes. A stored 1
+# was somebody ticking the box, so it stays. A stored 0 cannot be told apart
+# from a box nobody touched, and claiming it means "no" would invent an answer.
+STOPS_TRISTATE_TRANSFORMS = {
+    "visit_sample_needed": "CASE WHEN visit_sample_needed = 1 THEN 1 END",
+    "visit_quote_needed": "CASE WHEN visit_quote_needed = 1 THEN 1 END",
+}
+
+# Read back to prove the rebuild carried the rows, not merely the count.
+STOPS_IDENTITY_COLUMNS = (
+    "id", "plan_id", "customer_id", "lead_id", "sequence_no", "row_version",
+    "result_status", "result_activity_id", "followup_activity_id",
+    "archived_at", "created_at", "updated_at",
+)
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> dict:
+    return {row[1]: row for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _stops_are_tristate(columns: dict) -> bool:
+    """Whether this database already holds the schema 13 shape."""
+    return (
+        "actual_visit_date" in columns
+        and "actual_visit_period" in columns
+        and columns["visit_sample_needed"][3] == 0
+        and columns["visit_quote_needed"][3] == 0
+    )
+
+
+def _stops_identity(conn: sqlite3.Connection, table: str) -> set:
+    return set(
+        conn.execute(
+            f"SELECT {', '.join(STOPS_IDENTITY_COLUMNS)} FROM {table}"
+        ).fetchall()
+    )
+
+
+def apply_trip_planning_schema_v13(conn: sqlite3.Connection) -> None:
+    """Let a stop say a visit was not answered, and when it actually happened.
+
+    SQLite cannot loosen NOT NULL in place, so the table is rebuilt. Every
+    column is carried by name - a migrated database holds them in a different
+    order than a fresh one - and the rows are read back and compared before the
+    old table is let go. Anything that does not match raises, which rolls the
+    whole startup migration back onto the backup taken before it. References
+    are read back by ``validate_database_file`` after startup has committed
+    every step, not before the commit.
+    """
+    existing = _table_columns(conn, STOPS_TRISTATE_TABLE)
+    if not existing or _stops_are_tristate(existing):
+        return
+
+    conn.execute(f"DROP TABLE IF EXISTS {STOPS_REBUILD_TABLE}")
+    conn.execute(STOPS_TRISTATE_DDL)
+    rebuilt = _table_columns(conn, STOPS_REBUILD_TABLE)
+
+    lost = set(existing) - set(rebuilt)
+    if lost:
+        raise RuntimeError(
+            f"schema 13 would drop stored trip stop columns: {sorted(lost)}"
+        )
+
+    carried = [name for name in rebuilt if name in existing]
+    values = [STOPS_TRISTATE_TRANSFORMS.get(name, name) for name in carried]
+    before_count = conn.execute(
+        f"SELECT COUNT(*) FROM {STOPS_TRISTATE_TABLE}"
+    ).fetchone()[0]
+    before_identity = _stops_identity(conn, STOPS_TRISTATE_TABLE)
+    answered = conn.execute(
+        f"SELECT COUNT(*) FROM {STOPS_TRISTATE_TABLE} "
+        "WHERE visit_sample_needed = 1 OR visit_quote_needed = 1"
+    ).fetchone()[0]
+
+    conn.execute(
+        f"INSERT INTO {STOPS_REBUILD_TABLE} ({', '.join(carried)}) "
+        f"SELECT {', '.join(values)} FROM {STOPS_TRISTATE_TABLE}"
+    )
+    after_count = conn.execute(
+        f"SELECT COUNT(*) FROM {STOPS_REBUILD_TABLE}"
+    ).fetchone()[0]
+    if after_count != before_count:
+        raise RuntimeError(
+            f"schema 13 copied {after_count} of {before_count} trip stops"
+        )
+    if _stops_identity(conn, STOPS_REBUILD_TABLE) != before_identity:
+        raise RuntimeError("schema 13 changed trip stop identities or ownership")
+    kept = conn.execute(
+        f"SELECT COUNT(*) FROM {STOPS_REBUILD_TABLE} "
+        "WHERE visit_sample_needed = 1 OR visit_quote_needed = 1"
+    ).fetchone()[0]
+    if kept != answered:
+        raise RuntimeError(
+            f"schema 13 kept {kept} of {answered} answered sample or quote flags"
+        )
+
+    # The children point at the table by name, so the new one has to carry the
+    # name once the old one is gone. Reference enforcement is off for the whole
+    # startup migration; startup reads the finished database back afterwards
+    # and restores the backup if anything is left pointing at nothing.
+    conn.execute(f"DROP TABLE {STOPS_TRISTATE_TABLE}")
+    conn.execute(
+        f"ALTER TABLE {STOPS_REBUILD_TABLE} RENAME TO {STOPS_TRISTATE_TABLE}"
+    )
+    for statement in STOPS_INDEX_DDL:
+        conn.execute(statement)
+
+
+TRIP_WORKING_EXPORTS_DDL = """
+CREATE TABLE IF NOT EXISTS trip_working_exports (
+    workbook_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES trip_plans(id),
+    format TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id),
+    last_imported_at TEXT,
+    last_imported_by TEXT REFERENCES users(id)
+)
+"""
+
+TRIP_WORKING_EXPORT_ROWS_DDL = """
+CREATE TABLE IF NOT EXISTS trip_working_export_rows (
+    workbook_id TEXT NOT NULL REFERENCES trip_working_exports(workbook_id),
+    row_token TEXT NOT NULL,
+    stop_id TEXT NOT NULL REFERENCES trip_plan_stops(id),
+    row_version INTEGER NOT NULL,
+    baseline_json TEXT NOT NULL,
+    PRIMARY KEY (workbook_id, row_token)
+)
+"""
+
+TRIP_WORKING_EXPORT_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_trip_working_exports_plan "
+    "ON trip_working_exports(plan_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_trip_working_export_rows_token "
+    "ON trip_working_export_rows(row_token)",
+)
+
+
+def apply_trip_planning_schema_v14(conn: sqlite3.Connection) -> None:
+    """Record what each field workbook was issued with, on this machine.
+
+    A returned workbook cannot vouch for itself: whoever holds the file can
+    unprotect its hidden sheet and rewrite which visit a row is about, or the
+    values it was exported with, and an import that trusted them would file a
+    result against another customer or hide a real conflict. So the issuing
+    installation keeps the list, and the file carries only its own identifier
+    and one token per row.
+    """
+    conn.execute(TRIP_WORKING_EXPORTS_DDL)
+    conn.execute(TRIP_WORKING_EXPORT_ROWS_DDL)
+    for statement in TRIP_WORKING_EXPORT_INDEXES:
+        conn.execute(statement)

@@ -84,8 +84,18 @@
                     <textarea class="form-input" rows="2" id="visit-result-${h(stop.id)}" placeholder="${h(t('Meeting notes'))}">${h(stop.result_notes || '')}</textarea>
                 </div>
                 <div class="visit-check-row">
-                    <label class="trip-check"><input type="checkbox" id="visit-sample-${h(stop.id)}" ${stop.visit_sample_needed ? 'checked' : ''}> <span>${h(t('Sample needed'))}</span></label>
-                    <label class="trip-check"><input type="checkbox" id="visit-quote-${h(stop.id)}" ${stop.visit_quote_needed ? 'checked' : ''}> <span>${h(t('Quote needed'))}</span></label>
+                    <label class="trip-field"><span>${h(t('Actually visited on'))}</span>
+                        <input type="date" class="form-input" id="visit-actual-date-${h(stop.id)}" value="${h(stop.actual_visit_date || '')}">
+                    </label>
+                    <label class="trip-field"><span>${h(t('Half-day'))}</span>
+                        ${TripVisitAnswer.period(stop)}
+                    </label>
+                    <label class="trip-field"><span>${h(t('Sample needed'))}</span>
+                        ${TripVisitAnswer.answer(`visit-sample-${stop.id}`, stop.visit_sample_needed)}
+                    </label>
+                    <label class="trip-field"><span>${h(t('Quote needed'))}</span>
+                        ${TripVisitAnswer.answer(`visit-quote-${stop.id}`, stop.visit_quote_needed)}
+                    </label>
                 </div>
                 <div class="visit-action-row">
                     <button type="button" class="btn btn-primary btn-sm" onclick="TripPlannerModule.saveVisitExecution('${h(stop.id)}')">${h(t('Save visit'))}</button>

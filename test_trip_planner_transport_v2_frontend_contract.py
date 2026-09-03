@@ -106,6 +106,10 @@ let scheduled = 0;
 let writeCalls = 0;
 const context = {
   console,
+  TripPlanIdentity: { intend: () => 1,
+      accept(token, plan) { context.State.currentTripPlan = plan; return true; },
+      clear() { context.State.currentTripPlan = null; return true; },
+      isCurrent: () => true },
   State: {
     tripBusy: false,
     currentTripPlan: { id: 'p1', stops: [{ id: 'a' }], legs: [] },
@@ -130,6 +134,7 @@ for (const file of [
   'frontend/js/modules/trip-duration.js',
   'frontend/js/modules/trip-form.js',
   'frontend/js/modules/trip-stop-duration-payload.js',
+  'frontend/js/modules/trip-leg-overrides.js',
   'frontend/js/modules/trip-planning-draft.js',
   'frontend/js/modules/trip-china-hubs.js',
   'frontend/js/modules/trip-transport-actions.js',
@@ -171,8 +176,13 @@ const vm = require('vm');
 const assert = require('assert');
 const context = {
   console,
+  TripPlanIdentity: { intend: () => 1,
+      accept(token, plan) { context.State.currentTripPlan = plan; return true; },
+      clear() { context.State.currentTripPlan = null; return true; },
+      isCurrent: () => true },
   State: { currentTripPlan: { legs: [{ leg_key: 'origin>a' }, { leg_key: 'a>destination' }] } },
-  document: { readyState: 'complete', getElementById() { return null; } },
+  document: { readyState: 'complete', getElementById() { return null; },
+              querySelectorAll: () => [] },
 };
 context.window = context;
 vm.createContext(context);
@@ -223,8 +233,13 @@ const base = {
 const context = {
   console,
   Date,
+  TripPlanIdentity: { intend: () => 1,
+      accept(token, plan) { context.State.currentTripPlan = plan; return true; },
+      clear() { context.State.currentTripPlan = null; return true; },
+      isCurrent: () => true },
   State: { tripBusy: false, tripCandidatePagination: { limit: 25, offset: 0 }, currentTripPlan: base },
-  document: { readyState: 'complete', getElementById: id => elements.get(id) || null },
+  document: { readyState: 'complete', getElementById: id => elements.get(id) || null,
+              querySelectorAll: () => [] },
   TripTransportView: { render() {} },
   I18n: { t: value => value },
   toDateInput: () => '2026-09-15',
@@ -238,6 +253,7 @@ for (const file of [
   'frontend/js/modules/trip-duration.js',
   'frontend/js/modules/trip-form.js',
   'frontend/js/modules/trip-stop-duration-payload.js',
+  'frontend/js/modules/trip-leg-overrides.js',
   'frontend/js/modules/trip-planning-draft.js',
   'frontend/js/modules/trip-china-hubs.js',
   'frontend/js/modules/trip-transport-actions.js',
@@ -345,12 +361,17 @@ const assert = require('assert');
 
 const context = {
   console,
+  TripPlanIdentity: { intend: () => 1,
+      accept(token, plan) { context.State.currentTripPlan = plan; return true; },
+      clear() { context.State.currentTripPlan = null; return true; },
+      isCurrent: () => true },
   State: { currentTripPlan: null },
   TripTransportView: { render() {} },
 };
 context.window = context;
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-duration.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-leg-overrides.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planning-draft.js', 'utf8'), context);
 
 const plan = {
@@ -424,6 +445,7 @@ const context = { console, State: { currentTripPlan: null }, TripTransportView: 
 context.window = context;
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-duration.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-leg-overrides.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planning-draft.js', 'utf8'), context);
 const locked = leg_key => ({ leg_key, selected_mode: 'drive', mode_locked: true });
 const original = {
@@ -465,6 +487,10 @@ const committed = {
 };
 const context = {
   console,
+  TripPlanIdentity: { intend: () => 1,
+      accept(token, plan) { context.State.currentTripPlan = plan; return true; },
+      clear() { context.State.currentTripPlan = null; return true; },
+      isCurrent: () => true },
   State: {
     tripBusy: false,
     tripCandidatePagination: { offset: 0 },
@@ -473,7 +499,8 @@ const context = {
       stops: [{ id: 'a', sequence_no: 1, stay_days: 1 }, { id: 'b', sequence_no: 2, stay_days: 1 }],
     },
   },
-  document: { getElementById: id => elements.get(id) || null },
+  document: { getElementById: id => elements.get(id) || null,
+              querySelectorAll: () => [] },
   I18n: { t: value => value },
   TripTransportView: { render() {} },
   TripTransportActions: { schedulePreview() { previewScheduled += 1; } },
@@ -497,8 +524,10 @@ const context = {
 context.window = context;
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-duration.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-leg-overrides.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-planning-draft.js', 'utf8'), context);
 context.TripPlanningDraft.hydrate(context.State.currentTripPlan);
+vm.runInContext(fs.readFileSync('frontend/js/modules/trip-plan-list-sync.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/trip-itinerary-actions.js', 'utf8'), context);
 
 (async () => {
@@ -536,7 +565,7 @@ const escapeHtml = value => String(value ?? '')
   .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const context = {
   console, escapeHtml,
-  document: { getElementById: id => roots[id] || null },
+  document: { getElementById: id => roots[id] || null, querySelectorAll: () => [] },
   I18n: { t: (value, params = {}) => String(value).replace('{count}', params.count ?? '') },
   TripPlanningDraft: { MODES: ['flight', 'drive', 'ground_public', 'other'] },
 };

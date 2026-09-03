@@ -456,6 +456,7 @@ def check_actions_call_globals_that_exist() -> None:
         "trip-team-journeys.js",
         "trip-team-actions.js",
         "trip-flexible-suggestions.js",
+        "trip-plan-identity.js",
         "trip-stop-appointment-actions.js",
     )
     sources = "\n".join(
@@ -487,6 +488,8 @@ globalThis.renderCurrentTripPlan = () => {};
 globalThis.populateTripPlanForm = () => {};
 globalThis.confirm = () => true;
 globalThis.TripScheduleView = { renderPlan: () => {} };
+globalThis.TripPlanningDraft = { get: () => ({ dirty: false }) };
+globalThis.TripPlanRefresh = { redrawVisits: () => true };
 globalThis.TripPlannerModule = { renderVisitExecution: () => {} };
 globalThis.TripTransportActions = { schedulePreview: () => {} };
 globalThis.TripBriefingActions = { open: () => {} };
@@ -621,6 +624,262 @@ def check_module_wiring() -> None:
     assert "setTripMember" in api and "removeTripMember" in api
 
 
+JS_PERSONAL_STOP = """
+globalThis.escapeHtml = value => String(value ?? '');
+globalThis.I18n = { t: key => key };
+globalThis.window = globalThis;
+globalThis.TripFreeStopDraft = { mark() {} };
+const fields = {};
+const people = { checked: [], list: [] };
+function node(id) {
+    if (id === 'trip-free-stop-people-list') {
+        return {
+            set innerHTML(html) {
+                people.list = [...html.matchAll(/value="([^"]+)"/g)].map(m => m[1]);
+            },
+            querySelectorAll: () => people.checked.map(value => ({ value })),
+        };
+    }
+    if (!(id in fields)) fields[id] = { value: '', hidden: false };
+    return fields[id];
+}
+globalThis.document = { getElementById: node };
+globalThis.State = {};
+__MODULE__
+const ctl = window.TripFreeStopTeamControls;
+
+// Team mode: the stop can name a day and the people who stop there.
+State.currentTripPlan = { planning_mode: 'team', members: [
+    { user_id: 'a', display_name: 'Ayden' }, { user_id: 'b', display_name: 'Slluu' },
+] };
+ctl.render({ planned_date: '2026-09-04', planned_start_period: 'PM',
+             participant_user_ids: ['a'] });
+const shown = { people: node('trip-free-stop-people').hidden,
+                timing: node('trip-free-stop-team-timing').hidden,
+                listed: people.list,
+                date: node('trip-free-stop-start-date').value,
+                period: node('trip-free-stop-start-period').value };
+people.checked = ['a'];
+const dated = ctl.payload();
+node('trip-free-stop-start-date').value = '';
+const undated = ctl.payload();
+
+// Single-traveller mode sends none of it and shows none of it.
+State.currentTripPlan = { planning_mode: 'legacy', members: [] };
+ctl.render({});
+const legacy = { payload: ctl.payload(),
+                 people: node('trip-free-stop-people').hidden,
+                 timing: node('trip-free-stop-team-timing').hidden };
+console.log(JSON.stringify({ shown, dated, undated, legacy }));
+"""
+
+
+def check_personal_stop_carries_its_people_and_day() -> None:
+    """A personal stop on a team trip says who stops there, and when.
+
+    Without either, every personal stop is attended by the whole team and is
+    fitted in wherever the route has room: a member who should have flown home
+    is flown to somebody else's hotel instead. The single-traveller form must
+    not change, because there is nobody to choose between.
+    """
+    source = (MODULES / "trip-free-stop-team-controls.js").read_text(
+        encoding="utf-8"
+    )
+    data = json.loads(_node_json(
+        JS_PERSONAL_STOP.replace("__MODULE__", source)
+    ))
+    assert data["shown"]["people"] is False, "team mode must show who stops here"
+    assert data["shown"]["timing"] is False, "team mode must show the stay day"
+    assert data["shown"]["listed"] == ["a", "b"], data["shown"]["listed"]
+    assert data["shown"]["date"] == "2026-09-04", data["shown"]
+    assert data["shown"]["period"] == "PM", data["shown"]
+
+    assert data["dated"]["participant_user_ids"] == ["a"], data["dated"]
+    assert data["dated"]["planned_date"] == "2026-09-04", data["dated"]
+    assert data["dated"]["planned_start_period"] == "PM", data["dated"]
+    assert data["dated"]["schedule_locked"] is True, (
+        "a stop given a day must hold that day, or the route moves it"
+    )
+    assert data["undated"]["planned_date"] is None, data["undated"]
+    assert data["undated"]["schedule_locked"] is False, (
+        "a stop with no day must stay free for the route to place"
+    )
+
+    assert data["legacy"]["payload"] == {}, (
+        f"single-traveller plans send no team fields: {data['legacy']['payload']}"
+    )
+    assert data["legacy"]["people"] is True and data["legacy"]["timing"] is True
+
+    form = (MODULES / "trip-free-stop-form.js").read_text(encoding="utf-8")
+    assert "TripFreeStopTeamControls?.payload?.()" in form, (
+        "the save payload must carry the team fields, or the controls are "
+        "shown and then thrown away"
+    )
+    assert "TripFreeStopTeamControls?.render?.(stop)" in form, (
+        "opening a saved stop must show what it already says"
+    )
+
+
+JS_WHOLE_TEAM = """
+globalThis.window = globalThis;
+globalThis.escapeHtml = value => String(value ?? '');
+globalThis.I18n = { t: key => key };
+globalThis.State = {};
+__DRAFT__
+__VISIT__
+const team = [
+    { user_id: 'a', display_name: 'Ayden', role: 'tech' },
+    { user_id: 'b', display_name: 'Slluu', role: 'leader' },
+];
+State.currentTripPlan = { planning_mode: 'team', members: team };
+
+// Nobody named: the whole team goes, so the whole team is shown.
+const blank = TripBriefingDraft.normalizeRecord({});
+const blankLine = TripVisitState.internalParticipantsLine({});
+
+// Somebody named: only they go, and nothing is added to them.
+const chosen = TripBriefingDraft.normalizeRecord({
+    participants: [{ user_id: 'a', display_name: 'Ayden' }],
+});
+const chosenLine = TripVisitState.internalParticipantsLine({
+    briefing: { participants: [{ user_id: 'a', display_name: 'Ayden' }] },
+});
+
+// Switching back to single-traveller leaves the member rows on the plan, so
+// the mode has to be what decides this, not whether a team list exists.
+State.currentTripPlan = { planning_mode: 'legacy', members: team };
+const legacy = TripBriefingDraft.normalizeRecord({});
+const legacyLine = TripVisitState.internalParticipantsLine({});
+
+console.log(JSON.stringify({
+    blank: blank.participants.map(item => [item.user_id, item.display_name]),
+    blankLine, chosen: chosen.participants.map(item => item.user_id), chosenLine,
+    legacy: legacy.participants.length, legacyLine,
+}));
+"""
+
+
+def check_whole_team_is_shown_not_left_blank() -> None:
+    """"Everybody goes" is written out, not left as an empty field.
+
+    A visit that names nobody is attended by the whole team. Shown as an empty
+    list it reads as the opposite - nobody is going - and there is nothing to
+    remove a person from. So the team is filled in, each on its own row the
+    editor can already add to and delete from.
+    """
+    data = json.loads(_node_json(
+        JS_WHOLE_TEAM
+        .replace("__DRAFT__", (MODULES / "trip-briefing-draft.js").read_text(
+            encoding="utf-8"))
+        .replace("__VISIT__", (MODULES / "trip-visit-state.js").read_text(
+            encoding="utf-8"))
+    ))
+    assert data["blank"] == [["a", "Ayden"], ["b", "Slluu"]], (
+        f"a visit naming nobody must open with the whole team on it: {data['blank']}"
+    )
+    assert data["blankLine"] == "Ayden · Slluu", (
+        f"the saved visit must read as the whole team, not a dash: {data['blankLine']}"
+    )
+    assert data["chosen"] == ["a"], (
+        f"naming one person must not quietly add the rest: {data['chosen']}"
+    )
+    assert data["chosenLine"] == "Ayden", data["chosenLine"]
+    assert data["legacy"] == 0, (
+        "a single-traveller plan must not fill in attendees, even while the "
+        f"member rows of a previous team plan are still on it: {data['legacy']}"
+    )
+    assert not data["legacyLine"], data["legacyLine"]
+
+    rows = (MODULES / "trip-briefing-rows.js").read_text(encoding="utf-8")
+    for action in ("'add'", "'remove'"):
+        assert f"arrayAction('participants',{action}" in rows.replace(" ", "") \
+            or f"arrayAction('${{kind}}',{action}" in rows.replace(" ", ""), (
+            f"the filled-in team must be editable: no {action} control"
+        )
+
+
+JS_ROW_IDENTITY = """
+globalThis.window = globalThis;
+globalThis.escapeHtml = value => String(value ?? '');
+globalThis.I18n = { t: (key, params = {}) =>
+    String(key).replace(/\\{(\\w+)\\}/g, (_, name) => params[name] ?? `{${name}}`) };
+globalThis.TripDuration = {
+    label: v => `${v}`, toDisplayTravelDays: v => String(v),
+    parseDisplayTravelDays: v => Number(v),
+};
+const nodes = {};
+globalThis.document = {
+    getElementById: id => (nodes[id] = nodes[id]
+        || { id, value: '', textContent: '', innerHTML: '', hidden: false }),
+};
+globalThis.State = {};
+globalThis.TripPlanningDraft = { MODES: ['flight', 'drive', 'ground_public', 'other'] };
+__TIMELINE__
+__JOURNEYS__
+__VIEW__
+const plan = {
+    planning_mode: 'team',
+    members: [
+        { user_id: 'a', display_name: 'Ayden' },
+        { user_id: 'b', display_name: 'Slluu' },
+    ],
+    legs: [
+        { leg_key: 'origin>x', member_id: 'a', selected_mode: 'flight',
+          from_label: 'Shenzhen', to_label: 'VJT', from: 'Shenzhen', to: 'VJT',
+          distance_km: 9039.5, time_hours: 16.6, travel_half_days: 4 },
+        { leg_key: 'origin>x', member_id: 'b', selected_mode: 'flight',
+          from_label: 'Shenzhen', to_label: 'VJT', from: 'Shenzhen', to: 'VJT',
+          distance_km: 9039.5, time_hours: 16.6, travel_half_days: 4 },
+        { leg_key: 'x>y', member_id: 'a', selected_mode: 'drive',
+          from_label: 'VJT', to_label: 'PMI', from: 'VJT', to: 'PMI',
+          distance_km: 306.4, time_hours: 4.1, travel_half_days: 1 },
+    ],
+};
+TripTransportView.render(plan, { legOverrides: {}, transportModePriority: ['flight', 'drive'] });
+console.log(JSON.stringify({
+    rows: [0, 1, 2].map(index => {
+        const leg = TripTransportView.legAt(index);
+        return leg ? `${leg.leg_key}|${leg.selected_mode}` : null;
+    }),
+}));
+"""
+
+
+def check_a_row_number_finds_the_leg_that_row_shows() -> None:
+    """Editing a row edits the leg that row is showing.
+
+    Colleagues travelling together are drawn as one row, so a row number stopped
+    being a position in plan.legs. Every control on a row - the transport mode,
+    the airports, the search - is handed that number, and resolving it against
+    the unmerged list writes onto a different journey: an airport lands on a
+    connection nobody is looking at, and the row the user filled in stays empty.
+    """
+    data = json.loads(_node_json(
+        JS_ROW_IDENTITY
+        .replace("__TIMELINE__", (MODULES / "trip-team-timeline.js").read_text(
+            encoding="utf-8"))
+        .replace("__JOURNEYS__", (MODULES / "trip-team-journeys.js").read_text(
+            encoding="utf-8"))
+        .replace("__VIEW__", (MODULES / "trip-transport-view.js").read_text(
+            encoding="utf-8"))
+    ))
+    assert data["rows"][0] == "origin>x|flight", data["rows"]
+    assert data["rows"][1] == "x>y|drive", (
+        "the second row shows the second journey, not the second leg of the "
+        f"first one: {data['rows']}"
+    )
+    assert data["rows"][2] is None, (
+        f"there is no third row to edit: {data['rows']}"
+    )
+
+    for name in ("trip-leg-airports.js", "trip-leg-actions.js",
+                 "trip-suggestion-actions.js"):
+        source = (MODULES / name).read_text(encoding="utf-8")
+        assert "currentTripPlan?.legs?.[index]" not in source, (
+            f"{name} still resolves a row number against the unmerged leg list"
+        )
+
+
 def main() -> None:
     check_shared_events_merge()
     check_parallel_events_stay_separate()
@@ -636,6 +895,9 @@ def main() -> None:
     check_only_a_decision_reads_as_planned()
     check_actions_call_globals_that_exist()
     check_team_legs_are_listed_once_per_journey()
+    check_personal_stop_carries_its_people_and_day()
+    check_whole_team_is_shown_not_left_blank()
+    check_a_row_number_finds_the_leg_that_row_shows()
     check_module_wiring()
     print("PASS: team risk bar, travel team card and team timeline contracts")
 

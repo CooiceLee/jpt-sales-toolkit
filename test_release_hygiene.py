@@ -85,7 +85,44 @@ def check_served_pages_are_packaged() -> None:
     )
 
 
+def check_every_served_module_is_tracked_by_git() -> None:
+    """A page cannot ship a script the repository does not contain.
+
+    The served pages name their modules by path. A module left untracked is
+    absent from any build made from the repository, so the browser gets a 404
+    and every button that module owns silently does nothing - with the page
+    itself looking entirely normal.
+    """
+    import re
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "frontend"],
+        cwd=ROOT, capture_output=True, text=True, check=False,
+    )
+    if tracked.returncode != 0:
+        return  # Not a checkout; nothing to compare against.
+    known = {name for name in tracked.stdout.split("\0") if name}
+
+    missing = []
+    for page in sorted(ROOT.joinpath("frontend").glob("*.html")):
+        referenced = re.findall(
+            r'(?:src|href)="/static/([^"?]+)', page.read_text(encoding="utf-8")
+        )
+        for path in referenced:
+            asset = f"frontend/{path}"
+            if not ROOT.joinpath(asset).exists():
+                missing.append(f"{page.name} -> {path} (file does not exist)")
+            elif asset not in known:
+                missing.append(f"{page.name} -> {path} (not tracked by git)")
+    assert not missing, (
+        "these served pages reference assets a build from the repository would "
+        f"not have: {missing}"
+    )
+
+
 def main() -> None:
+    check_every_served_module_is_tracked_by_git()
     check_served_pages_are_packaged()
     tracked = subprocess.check_output(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],

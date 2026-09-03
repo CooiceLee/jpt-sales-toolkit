@@ -115,6 +115,7 @@ def _simulate(core, team, events, settings, flexible_index, slot):
         core, team, trial, settings["origins"], settings["initial_slot"],
         settings["priority"], destinations=settings["destinations"],
         leg_settings=settings["leg_settings"],
+        departures=settings.get("departures") or {},
     )
 
 
@@ -163,6 +164,7 @@ def suggest_flexible_visits(core, team, events, settings) -> list:
         settings["origins"], settings["initial_slot"], settings["priority"],
         destinations=settings["destinations"],
         leg_settings=settings["leg_settings"],
+        departures=settings.get("departures") or {},
     )
     baseline_risks = {_risk_key(risk) for risk in baseline.risks}
     baseline_cost = _cost(baseline)

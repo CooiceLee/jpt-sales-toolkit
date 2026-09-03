@@ -22,7 +22,10 @@ import test_trip_planner_batch4 as fixture
 
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 REL_NS = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
-EXPECTED_SHEETS = ["拜访计划", "完整日程", "交通行程"]
+EXPECTED_SHEETS = ["行程总览", "拜访计划", "完整日程", "交通行程"]
+# The page carries the trip summary as its heading, not as a table.
+EXPECTED_PAGE_SECTIONS = ["拜访计划", "完整日程", "交通行程"]
+SHARED_SHEETS = ["行程总览", "完整日程", "交通行程"]
 REFERENCE_HEADERS = [
     "No.",
     "Company Name",
@@ -175,6 +178,23 @@ def _prepare_plan(client: TestClient, ctx: dict) -> dict:
         ),
         200,
     )
+    # A visit that says what it is for and carries a note, so the two copies
+    # have something to differ about.
+    customer = next(
+        stop for stop in plan["stops"] if stop.get("stop_kind") != "free"
+    )
+    plan = fixture._require(
+        client.patch(
+            f"/api/review/trip-plans/{plan['id']}/stops/{customer['id']}",
+            headers=ctx["headers"]["owner"],
+            json={
+                "row_version": customer["row_version"],
+                "visit_purpose": "推进 2000W 报价并确认样品测试排期",
+                "notes": "对方采购负责人本周在总部",
+            },
+        ),
+        200,
+    )
     durations = {
         stop["id"]: {"half_days": 1, "preferred_period": "auto", "locked": False}
         for stop in plan["stops"]
@@ -189,6 +209,121 @@ def _prepare_plan(client: TestClient, ctx: dict) -> dict:
     )
 
 
+PREPARATION_COLUMNS = ("目的 / Purpose", "备注 / Notes")
+
+
+def _arrangement(content: bytes) -> list[tuple]:
+    """Every printed itinerary cell except what a visit is prepared for.
+
+    Read back through the reader the application itself uses, so a workbook
+    that does not open fails here rather than in someone's Excel.
+    """
+    from backend.services.importing.workbook import read_workbook
+
+    sheet = read_workbook(content, "trip.xlsx").sheets["完整日程"]
+    numbers = sorted(sheet.rows)
+    header = {
+        index: cell.value
+        for index, cell in sheet.rows[numbers[0]].cells.items()
+    }
+    dropped = {index for index, name in header.items() if name in PREPARATION_COLUMNS}
+    assert len(dropped) == len(PREPARATION_COLUMNS), (
+        f"the itinerary no longer has {PREPARATION_COLUMNS}: {sorted(header.values())}"
+    )
+    return [
+        tuple(
+            (header[index], cell.value)
+            for index, cell in sorted(sheet.rows[number].cells.items())
+            if index not in dropped
+        )
+        for number in numbers[1:]
+    ]
+
+
+def _assert_same_arrangement(shared_content: bytes, full_content: bytes) -> None:
+    shared_rows, full_rows = _arrangement(shared_content), _arrangement(full_content)
+    assert len(shared_rows) == len(full_rows), (
+        f"the shared copy prints {len(shared_rows)} lines against {len(full_rows)}"
+    )
+    for number, (shared_row, full_row) in enumerate(zip(shared_rows, full_rows), 2):
+        assert shared_row == full_row, (
+            f"line {number} of the itinerary differs between the two copies: "
+            f"{[pair for pair in shared_row if pair not in full_row]}"
+        )
+
+
+def check_shared_copy(client: TestClient, plan: dict, ctx: dict) -> None:
+    """The copy meant to be forwarded carries the trip and nothing prepared for a visit.
+
+    This is the file the whole team confirms, so it has to hold every day and
+    every journey, arrive under its own name, and leave behind the contacts,
+    equipment and topics gathered for the customers being visited.
+    """
+    base = f"/api/review/trip-plans/{plan['id']}/export"
+    shared = client.get(
+        f"{base}.xlsx?variant=shared", headers=ctx["headers"]["owner"]
+    )
+    assert shared.status_code == 200, shared.text
+    sheets, texts, _ = _xlsx_text(shared.content)
+    assert sheets == SHARED_SHEETS, sheets
+
+    full = client.get(f"{base}.xlsx", headers=ctx["headers"]["owner"])
+    full_sheets, full_texts, _ = _xlsx_text(full.content)
+    assert texts["交通行程"] == full_texts["交通行程"], (
+        "the shared copy changed the journeys, so the two copies disagree about "
+        "the trip the team is confirming"
+    )
+    assert "行程总览" in texts and texts["行程总览"] == full_texts["行程总览"]
+    # The itinerary is the same arrangement in both, cell by cell, apart from
+    # the two columns that describe what a visit is for.
+    _assert_same_arrangement(shared.content, full.content)
+
+    joined = "\n".join(texts.values())
+    for prepared in (
+        "Yeo-hun Son", "Kim Sungkyu", "Anna Becker", "CW 2000W", "FC 500W",
+        "Introduce JPT and RAYXION",
+    ):
+        assert prepared not in joined, (
+            f"{prepared!r} was prepared for a visit and reached the copy anyone "
+            "may forward"
+        )
+    assert "RAYXION" in joined, "the shared copy still has to say who is visited"
+
+    # What a customer visit is for is prepared for that visit, so it stays out
+    # of the copy anyone may forward - including the page and the calendar,
+    # which are each shared on their own.
+    purposes = [
+        stop["visit_purpose"] for stop in plan["stops"]
+        if stop.get("stop_kind") == "customer" and stop.get("visit_purpose")
+    ]
+    purposes += [
+        stop["notes"] for stop in plan["stops"]
+        if stop.get("stop_kind") == "customer" and stop.get("notes")
+    ]
+    assert len(purposes) >= 2, "the fixture has to give a visit a purpose and a note"
+    page = client.get(f"{base}.html?variant=shared", headers=ctx["headers"]["owner"])
+    assert page.status_code == 200, page.text
+    calendar = client.get(f"{base}.ics", headers=ctx["headers"]["owner"])
+    assert calendar.status_code == 200, calendar.text
+    for purpose in purposes:
+        assert purpose not in joined, f"{purpose!r} reached the shared workbook"
+        assert purpose not in page.text, f"{purpose!r} reached the shared page"
+        assert purpose not in calendar.text, f"{purpose!r} reached the calendar"
+    assert "拜访计划" not in page.text, "the shared page still holds the visit table"
+
+    shared_name = shared.headers.get("content-disposition", "")
+    full_name = full.headers.get("content-disposition", "")
+    assert shared_name != full_name, (
+        f"both copies download as {full_name}, so one overwrites the other"
+    )
+
+    bad = client.get(f"{base}.xlsx?variant=partial", headers=ctx["headers"]["owner"])
+    assert bad.status_code == 422, (
+        "an unknown version has to be refused rather than quietly served as the "
+        f"full copy: {bad.status_code}"
+    )
+
+
 def check_exports(client: TestClient, ctx: dict) -> None:
     plan = _prepare_plan(client, ctx)
     base = f"/api/review/trip-plans/{plan['id']}/export"
@@ -199,6 +334,7 @@ def check_exports(client: TestClient, ctx: dict) -> None:
         )
         for extension in ("xlsx", "html", "ics")
     }
+    check_shared_copy(client, plan, ctx)
     assert fixture._snapshot() == before, "downloads must not write business data"
     for extension, response in responses.items():
         assert response.status_code == 200, (extension, response.text)
@@ -261,7 +397,7 @@ def check_exports(client: TestClient, ctx: dict) -> None:
     assert not re.search(r"(?:src|href)=[\"'](?:https?:)?//", page, re.I)
     assert "<script>alert(1)</script>" not in page
     assert html.escape("<script>alert(1)</script>") in page
-    for title in EXPECTED_SHEETS:
+    for title in EXPECTED_PAGE_SECTIONS:
         assert title in page, title
     assert "里昂休息站 &amp; 行前准备" in page
     assert "MISSING" not in page

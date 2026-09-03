@@ -27,6 +27,14 @@
                 <small>${h(endpointLine(plan, member))}</small>
                 ${metrics ? `<small class="trip-team-metrics">${h(metrics)}</small>` : ''}
             </div>
+            <label class="trip-team-departure">
+                <span>${h(t('Leaves on'))}</span>
+                <input type="date" class="form-input"
+                    id="trip-team-departure-${h(member.user_id)}"
+                    value="${h(member.departure_date || '')}"
+                    onchange="TripTeamActions.departureChanged('${h(member.user_id)}', this.value)"
+                    title="${h(t('Empty means this member leaves with the team.'))}">
+            </label>
             <button type="button" class="btn btn-secondary btn-sm trip-team-remove"
                 title="${h(t('Remove'))}" aria-label="${h(t('Remove'))}"
                 onclick="TripTeamActions.remove('${h(member.user_id)}')">&times;</button>
