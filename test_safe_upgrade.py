@@ -459,9 +459,9 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
 
 
 # Every schema an installed release could be sitting on. 0.11.9 shipped schema 3,
-# 0.12.0 shipped schema 6 and 0.13.0 shipped schema 9; 7 and 8 were reached on the
-# way and are covered so a later migration cannot skip them. Schema 9 matters most
-# here: it is what the team is running right now.
+# 0.12.0 shipped schema 6 and 0.12.1 shipped schema 9; 7, 8 and 10 to 13 were
+# reached on the way and are covered so a later migration cannot skip them.
+# 0.13.1 ships schema 14.
 INTERMEDIATE_SCHEMA_BASELINES = (6, 7, 8, 9, 10, 11, 12, 13)
 
 # What each migration added, so a fixture can be wound back to an earlier shape.
