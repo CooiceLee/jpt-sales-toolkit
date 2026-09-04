@@ -249,9 +249,23 @@ def check_the_files_say_unanswered_rather_than_no(
     client: TestClient, ctx: dict, plan: dict
 ) -> None:
     """The daily report and the CSV print three states, not two."""
+    # Moving a visit above genuinely invalidated the route, and a file is only
+    # produced from a route somebody saved. So it is worked out again first,
+    # the same way the reader would.
+    current = fixture._require(
+        client.get(f"/api/review/trip-plans/{plan['id']}",
+                   headers=ctx["headers"]["owner"]), 200)
+    durations = {
+        stop["id"]: {"half_days": 1, "preferred_period": "auto", "locked": False}
+        for stop in current["stops"]
+    }
+    fixture._require(
+        client.post(f"/api/review/trip-plans/{plan['id']}/generate-itinerary",
+                    headers=ctx["headers"]["owner"],
+                    json=fixture._route_payload(current, durations)), 200)
     base = f"/api/review/trip-plans/{plan['id']}"
     report = client.get(f"{base}/execution.md", headers=ctx["headers"]["owner"])
-    assert report.status_code == 200, report.status_code
+    assert report.status_code == 200, (report.status_code, report.text[:200])
     markdown = report.text
     assert "未填写 / Not answered" in markdown, (
         "a question nobody answered is printed as an answer"

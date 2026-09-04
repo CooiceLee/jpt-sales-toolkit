@@ -47,7 +47,7 @@
         const panel = document.getElementById('trip-suggestions-panel');
         const body = document.getElementById('trip-suggestions-body');
         if (!panel || !body) return;
-        panel.hidden = plan?.planning_mode !== 'team';
+        panel.hidden = !plan?.id;
         if (panel.hidden) {
             state = null;
             body.innerHTML = '';

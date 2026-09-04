@@ -34,17 +34,32 @@ def check_static_contract() -> None:
     for element_id in (
         "trip-route-order-mode",
         "trip-transport-priority",
-        "trip-departure-window-start",
-        "trip-departure-window-end",
-        "trip-return-window-start",
-        "trip-return-window-end",
         "trip-leg-list",
         "trip-draft-status",
         "trip-origin-preset",
         "trip-destination-preset",
     ):
         assert f'id="{element_id}"' in index, element_id
-    assert index.count('type="datetime-local"') >= 4
+    # A trip runs between the plan's own dates and each member's own departure
+    # day. The two windows that said the same thing for everybody at once were
+    # a second place to look and a second thing to keep in step, so they are
+    # gone - and must not come back.
+    for removed in (
+        "trip-departure-window-start", "trip-departure-window-end",
+        "trip-return-window-start", "trip-return-window-end",
+    ):
+        assert removed not in index, f"{removed} is back on the page"
+    route_form = (MODULES / "trip-route-form.js").read_text(encoding="utf-8")
+    for source in (route_form, transport_actions, draft, form):
+        for control in ("departure-window", "return-window",
+                        "departureWindow", "returnWindow"):
+            assert control not in source, f"{control} is still read from the page"
+    # Sent as nothing on every save, so a plan that still carries the old
+    # windows is cleared the first time it is saved rather than being
+    # scheduled around dates nobody can see any more.
+    for field in ("departure_window_start", "departure_window_end",
+                  "return_window_start", "return_window_end"):
+        assert f"{field}: null" in form, f"{field} is not cleared on save"
     assert "trip-planning-draft.js" in index
     assert "trip-transport-view.js" in index
     assert "trip-transport-actions.js" in index
@@ -216,8 +231,7 @@ function field(id, value = '', checked = false) {
   'trip-title', 'trip-start-date', 'trip-end-date', 'trip-plan-region',
   'trip-origin-name', 'trip-origin-lat', 'trip-origin-lng', 'trip-origin-preset',
   'trip-destination-name', 'trip-destination-lat', 'trip-destination-lng', 'trip-destination-preset',
-  'trip-route-order-mode', 'trip-travel-mode', 'trip-departure-window-start',
-  'trip-departure-window-end', 'trip-return-window-start', 'trip-return-window-end',
+  'trip-route-order-mode', 'trip-travel-mode',
   'trip-holidays', 'trip-description', 'stop-stay-a',
 ].forEach(id => field(id));
 field('trip-avoid-weekends', '', true);
@@ -271,10 +285,6 @@ elements.get('trip-destination-lng').value = '114.0579';
 elements.get('trip-avoid-weekends').checked = false;
 elements.get('trip-holidays').value = '2026-09-18, 2026-09-25';
 elements.get('trip-description').value = 'Keep this unsaved note';
-elements.get('trip-departure-window-start').value = '2026-09-14T18:00';
-elements.get('trip-departure-window-end').value = '2026-09-15T12:00';
-elements.get('trip-return-window-start').value = '2026-09-29T18:00';
-elements.get('trip-return-window-end').value = '2026-09-30T23:00';
 context.TripTransportActions.routeFieldChanged();
 context.TripTransportActions.headerChanged();
 context.TripPlanningDraft.change(draft => {
@@ -310,8 +320,6 @@ assert.strictEqual(elements.get('trip-origin-name').value, 'Shanghai Pudong Inte
 assert.strictEqual(elements.get('trip-avoid-weekends').checked, false);
 assert.strictEqual(elements.get('trip-holidays').value, '2026-09-18, 2026-09-25');
 assert.strictEqual(elements.get('trip-description').value, 'Keep this unsaved note');
-assert.strictEqual(elements.get('trip-departure-window-start').value, '2026-09-14T18:00');
-assert.strictEqual(elements.get('trip-return-window-end').value, '2026-09-30T23:00');
 
 // The real stop card is rendered from the durable draft after each refresh.
 // Mirror that visible 1.5-day field in this DOM-only harness.
@@ -325,8 +333,8 @@ assert.strictEqual(payload.origin_lng, 121.8083);
 assert.strictEqual(payload.destination_name, 'Shenzhen office');
 assert.strictEqual(payload.avoid_weekends, false);
 assert.deepStrictEqual(Array.from(payload.holiday_dates), ['2026-09-18', '2026-09-25']);
-assert.strictEqual(payload.departure_window_start, '2026-09-14T18:00');
-assert.strictEqual(payload.return_window_end, '2026-09-30T23:00');
+assert.strictEqual(payload.departure_window_start, null);
+assert.strictEqual(payload.return_window_end, null);
 assert.deepStrictEqual(Array.from(payload.stop_order), ['a']);
 assert.strictEqual(payload.stop_durations.a.half_days, 3);
 assert.strictEqual(Object.hasOwn(payload, 'stop_stays'), false);
@@ -411,8 +419,8 @@ assert.strictEqual(payload.stop_durations.a.half_days, 3);
 assert.strictEqual(Object.hasOwn(payload, 'stop_stays'), false);
 assert.strictEqual(payload.leg_overrides['b>a'].selected_mode, 'other');
 assert.strictEqual(payload.leg_overrides['b>a'].manual_time_hours, 2.5);
-assert.strictEqual(payload.departure_window_start, '2026-09-14T18:00');
-assert.strictEqual(payload.return_window_end, '2026-09-30T23:00');
+assert.strictEqual(payload.departure_window_start, null);
+assert.strictEqual(payload.return_window_end, null);
 assert.strictEqual(context.TripPlanningDraft.get().dirty, true);
 
 const preview = {

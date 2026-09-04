@@ -429,13 +429,12 @@ const fs=require('fs');const vm=require('vm');
 const elements=new Map();
 [
  'trip-title','trip-start-date','trip-end-date','trip-plan-region',
- 'trip-planning-mode','trip-origin-name','trip-origin-lat','trip-origin-lng',
+ 'trip-origin-name','trip-origin-lat','trip-origin-lng',
  'trip-destination-name','trip-destination-lat','trip-destination-lng',
  'trip-holidays','trip-description','trip-avoid-weekends',
  'trip-route-order-mode','trip-travel-mode','trip-departure-window-start',
  'trip-departure-window-end','trip-return-window-start','trip-return-window-end',
 ].forEach(id => elements.set(id, { id, value: '', checked: false }));
-elements.get('trip-planning-mode').value = 'team';
 const context = {
   console, Date,
   TripPlanIdentity: { intend: () => 1,
@@ -464,9 +463,8 @@ console.log(JSON.stringify(Object.keys(context.readTripItineraryPayload())));
     header = json.loads(_node_json(r"""
 const fs=require('fs');const vm=require('vm');
 const elements=new Map();
-['trip-title','trip-planning-mode','trip-avoid-weekends','trip-holidays']
+['trip-title','trip-avoid-weekends','trip-holidays']
   .forEach(id => elements.set(id, { id, value: '', checked: false }));
-elements.get('trip-planning-mode').value = 'team';
 const context = { console, Date,
   TripPlanIdentity: { intend: () => 1,
       accept(token, plan) { context.State.currentTripPlan = plan; return true; },
@@ -484,8 +482,10 @@ for (const file of ['trip-form.js', 'trip-stop-duration-payload.js']) {
 }
 console.log(JSON.stringify(context.readTripPlanFormPayload()));
 """))
+    # No control decides this any more: a plan is a team trip because that is
+    # the only kind there is, and the page has to say so with nothing to read.
     assert header.get("planning_mode") == "team", (
-        f"creating or updating a plan must still carry the mode: {header}"
+        f"a new plan must be created as a team trip: {header}"
     )
 
 
@@ -597,37 +597,31 @@ console.log(JSON.stringify(context.TripStopScheduleControls.readPayload('s1')));
     assert "trip-stop-appointment-actions.js" in index, "module never loaded"
 
 
-def check_planning_mode_is_saved_not_drafted() -> None:
-    """Switching how a plan is planned has to reach the server.
+def check_there_is_one_way_to_plan_a_trip() -> None:
+    """A trip is planned as a team, and nothing offers to plan it otherwise.
 
-    The mode decides which calculation runs and which panels belong on screen.
-    Kept only in the route draft it never reached the plan, so switching back to
-    one traveller left the team panels up and the next save still refused the
-    plan for having no team members.
+    Two ways of planning meant two calculations, two sets of panels and a
+    switch between them that had to be saved before either was right. One way
+    removes the switch, and the page must not grow it back: a control that
+    writes a mode nothing reads is a setting the user changes to no effect.
     """
-    route_form = _source("frontend/js/modules/trip-route-form.js")
-    assert "'trip-planning-mode'" not in route_form, (
-        "the mode is a plan setting, not one of the route draft's fields"
-    )
     index = _source("frontend/index.html")
-    assert 'id="trip-planning-mode"' in index
-    select = index[index.index('id="trip-planning-mode"'):]
-    select = select[:select.index(">")]
-    assert "TripPlanningModeActions.planningModeChanged()" in select, (
-        f"changing the mode must save it: {select}"
+    assert "trip-planning-mode" not in index, (
+        "the planning-mode control is back on the page"
     )
-    actions = _source("frontend/js/modules/trip-stop-appointment-actions.js")
-    assert "updateTripPlan" in actions and "planning_mode" in actions, (
-        "the mode must be sent to the plan endpoint"
+    assert "TripPlanningModeActions" not in index, (
+        "the planning-mode action is back on the page"
     )
-    # The panels follow the saved plan, so saving is what makes them appear and
-    # disappear; nothing may read the mode off the form instead.
-    for module in ("trip-team-view.js", "trip-schedule-view.js",
-                   "trip-flexible-suggestions.js"):
+    for module in ("trip-route-form.js", "trip-team-view.js",
+                   "trip-schedule-view.js", "trip-flexible-suggestions.js",
+                   "trip-stop-appointment-actions.js", "trip-form.js",
+                   "trip-planning-draft.js"):
         source = _source(f"frontend/js/modules/{module}")
         assert "trip-planning-mode" not in source, (
-            f"{module} must read the saved mode, not the form control"
+            f"{module} still reads a mode control that no longer exists"
         )
+    # The travel team is not optional, so its panel is always on the page.
+    assert 'id="trip-team-panel"' in index, "the travel team panel is missing"
 
 
 def check_assets_are_stamped_with_the_build() -> None:
@@ -1260,7 +1254,7 @@ def main() -> None:
     check_itinerary_payload_carries_no_undeclared_field()
     check_free_stop_payload_carries_no_undeclared_field()
     check_agreed_visit_time_can_be_entered()
-    check_planning_mode_is_saved_not_drafted()
+    check_there_is_one_way_to_plan_a_trip()
     check_assets_are_stamped_with_the_build()
     check_calendar_dates_are_timezone_invariant()
     check_region_state_and_sibling_visit_draft_are_preserved()

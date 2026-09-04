@@ -16,7 +16,7 @@
                 region: plan?.region || null,
                 // Without this the form falls back to single-traveller and
                 // the next header save turns a team trip solo.
-                planning_mode: plan?.planning_mode === 'team' ? 'team' : 'legacy',
+                planning_mode: 'team',
                 origin_name: plan?.origin_name || null,
                 origin_lat: plan?.origin_lat ?? null,
                 origin_lng: plan?.origin_lng ?? null,
@@ -29,10 +29,6 @@
             },
             routeOrderMode: plan?.route_order_mode === 'manual' ? 'manual' : 'auto',
             transportModePriority: priority(plan?.transport_mode_priority, plan?.travel_mode),
-            departureWindowStart: plan?.departure_window_start || '',
-            departureWindowEnd: plan?.departure_window_end || '',
-            returnWindowStart: plan?.return_window_start || '',
-            returnWindowEnd: plan?.return_window_end || '',
             stopOrder: stops.map(stop => stop.id),
             stopDurations: Object.fromEntries(stops.map(stop => [stop.id, {
                 half_days: TripDuration.readStopDuration(stop),
@@ -119,10 +115,10 @@
             ...draft.header,
             route_order_mode: draft.routeOrderMode,
             transport_mode_priority: [...draft.transportModePriority],
-            departure_window_start: draft.departureWindowStart || null,
-            departure_window_end: draft.departureWindowEnd || null,
-            return_window_start: draft.returnWindowStart || null,
-            return_window_end: draft.returnWindowEnd || null,
+            departure_window_start: null,
+            departure_window_end: null,
+            return_window_start: null,
+            return_window_end: null,
             stop_order: draft.routeOrderMode === 'manual' ? [...draft.stopOrder] : null,
             stop_durations: Object.fromEntries(Object.entries(draft.stopDurations)
                 .map(([id, value]) => [id, { ...value }])),

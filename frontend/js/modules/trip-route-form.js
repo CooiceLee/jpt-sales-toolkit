@@ -29,13 +29,6 @@
             && !validManualOther(item))) {
             return 'Other transport requires manual travel hours or travel days before previewing.';
         }
-        const windows = [
-            ['departure_window_start', 'departure_window_end'],
-            ['return_window_start', 'return_window_end'],
-        ];
-        if (windows.some(([start, end]) => payload[start] && payload[end] && payload[start] > payload[end])) {
-            return 'A travel window start must not be later than its end.';
-        }
         const activeIds = (State.currentTripPlan?.stops || []).map(stop => String(stop.id));
         const order = (payload.stop_order || []).map(String);
         if (payload.route_order_mode === 'manual' && activeIds.length && (order.length !== activeIds.length

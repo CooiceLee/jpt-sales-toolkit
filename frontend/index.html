@@ -904,13 +904,6 @@
                                         <input type="date" class="form-input" id="trip-start-date">
                                         <input type="date" class="form-input" id="trip-end-date">
                                     </div>
-                                    <label class="trip-field-label">
-                                        <span>Planning mode</span>
-                                        <select class="form-input" id="trip-planning-mode" title="Planning mode" aria-label="Planning mode" onchange="TripPlanningModeActions.planningModeChanged()">
-                                            <option value="legacy">One traveller</option>
-                                            <option value="team">Travel team</option>
-                                        </select>
-                                    </label>
                                     <select class="form-input" id="trip-plan-region" title="Plan region" aria-label="Plan region">
                                         <option value="">Plan region (optional)</option>
                                         <option value="EU">Europe</option>
@@ -961,20 +954,6 @@
                                         <div class="trip-subsection-title">Allowed transport and priority</div>
                                         <div id="trip-transport-priority"></div>
                                         <small class="trip-form-help">Search current travel options, then review a result before adding it to the route.</small>
-                                    </div>
-                                    <div class="trip-subsection" data-single-traveller-only>
-                                        <div class="trip-subsection-title">China departure window</div>
-                                        <div class="trip-date-row">
-                                            <label class="trip-field-label"><span>From</span><input type="datetime-local" class="form-input" id="trip-departure-window-start" onchange="TripTransportActions.headerChanged()"></label>
-                                            <label class="trip-field-label"><span>To</span><input type="datetime-local" class="form-input" id="trip-departure-window-end" onchange="TripTransportActions.headerChanged()"></label>
-                                        </div>
-                                    </div>
-                                    <div class="trip-subsection" data-single-traveller-only>
-                                        <div class="trip-subsection-title">Return to China window</div>
-                                        <div class="trip-date-row">
-                                            <label class="trip-field-label"><span>From</span><input type="datetime-local" class="form-input" id="trip-return-window-start" onchange="TripTransportActions.headerChanged()"></label>
-                                            <label class="trip-field-label"><span>To</span><input type="datetime-local" class="form-input" id="trip-return-window-end" onchange="TripTransportActions.headerChanged()"></label>
-                                        </div>
                                     </div>
                                     <input type="text" class="form-input" id="trip-holidays" placeholder="Holidays: 2026-05-01, 2026-10-01">
                                     <textarea class="form-input" id="trip-description" rows="3" placeholder="Planning notes"></textarea>

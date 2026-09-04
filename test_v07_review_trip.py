@@ -277,10 +277,29 @@ def check_trip_plan_activity_sync_and_csv_formula_escape(client: TestClient, ctx
     assert itinerary["holiday_dates"] == ["2026-05-12"]
     assert itinerary["itinerary_summary"]["total_stay_days"] == 3
     assert itinerary["itinerary_summary"]["calculated_end_date"] >= "2026-05-13"
-    assert itinerary["end_date"] == itinerary["itinerary_summary"]["calculated_end_date"]
+    # The date that was asked for stays as it was asked for. What the route
+    # works out to is reported beside it, and running past it is a risk to be
+    # seen - overwriting the request would erase the very thing the risk is
+    # measured against.
+    summary = itinerary["itinerary_summary"]
+    assert summary["calculated_end_date"], "the route does not say when it ends"
+    assert summary["requested_end_date"] == itinerary["end_date"], (
+        "generating a route rewrote the end date the reader asked for"
+    )
     assert [stop["sequence_no"] for stop in itinerary["stops"]] == [1, 2]
     assert all(stop["planned_date"] and stop["planned_end_date"] for stop in itinerary["stops"])
-    assert all(stop["travel_distance_km"] is not None for stop in itinerary["stops"])
+    # A stop no longer carries one inbound journey: several colleagues reach the
+    # same visit separately, so how each of them gets there is on their own leg.
+    # The itinerary card reads it from there, and shows nothing rather than one
+    # traveller's distance presented as everybody's.
+    assert all(
+        stop.get("travel_distance_km") is None for stop in itinerary["stops"]
+    ), "a single inbound journey was written onto a visit the whole team reaches"
+    assert itinerary["legs"], "the route was saved without any journeys"
+    assert all(
+        leg["distance_km"] is not None and leg["member_id"]
+        for leg in itinerary["legs"]
+    ), "a saved journey does not say how far it is or who travels it"
 
     stop_after_itinerary = next(stop for stop in itinerary["stops"] if stop["id"] == stop_id)
     second_stop_after_itinerary = next(stop for stop in itinerary["stops"] if stop["id"] == second_stop_id)

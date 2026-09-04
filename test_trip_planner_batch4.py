@@ -99,7 +99,7 @@ def _drop_v6_contract(conn: sqlite3.Connection) -> None:
 
 
 def check_schema5_to_current_upgrade() -> None:
-    assert APP_SCHEMA_VERSION == 14
+    assert APP_SCHEMA_VERSION == 15
     with tempfile.TemporaryDirectory(prefix="jpt_trip_schema5_to_6_") as temp:
         data_dir = Path(temp) / "data"
         data_dir.mkdir()
@@ -517,6 +517,28 @@ def check_half_day_schedule_weekends_and_legacy_exclusion(
         ),
         200,
     )
+    # The route was worked out from how long each visit takes. Saving the route
+    # without saving that leaves the stop stating one length and the schedule
+    # beside it another, and the next calculation uses the wrong one.
+    reloaded = _require(
+        client.get(
+            f"/api/review/trip-plans/{plan['id']}",
+            headers=ctx["headers"]["owner"],
+        ),
+        200,
+    )
+    kept = {stop["id"]: stop for stop in reloaded["stops"]}
+    for stop_id, wanted in durations.items():
+        assert kept[stop_id]["duration_half_days"] == wanted["half_days"], (
+            f"{stop_id} was planned for {wanted['half_days']} half-days and "
+            f"came back as {kept[stop_id]['duration_half_days']}"
+        )
+        assert kept[stop_id]["preferred_period"] == wanted["preferred_period"], (
+            f"the time preference came back as {kept[stop_id]['preferred_period']}"
+        )
+    assert [stop["planned_date"] for stop in reloaded["stops"]] == [
+        "2026-09-15", "2026-09-15", "2026-09-16",
+    ], [stop["planned_date"] for stop in reloaded["stops"]]
 
     weekend = _create_plan(
         client,
@@ -559,6 +581,41 @@ def check_half_day_schedule_weekends_and_legacy_exclusion(
     assert not {
         item["date"] for item in weekend_preview["schedule_items"]
     } & {"2026-09-19", "2026-09-20"}
+
+    # An afternoon call is a wish, not an appointment: with nothing agreed the
+    # visit starts in the half of the day the salesperson asked for.
+    afternoon = _require(
+        client.post(
+            f"/api/review/trip-plans/{weekend['id']}/preview-itinerary",
+            headers=ctx["headers"]["owner"],
+            json=_route_payload(
+                weekend,
+                {
+                    weekend_ids[0]: {
+                        "half_days": 1,
+                        "preferred_period": "PM",
+                        "locked": False,
+                    },
+                    weekend_ids[1]: {
+                        "half_days": 1,
+                        "preferred_period": "AM",
+                        "locked": False,
+                    },
+                },
+            ),
+        ),
+        200,
+    )
+    starts = {
+        stop["id"]: (stop["planned_date"], stop["planned_start_period"])
+        for stop in afternoon["stops"]
+    }
+    assert starts[weekend_ids[0]] == ("2026-09-18", "PM"), (
+        f"the afternoon visit starts at {starts[weekend_ids[0]]}"
+    )
+    assert starts[weekend_ids[1]] == ("2026-09-21", "AM"), (
+        f"the morning visit starts at {starts[weekend_ids[1]]}"
+    )
     return {"plan": saved, "durations": durations}
 
 
@@ -645,20 +702,40 @@ def check_duration_and_lock_conflicts_are_zero_write(
         bool(stop["schedule_locked"]) for stop in automatic["stops"]
     ), "the agreed times must still be locked under automatic ordering"
 
-    # A route that cannot fit inside the requested end date is still refused,
-    # and still writes nothing.
-    before = _snapshot()
-    response = client.post(
-        f"/api/review/trip-plans/{automatic['id']}/generate-itinerary",
-        headers=ctx["headers"]["owner"],
-        json=_route_payload(
-            automatic,
-            locked_durations,
-            end_date="2026-09-15",
+    # A route that runs past the requested end date is reported, not refused.
+    # The visits are agreed with customers, so the dates are what has to give;
+    # refusing would leave a trip that is already booked with no itinerary at
+    # all, and the reader with nothing to look at while they decide.
+    overrunning = _require(
+        client.post(
+            f"/api/review/trip-plans/{automatic['id']}/generate-itinerary",
+            headers=ctx["headers"]["owner"],
+            json=_route_payload(
+                automatic,
+                locked_durations,
+                end_date="2026-09-15",
+            ),
         ),
+        200,
     )
-    assert response.status_code == 400, response.text
-    assert _snapshot() == before
+    summary = overrunning["itinerary_summary"]
+    assert summary["within_date_window"] is False, (
+        "a route that ends after the trip does is not inside the date window"
+    )
+    assert summary["calculated_end_date"] > "2026-09-15", (
+        f"the route ends on {summary['calculated_end_date']}, which fits"
+    )
+    assert any(
+        "exceeds requested end date" in str(item).lower()
+        for item in summary.get("warnings") or []
+    ), summary.get("warnings")
+    assert "member_return_overrun" in {
+        risk["kind"] for risk in summary.get("risks") or []
+    }
+    assert overrunning["end_date"] == "2026-09-15", (
+        "the end date is the promise the overrun is measured against and must "
+        "not be quietly moved to whatever the route worked out"
+    )
 
 
 def _briefing_url(plan_id: str, stop_id: str) -> str:
@@ -850,11 +927,38 @@ def check_briefing_crud_permissions_cas_and_export(
     assert {item["id"] for item in initial["available_contacts"]} == {
         ctx["contact"]["id"]
     }
+    # Who can be put on a visit is who is on the trip. A colleague nobody has
+    # added is not travelling, so naming them would record an attendance that
+    # never happens.
     available_users = {
         item["user_id"] for item in initial["available_participants"]
     }
-    assert ctx["ids"]["tech"] in available_users
+    assert available_users == {ctx["ids"]["owner"]}, (
+        f"only the people travelling can attend a visit, got {available_users}"
+    )
+    _require(
+        client.put(
+            f"/api/review/trip-plans/{plan['id']}/members",
+            headers=ctx["headers"]["owner"],
+            json={"user_id": ctx["ids"]["tech"]},
+        ),
+        200,
+    )
+    with_tech = _require(client.get(url, headers=ctx["headers"]["owner"]), 200)
+    available_users = {
+        item["user_id"] for item in with_tech["available_participants"]
+    }
+    assert ctx["ids"]["tech"] in available_users, (
+        "a colleague put on the trip can be put on its visits"
+    )
     assert ctx["ids"]["inactive"] not in available_users
+    _require(
+        client.delete(
+            f"/api/review/trip-plans/{plan['id']}/members/{ctx['ids']['tech']}",
+            headers=ctx["headers"]["owner"],
+        ),
+        200,
+    )
     assert initial["suggestions"], "Lead suggestions must be visible but not auto-saved"
 
     assert client.get(url, headers=ctx["headers"]["other"]).status_code == 404
@@ -1230,31 +1334,43 @@ def check_visit_location_route_timeline_and_invalidation(
     ) == (48.1351, 11.5820)
     assert any(float(leg["distance_km"]) > 0 for leg in saved["legs"])
 
+    # One timeline per member: each item says whose half-day it is and where it
+    # sits in that person's own run, which is what the day view draws.
     timeline = saved["schedule_items"]
     assert {item["item_type"] for item in timeline} == {"customer", "free", "leg"}
-    assert [item["schedule_index"] for item in timeline] == list(
-        range(1, len(timeline) + 1)
-    )
-    assert [(item["date"], item["period"]) for item in timeline] == sorted(
-        ((item["date"], item["period"]) for item in timeline),
-        key=lambda item: (item[0], 0 if item[1] == "AM" else 1),
-    )
+    travellers = {member["user_id"] for member in saved["members"]}
+    for member in travellers:
+        lane = [item for item in timeline if item["member_id"] == member]
+        assert lane, f"the timeline says nothing about {member}"
+        assert [item["date"] for item in lane] == sorted(
+            item["date"] for item in lane
+        ), "one member's day cannot run backwards"
+        assert [item["lane_order"] for item in lane] == sorted(
+            item["lane_order"] for item in lane
+        ), "a journey has to be drawn before the visit it leads to"
     for item in timeline:
         assert {
-            "slot_key",
+            "member_id",
+            "lane_order",
             "date",
             "period",
-            "schedule_index",
             "item_type",
             "source_id",
-            "sequence_no",
             "title",
             "half_day_index",
             "half_day_count",
-            "confirmation_status",
-        } <= set(item)
+        } <= set(item), sorted(item)
+        assert item["member_id"] in travellers, (
+            f"a half-day belongs to {item['member_id']}, who is not on the trip"
+        )
+        assert item["period"] in {"AM", "PM"}
+        assert 1 <= item["half_day_index"] <= item["half_day_count"], (
+            f"half-day {item['half_day_index']} of {item['half_day_count']}"
+        )
         if item["item_type"] == "leg":
-            assert item["confirmation_status"] is None
+            # A journey has a mode, not an agreement with a customer.
+            assert "confirmation_status" not in item
+            assert item["selected_mode"], "a journey has to say how it is made"
         else:
             assert item["confirmation_status"] in {
                 "unconfirmed",

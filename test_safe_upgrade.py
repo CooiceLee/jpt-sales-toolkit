@@ -256,6 +256,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
                 12: APP_VERSION,
                 13: APP_VERSION,
                 14: APP_VERSION,
+                15: APP_VERSION,
             }
             conn.executemany(
                 "INSERT INTO app_schema_migrations "
@@ -462,7 +463,7 @@ def _seed_fixture(data_dir: Path, source_version: str) -> dict:
 # 0.12.0 shipped schema 6 and 0.12.1 shipped schema 9; 7, 8 and 10 to 13 were
 # reached on the way and are covered so a later migration cannot skip them.
 # 0.13.1 ships schema 14.
-INTERMEDIATE_SCHEMA_BASELINES = (6, 7, 8, 9, 10, 11, 12, 13)
+INTERMEDIATE_SCHEMA_BASELINES = (6, 7, 8, 9, 10, 11, 12, 13, 14)
 
 # What each migration added, so a fixture can be wound back to an earlier shape.
 _SCHEMA_ADDITIONS = {
@@ -500,6 +501,7 @@ _SCHEMA_ADDITIONS = {
         ("trip_plan_stops", ("actual_visit_date", "actual_visit_period")),
     ),
     14: (),
+    15: (),
 }
 
 # The shape a stop had before schema 13, so a fixture can be a real pre-13
@@ -605,6 +607,15 @@ def _wind_back_to_schema(conn: sqlite3.Connection, target: int) -> None:
     for version in sorted(_SCHEMA_ADDITIONS, reverse=True):
         if version <= target:
             continue
+        if version == 15:
+            # Before this release both kinds of plan existed side by side: a
+            # team trip with people on it, and a one-traveller plan carrying
+            # nobody at all. A fixture that kept only the second would never
+            # show what the upgrade does to a trip that already has a crew.
+            conn.execute(
+                "UPDATE trip_plans SET planning_mode = 'legacy' WHERE id NOT IN "
+                "(SELECT plan_id FROM trip_plan_members)"
+            )
         if version == 14:
             # The manifest tables belong to schema 14 and nothing before it.
             conn.execute("DROP TABLE IF EXISTS trip_working_export_rows")
@@ -682,6 +693,25 @@ def test_intermediate_schema_upgrade(baseline: int) -> None:
                 "INSERT INTO trip_visit_briefings (id,stop_id,created_at,"
                 "created_by,updated_at,updated_by,row_version) VALUES "
                 "('brief-b','stop-b',?,?,?,?,1)", (stamp, actor, stamp, actor))
+            # A second plan that already says who travels, and it is not the
+            # owner. Whoever is on a trip stays on it: the upgrade fills in a
+            # traveller only where there is none.
+            mate = "user-mate"
+            conn.execute(
+                "INSERT INTO users (id,username,display_name,role,"
+                "password_hash,is_active,created_at) VALUES "
+                "(?,'mate','Mate','sales','h',1,?)", (mate, stamp))
+            conn.execute(
+                "INSERT INTO trip_plans (id,title,owner_id,start_date,end_date,"
+                "status,created_at,created_by,updated_at,updated_by,row_version)"
+                " VALUES ('plan-crewed','Crewed trip',?,'2026-09-14',"
+                "'2026-09-30','Draft',?,?,?,?,1)",
+                (actor, stamp, actor, stamp, actor))
+            conn.execute(
+                "INSERT INTO trip_plan_members (id,plan_id,user_id,created_at,"
+                "created_by,updated_at,updated_by,row_version) VALUES "
+                "('member-crewed','plan-crewed',?,?,?,?,?,1)",
+                (mate, stamp, actor, stamp, actor))
             _wind_back_to_schema(conn, baseline)
             # One answer somebody gave and one nobody could have given: before
             # schema 13 an untouched box and a deliberate "no" were both 0.
@@ -718,10 +748,33 @@ def test_intermediate_schema_upgrade(baseline: int) -> None:
             assert conn.execute(
                 "SELECT title FROM trip_plans"
             ).fetchone()[0] == "Baseline trip"
-            # The columns this release depends on exist with their safe default.
+            # Every trip is a team trip now, and the plan's owner is on it:
+            # the engine needs somebody to move, and a plan from before this
+            # release has nobody listed.
             assert conn.execute(
                 "SELECT planning_mode FROM trip_plans"
-            ).fetchone()[0] == "legacy"
+            ).fetchone()[0] == "team"
+            travellers = conn.execute(
+                "SELECT user_id FROM trip_plan_members WHERE plan_id = 'plan-b'"
+            ).fetchall()
+            assert [row[0] for row in travellers] == [actor], (
+                f"the upgraded plan travels with {travellers} instead of its owner"
+            )
+            crew = [
+                row[0] for row in conn.execute(
+                    "SELECT user_id FROM trip_plan_members "
+                    "WHERE plan_id = 'plan-crewed'"
+                )
+            ]
+            if baseline >= 8:
+                assert crew == [mate], (
+                    "a trip that already said who travels was given its owner "
+                    f"as well: {crew}"
+                )
+            else:
+                # Nobody could be recorded before schema 8, so there is nothing
+                # to keep and the owner is the one traveller.
+                assert crew == [actor], crew
             assert conn.execute(
                 "SELECT planned_time_accepted FROM trip_plan_stops"
             ).fetchone()[0] == 0
@@ -763,7 +816,7 @@ def test_intermediate_schema_upgrade(baseline: int) -> None:
 
 def test_current_schema_fixture() -> None:
     """A current development profile starts unchanged and without a backup."""
-    assert APP_SCHEMA_VERSION == 14
+    assert APP_SCHEMA_VERSION == 15
     close_db()
     with tempfile.TemporaryDirectory(prefix="jpt_current_schema_") as temp_dir:
         data_dir = Path(temp_dir) / "data"

@@ -52,6 +52,22 @@ def _tables(markdown: str) -> list:
     return tables
 
 
+def _table_after(markdown: str, heading: str) -> list:
+    """The cells of the first table under a heading, header row included."""
+    body = markdown.split(heading, 1)
+    assert len(body) == 2, f"the export has no {heading} section"
+    rows = []
+    for line in body[1].splitlines():
+        if line.startswith("|"):
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if not set("".join(cells).replace(":", "")) <= {"-"}:
+                rows.append(cells)
+        elif rows:
+            break
+    assert rows, f"the table under {heading} is empty"
+    return rows
+
+
 def check_every_table_is_well_formed(markdown: str, label: str) -> None:
     """A table whose rule is a different width than its header renders broken."""
     for header, separator, _ in _tables(markdown):
@@ -156,8 +172,8 @@ def check_daily_execution(service, seed) -> None:
     )
 
 
-def _legacy_plan(service, actor):
-    """A one-traveller plan with a single customer, planned the old way."""
+def _solo_plan(service, actor):
+    """A one-traveller plan with a single customer: a team of one."""
     conn = get_db()
     stamp = now_iso()
     plan_id, customer_id, stop_id = (generate_uuid() for _ in range(3))
@@ -167,7 +183,7 @@ def _legacy_plan(service, actor):
            origin_lat,origin_lng,destination_name,destination_lat,
            destination_lng,avoid_weekends,status,planning_mode,created_at,
            created_by,updated_at,updated_by,row_version)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Draft','legacy',?,?,?,?,1)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Draft','team',?,?,?,?,1)""",
         (plan_id, "Solo Europe", actor, "2026-09-14", "2026-09-30", "flight",
          "auto", '["flight","drive"]', "Shanghai", 31.2304, 121.4737,
          "Shanghai", 31.2304, 121.4737, 1, stamp, actor, stamp, actor),
@@ -185,28 +201,47 @@ def _legacy_plan(service, actor):
            row_version) VALUES (?,?,?,1,2,1,'auto',0,'unconfirmed',?,?,?,?,1)""",
         (stop_id, plan_id, customer_id, stamp, actor, stamp, actor),
     )
+    # A team of one still has that one person on it.
+    conn.execute(
+        """INSERT INTO trip_plan_members (id,plan_id,user_id,created_at,
+           created_by,updated_at,updated_by,row_version)
+           VALUES (?,?,?,?,?,?,?,1)""",
+        (generate_uuid(), plan_id, actor, stamp, actor, stamp, actor),
+    )
     conn.commit()
     return plan_id
 
 
-def check_legacy_export_is_untouched(service, seed) -> None:
-    """A single-traveller plan exports exactly as it did before."""
+def check_a_lone_traveller_is_named(service, seed) -> None:
+    """One person travelling is a team of one, and the file says who."""
     actor = seed["actor"]
-    plan_id = _legacy_plan(service, actor)
+    plan_id = _solo_plan(service, actor)
     service.generate_trip_itinerary(plan_id, {}, actor, "leader")
+    name = service.get_trip_plan(plan_id, actor, "leader")["members"][0]["display_name"]
     markdown = service.export_trip_plan_markdown(plan_id, actor, "leader")
-    check_every_table_is_well_formed(markdown, "legacy markdown")
-    assert "## Travel Team" not in markdown
-    assert "Schedule State" not in markdown
-    assert "Team Aggregate" not in markdown
-    assert "- Travel Distance:" in markdown
-    legs = [table for table in _tables(markdown) if table[0][0] == "#"]
-    assert legs, "the legacy route legs table lost its shape"
+    check_every_table_is_well_formed(markdown, "one-traveller markdown")
+
+    team = _table_after(markdown, "## Travel Team")
+    assert len(team) == 2, f"one traveller must be one row, got {len(team) - 1}"
+    assert team[1][0] == name, f"the travel team names {team[1][0]}, not {name}"
+
+    legs = _table_after(markdown, "## Route Legs")
+    assert legs[0][0] == "Member", "route legs must say whose journey each one is"
+    assert legs[1:], "the one traveller's route legs are missing"
+    assert all(row[0] == name for row in legs[1:]), (
+        f"every leg belongs to {name}: {[row[0] for row in legs[1:]]}"
+    )
 
     text = service.export_trip_plan_csv(plan_id, actor, "leader")
-    header = text.splitlines()[0]
-    for column in ("leg_member_id", "attendee_names", "schedule_state"):
-        assert column not in header, f"legacy CSV gained a team column: {column}"
+    header = text.splitlines()[0].split(",")
+    for column in ("leg_member_id", "leg_member_name", "attendee_names",
+                   "schedule_state"):
+        assert column in header, f"one-traveller CSV dropped {column}"
+    rows = [line for line in text.splitlines()[1:] if line.startswith("leg,")]
+    assert rows, "the CSV lost the route legs"
+    assert all(name in line for line in rows), (
+        "a leg row does not name the person who travels it"
+    )
 
 
 def check_every_format_carries_the_team(service, seed) -> None:
@@ -314,10 +349,10 @@ def check_record_formats_state_their_own_terms(service, seed) -> None:
     )
 
 
-def check_legacy_keeps_every_format(service, seed) -> None:
-    """A single-traveller plan still downloads in all five formats."""
+def check_a_lone_traveller_keeps_every_format(service, seed) -> None:
+    """A one-traveller plan still downloads in all five formats."""
     actor = seed["actor"]
-    plan_id = _legacy_plan(service, actor)
+    plan_id = _solo_plan(service, actor)
     service.generate_trip_itinerary(plan_id, {}, actor, "leader")
     for export in (service.export_trip_plan_xlsx, service.export_trip_plan_html,
                    service.export_trip_plan_ics,
@@ -335,8 +370,8 @@ def main() -> None:
     check_daily_execution(service, seed)
     check_record_formats_state_their_own_terms(service, seed)
     check_every_format_carries_the_team(service, seed)
-    check_legacy_keeps_every_format(service, seed)
-    check_legacy_export_is_untouched(service, seed)
+    check_a_lone_traveller_keeps_every_format(service, seed)
+    check_a_lone_traveller_is_named(service, seed)
     close_db()
     print("PASS: team-aware markdown, CSV and daily execution exports")
 

@@ -15,6 +15,7 @@ leg, airport and slot helpers still do the arithmetic.
 
 from __future__ import annotations
 
+from math import ceil
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -62,7 +63,14 @@ class TeamEvent:
     # its place, but travel can push it later without anything being wrong.
     planned_slot: tuple | None = None
     preferred_period: str = "auto"
+    # Marked as agreed with the customer. Kept on the stop so that saving the
+    # route does not forget what the user just recorded.
+    schedule_locked: bool = False
     label: str = ""
+    # Whether the customer has agreed to this time. Carried onto the itinerary
+    # so that a printed day says which visits are settled and which are not -
+    # the one thing a reader checks before sending the plan to anybody.
+    confirmation_status: str | None = None
 
 
 @dataclass
@@ -92,6 +100,9 @@ class TeamScheduleContext:
     invalid: set
     unassigned: set
     clashing: dict
+    # Customer visits need working hours; travel, hotels and rests do not.
+    avoid_weekends: bool = True
+    holidays: tuple = ()
 
 
 def build_member_leg(core, member_id, from_point, to_point, leg_key,
@@ -266,6 +277,7 @@ def _record_event(ctx: TeamScheduleContext, event, user, slots,
                 "title": event.label or event.stop_id,
                 "half_day_index": index,
                 "half_day_count": len(slots),
+                "confirmation_status": event.confirmation_status,
                 "inbound_travel_resolved": inbound_resolved,
             }
         )
@@ -278,6 +290,13 @@ def _record_event(ctx: TeamScheduleContext, event, user, slots,
             "planned_start_period": slots[0][1],
             "planned_end_date": slots[-1][0].isoformat(),
             "planned_end_period": slots[-1][1],
+            # The route was worked out from how long the visit takes and which
+            # half of the day it should be in. Saving the route without them
+            # leaves the stop stating a length the schedule beside it denies.
+            "duration_half_days": int(event.duration_half_days or 0),
+            "stay_days": max(1, ceil(int(event.duration_half_days or 0) / 2)),
+            "preferred_period": event.preferred_period,
+            "schedule_locked": 1 if event.schedule_locked else 0,
         }
     )
 
@@ -294,8 +313,9 @@ def _lose_position(ctx: TeamScheduleContext, user):
 
 def _initialize_team_context(team: tuple, events: list, origins: dict,
                              start_slot: tuple,
-                             departures: dict | None = None
-                             ) -> TeamScheduleContext:
+                             departures: dict | None = None,
+                             avoid_weekends: bool = True,
+                             holidays: tuple = ()) -> TeamScheduleContext:
     """Everybody at their departure point, and what the appointments imply.
 
     A member with a departure day of their own starts there instead of on the
@@ -328,6 +348,8 @@ def _initialize_team_context(team: tuple, events: list, origins: dict,
         invalid=invalid_assignment_events(events, team),
         unassigned=unassigned_parallel_events(events, team),
         clashing=double_booked_stop_ids(events, team),
+        avoid_weekends=avoid_weekends,
+        holidays=tuple(holidays),
     )
 
 
@@ -367,7 +389,7 @@ def _event_start_slot(core, ctx: TeamScheduleContext, event, travelling,
         return None
     earliest = max(arrivals, key=core._slot_key)
     if not event.planned_slot:
-        return earliest
+        return _workable_start(core, ctx, event, earliest)
     if core._slot_key(event.planned_slot) >= core._slot_key(earliest):
         return event.planned_slot
     ctx.result.risks.append(
@@ -380,7 +402,25 @@ def _event_start_slot(core, ctx: TeamScheduleContext, event, travelling,
             "period": earliest[1],
         }
     )
-    return earliest
+    return _workable_start(core, ctx, event, earliest)
+
+
+def _workable_start(core, ctx: TeamScheduleContext, event, slot: tuple) -> tuple:
+    """The first half-day this event can actually begin on.
+
+    A customer visit is called on in business hours, and the salesperson may
+    have said they want the morning or the afternoon. A hotel, a rest or an
+    airport transfer is none of those things and sits wherever the journey
+    leaves it.
+    """
+    if event.kind == "free":
+        return slot
+    return core._seek_preferred_period(
+        core._next_work_slot(slot, ctx.avoid_weekends, list(ctx.holidays)),
+        event.preferred_period,
+        ctx.avoid_weekends,
+        list(ctx.holidays),
+    )
 
 
 def _record_unattended_event(ctx: TeamScheduleContext, event) -> None:
@@ -390,6 +430,22 @@ def _record_unattended_event(ctx: TeamScheduleContext, event) -> None:
             ctx, event, None,
             _spread_slots(event.booked_slot, event.duration_half_days), False,
         )
+
+
+def _event_slots(core, ctx: TeamScheduleContext, event, start: tuple) -> list:
+    """The half-days one event occupies once it has begun.
+
+    A two-day visit that starts on a Friday finishes on the Monday: nobody is
+    received on the Saturday in between. An appointment the customer agreed to
+    is kept where they put it, weekend or not.
+    """
+    if event.kind == "free" or event.booked_slot:
+        return _spread_slots(start, event.duration_half_days)
+    slots, _ = core._allocate_work_slots(
+        start, max(1, int(event.duration_half_days or 1)),
+        ctx.avoid_weekends, list(ctx.holidays),
+    )
+    return slots or _spread_slots(start, event.duration_half_days)
 
 
 def _schedule_team_event(core, ctx: TeamScheduleContext, event, priority,
@@ -428,7 +484,7 @@ def _schedule_team_event(core, ctx: TeamScheduleContext, event, priority,
     start = _event_start_slot(core, ctx, event, travelling, inbound)
     if start is None:
         return
-    slots = _spread_slots(start, event.duration_half_days)
+    slots = _event_slots(core, ctx, event, start)
 
     for user in conflicted:
         _record_event(ctx, event, user, slots, False)
@@ -512,7 +568,9 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
                         start_slot: tuple, priority: list,
                         destinations: dict | None = None,
                         leg_settings: dict | None = None,
-                        departures: dict | None = None) -> TeamPlanResult:
+                        departures: dict | None = None,
+                        avoid_weekends: bool = True,
+                        holidays: tuple = ()) -> TeamPlanResult:
     """Walk every member through the events they attend, and home again.
 
     A booked appointment is a fact: it says where somebody is at a given hour
@@ -521,7 +579,7 @@ def plan_team_itinerary(core, team: tuple, events: list, origins: dict,
     produces a risk, never a refusal and never a delayed appointment.
     """
     ctx = _initialize_team_context(
-        team, events, origins, start_slot, departures
+        team, events, origins, start_slot, departures, avoid_weekends, holidays
     )
     for event in ordered_events(events):
         _schedule_team_event(core, ctx, event, priority, leg_settings)

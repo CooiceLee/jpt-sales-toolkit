@@ -31,10 +31,13 @@ conn.execute("""INSERT INTO trip_plans (id,title,owner_id,start_date,end_date,
   travel_mode,route_order_mode,transport_mode_priority,origin_name,origin_lat,
   origin_lng,destination_name,destination_lat,destination_lng,avoid_weekends,
   status,planning_mode,created_at,created_by,updated_at,updated_by,row_version)
-  VALUES (?,?,?,?,?,?,'auto',?,?,?,?,?,?,?,1,'Draft','legacy',?,?,?,?,1)""",
+  VALUES (?,?,?,?,?,?,'auto',?,?,?,?,?,?,?,1,'Draft','team',?,?,?,?,1)""",
   (plan,"E2E trip",actor,"2026-09-14","2026-09-30","flight",
    '["flight","drive"]',"Shanghai",31.2304,121.4737,"Shanghai",31.2304,121.4737,
    stamp,actor,stamp,actor))
+conn.execute("""INSERT INTO trip_plan_members (id,plan_id,user_id,created_at,
+  created_by,updated_at,updated_by,row_version) VALUES (?,?,?,?,?,?,?,1)""",
+  (generate_uuid(),plan,actor,stamp,actor,stamp,actor))
 stops = {}
 for name, lat, lng in (("Frankfurt",50.1109,8.6821), ("Paris",48.8566,2.3522)):
     cid, sid = generate_uuid(), generate_uuid()
@@ -88,7 +91,7 @@ assert stop["planned_date"] == "2026-09-16"
 assert stop["planned_start_period"] == "AM"
 assert bool(stop["schedule_locked"]) is True
 
-say("3. 重新预览：路线是否围绕约定时间安排")
+say("3. 重新预览：路线围绕约定时间安排，其他停靠让路")
 r = client.post(f"/api/review/trip-plans/{plan}/preview-itinerary", json=payload, headers=H)
 assert r.status_code == 200, (
     "an agreed time the estimate cannot meet is a risk, not a refusal: "
@@ -99,10 +102,47 @@ assert (kept["planned_date"], kept["planned_start_period"]) == ("2026-09-16", "A
     f"the route moved the agreed visit: {kept['planned_date']} "
     f"{kept['planned_start_period']}"
 )
+# Paris was entered second. The appointment is the fixed point, so the route is
+# built around it and the stop with no agreed time is the one that gives way.
+other = [x for x in r.json()["stops"] if x["id"] == stops["Frankfurt"]][0]
+assert other["planned_date"] > "2026-09-16", (
+    f"the unbooked visit should move behind the appointment, sits on "
+    f"{other['planned_date']}"
+)
+risks = {risk["kind"] for risk in r.json()["itinerary_summary"].get("risks") or []}
+assert "cannot_reach_booked_visit" not in risks, (
+    f"the route can reach this appointment, so it must not be reported: {risks}"
+)
+
+say("3b. 无论怎样排都赶不上的约定时间：保留原时间并报风险")
+cur = client.get(f"/api/review/trip-plans/{plan}", headers=H).json()
+rv = [s for s in cur["stops"] if s["id"] == paris][0]["row_version"]
+# The first morning of the trip: the flight out of Shanghai has not landed yet.
+r = client.patch(f"/api/review/trip-plans/{plan}/stops/{paris}",
+    json={"row_version": rv, "planned_date": "2026-09-14",
+          "planned_start_period": "AM", "schedule_locked": True,
+          "preferred_period": "auto", "confirmation_status": "confirmed"}, headers=H)
+assert r.status_code == 200, r.text[:300]
+r = client.post(f"/api/review/trip-plans/{plan}/preview-itinerary", json=payload, headers=H)
+assert r.status_code == 200, r.text[:300]
+missed = [x for x in r.json()["stops"] if x["id"] == paris][0]
+assert (missed["planned_date"], missed["planned_start_period"]) == ("2026-09-14", "AM"), (
+    "an appointment that cannot be made must stay where the customer put it, "
+    f"got {missed['planned_date']} {missed['planned_start_period']}"
+)
 risks = {risk["kind"] for risk in r.json()["itinerary_summary"].get("risks") or []}
 assert "cannot_reach_booked_visit" in risks, (
     f"a time the route cannot make must be reported: {risks}"
 )
+
+say("3c. 恢复 2026-09-16 上午的约定时间")
+cur = client.get(f"/api/review/trip-plans/{plan}", headers=H).json()
+rv = [s for s in cur["stops"] if s["id"] == paris][0]["row_version"]
+r = client.patch(f"/api/review/trip-plans/{plan}/stops/{paris}",
+    json={"row_version": rv, "planned_date": "2026-09-16",
+          "planned_start_period": "AM", "schedule_locked": True,
+          "preferred_period": "auto", "confirmation_status": "confirmed"}, headers=H)
+assert r.status_code == 200, r.text[:300]
 
 say("4. 保存路线")
 r = client.post(f"/api/review/trip-plans/{plan}/generate-itinerary",
@@ -165,6 +205,15 @@ say("6. 计算移动了已确认的时间，才应要求重新确认")
 # visit they had confirmed - not the user typing a new agreed date, which is
 # them recording what the customer just told them.
 frankfurt = stops["Frankfurt"]
+# Release the Paris appointment first. An agreed time anchors the whole route
+# to itself, so while it stands the other visits keep their days no matter
+# what the trip dates say - which is the point of steps 3 to 5, not this one.
+rv = [s for s in client.get(f"/api/review/trip-plans/{plan}", headers=H).json()["stops"]
+      if s["id"] == paris][0]["row_version"]
+r = client.patch(f"/api/review/trip-plans/{plan}/stops/{paris}", headers=H,
+                 json={"row_version": rv, "schedule_locked": False,
+                       "planned_time_accepted": False})
+assert r.status_code == 200, r.text[:300]
 rv = [s for s in client.get(f"/api/review/trip-plans/{plan}", headers=H).json()["stops"]
       if s["id"] == frankfurt][0]["row_version"]
 r = client.patch(f"/api/review/trip-plans/{plan}/stops/{frankfurt}", headers=H,

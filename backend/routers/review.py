@@ -120,7 +120,7 @@ class TripPlanCreate(BaseModel):
     holiday_dates: Optional[list[str]] = None
     description: Optional[str] = None
     status: TripStatus = "Draft"
-    planning_mode: TripPlanningMode = "legacy"
+    planning_mode: TripPlanningMode = "team"
 
 
 class TripPlanUpdate(BaseModel):

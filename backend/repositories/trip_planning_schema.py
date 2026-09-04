@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+import uuid
+from datetime import datetime, timezone
 
 
 PLAN_COLUMNS = {
@@ -667,3 +669,43 @@ def apply_trip_planning_schema_v14(conn: sqlite3.Connection) -> None:
     conn.execute(TRIP_WORKING_EXPORT_ROWS_DDL)
     for statement in TRIP_WORKING_EXPORT_INDEXES:
         conn.execute(statement)
+
+
+def apply_trip_planning_schema_v15(conn: sqlite3.Connection) -> None:
+    """Make every trip a team trip, with at least the person who owns it.
+
+    Two ways to plan the same journey meant two of everything to keep in step:
+    two sets of controls, two schedulers, two shapes of export, and a reader
+    who had to know which one they were looking at before anything on screen
+    meant what it said. A trip with one traveller is a team of one, so that is
+    what it becomes - and the owner is that one traveller, because the engine
+    needs somebody to move and a trip with nobody on it plans nothing.
+
+    Anyone already on the trip is left exactly as they are.
+    """
+    conn.execute(
+        "UPDATE trip_plans SET planning_mode = 'team' WHERE planning_mode != 'team'"
+    )
+    stamp = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    lonely = conn.execute(
+        """
+        SELECT p.id, p.owner_id, p.created_by
+        FROM trip_plans p
+        WHERE NOT EXISTS (
+            SELECT 1 FROM trip_plan_members m WHERE m.plan_id = p.id
+        )
+        """
+    ).fetchall()
+    for plan in lonely:
+        traveller = plan["owner_id"] or plan["created_by"]
+        if not traveller:
+            # Nothing to name as the traveller. Left for the reader to add,
+            # rather than inventing one.
+            continue
+        conn.execute(
+            "INSERT INTO trip_plan_members (id, plan_id, user_id, created_at, "
+            "created_by, updated_at, updated_by, row_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+            (str(uuid.uuid4()), plan["id"], traveller, stamp, traveller,
+             stamp, traveller),
+        )

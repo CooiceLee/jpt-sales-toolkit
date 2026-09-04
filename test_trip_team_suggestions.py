@@ -253,6 +253,9 @@ def check_saved_times_reach_the_calculation(service) -> None:
     """
     from backend.services.trip_team_adapter import build_team_events
 
+    def build_team_events_only(*args, **kwargs):
+        return build_team_events(*args, **kwargs)[0]
+
     def stop(stop_id, locked, accepted=0):
         return {
             "id": stop_id, "stop_kind": "customer", "customer_name": stop_id,
@@ -263,7 +266,7 @@ def check_saved_times_reach_the_calculation(service) -> None:
         }
 
     events = {
-        event.stop_id: event for event in build_team_events(
+        event.stop_id: event for event in build_team_events_only(
             service,
             {"stops": [
                 stop("agreed", 1),

@@ -23,7 +23,7 @@
         const target = document.getElementById('trip-map-lanes');
         if (!target) return;
         const members = plan?.members || [];
-        target.hidden = plan?.planning_mode !== 'team' || !members.length;
+        target.hidden = !members.length;
         if (target.hidden) {
             target.innerHTML = '';
             return;

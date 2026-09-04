@@ -308,16 +308,26 @@ def check_preview_is_byte_for_byte_read_only_and_date_window_is_atomic(
     assert "end" in warning and ("exceed" in warning or "overrun" in warning or "beyond" in warning), warning
     _assert_no_database_write(before_preview, _database_snapshot(), "overrun preview")
 
-    before_generate = _database_snapshot()
-    rejected = client.post(
+    # A trip that runs past its end date is saved and said, not refused. With
+    # times the customer has already agreed to, the dates are usually the thing
+    # that has to give, and refusing the route would leave the reader with no
+    # plan at all and nothing explaining which visit pushed it over.
+    saved = client.post(
         f"/api/review/trip-plans/{constrained['id']}/generate-itinerary",
         headers=ctx["headers"],
         json=constrained_payload,
     )
-    assert rejected.status_code == 400, rejected.text
-    rejection_text = rejected.text.lower()
-    assert "end" in rejection_text and ("exceed" in rejection_text or "overrun" in rejection_text or "beyond" in rejection_text)
-    _assert_no_database_write(before_generate, _database_snapshot(), "rejected route generation")
+    assert saved.status_code == 200, saved.text
+    saved_summary = saved.json()["itinerary_summary"]
+    assert saved_summary["calculated_end_date"] > "2026-09-15"
+    assert saved_summary["within_date_window"] is False
+    assert saved_summary["overrun_days"] > 0
+    overrun_text = (_warning_text(saved_summary) or "").lower()
+    assert "end" in overrun_text and (
+        "exceed" in overrun_text or "overrun" in overrun_text or "beyond" in overrun_text
+    ), overrun_text
+    # And the date the reader asked for is still the date they asked for.
+    assert saved.json()["end_date"] == "2026-09-15", saved.json()["end_date"]
 
 
 def check_explicit_null_clears_optional_fields(client: TestClient, ctx: dict) -> None:

@@ -108,7 +108,7 @@ function renderTripItinerarySummary(plan) {
             <div><span>${escapeHtml(I18n.t('Stay'))}</span><strong>${escapeHtml(I18n.t('{count} days', { count: summary.total_stay_days ?? 0 }))}</strong></div>
             <div><span>${escapeHtml(I18n.t('Travel'))}</span><strong>${escapeHtml(I18n.t('{count} days', { count: summary.total_travel_days ?? 0 }))}</strong></div>
             <div><span>${escapeHtml(I18n.t(
-                plan?.planning_mode === 'team' ? 'Team aggregate distance' : 'Distance'
+                (plan?.members || []).length > 1 ? 'Team aggregate distance' : 'Distance'
             ))}</span><strong>${escapeHtml(I18n.t('{count} km', { count: summary.total_distance_km ?? 0 }))}</strong></div>
             ${warnings.length ? `
                 <div class="trip-itinerary-warning" role="alert">

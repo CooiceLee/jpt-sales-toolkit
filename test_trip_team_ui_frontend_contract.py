@@ -234,7 +234,9 @@ def check_backend_sends_kinds_not_sentences() -> None:
         assert kind in core + adapter + scheduler, (
             f"risk kind no longer emitted: {kind}"
         )
-    risks = re.findall(r'"kind": "(\w+)"', core + adapter + scheduler)
+    # A risk is a dict that leads with its kind. Route points carry a "kind"
+    # too - origin, stop, destination - and those are places, not warnings.
+    risks = re.findall(r'\{\s*"kind": "(\w+)"', core + adapter + scheduler)
     module = (MODULES / "trip-team-risks.js").read_text(encoding="utf-8")
     for kind in set(risks):
         assert kind in module, f"risk kind {kind} has no sentence in the risk bar"
@@ -474,7 +476,6 @@ globalThis.State = { tripBusy: false, currentTripPlan: {
 const select = { value: 'u1', selectedIndex: 0, options: [{ text: 'Zhang' }] };
 globalThis.document = { getElementById: id =>
     id === 'trip-team-add-user' ? select
-    : id === 'trip-planning-mode' ? { value: 'legacy' }
     : { value: '', innerHTML: '', hidden: false } };
 globalThis.ApiClient = new Proxy({}, { get: (_, name) => async (...args) => {
     called.push(String(name));
@@ -502,7 +503,11 @@ globalThis.MapSupport = { coordinatePair: (a, b) => [a, b] };
   await TripTeamActions.remove('u1');
   await TripFlexibleSuggestions.load();
   await TripStopScheduleActions.appointmentChanged('s1');
-  await TripPlanningModeActions.planningModeChanged();
+  // There is one way to plan a trip, so there is no mode to switch. The
+  // control and its action are gone and must not come back.
+  if (typeof TripPlanningModeActions !== 'undefined') {
+    throw new Error('the planning-mode action is back');
+  }
   console.log(JSON.stringify(called));
 })().catch(error => { console.error(String(error)); process.exit(1); });
 """
@@ -514,8 +519,7 @@ globalThis.MapSupport = { coordinatePair: (a, b) => [a, b] };
     )
     called = json.loads(result.stdout.strip().splitlines()[-1])
     for endpoint in ("setTripMember", "removeTripMember",
-                     "getTripFlexibleSuggestions", "updateTripStop",
-                     "updateTripPlan"):
+                     "getTripFlexibleSuggestions", "updateTripStop"):
         assert endpoint in called, (
             f"{endpoint} was never reached; the action failed silently: {called}"
         )
@@ -612,9 +616,11 @@ def check_module_wiring() -> None:
     for name in ("trip-team-risks.js", "trip-team-timeline.js",
                  "trip-team-view.js", "trip-team-actions.js"):
         assert name in index, f"module never loaded: {name}"
-    for element in ("trip-risk-bar", "trip-team-panel", "trip-team-body",
-                    "trip-planning-mode"):
+    for element in ("trip-risk-bar", "trip-team-panel", "trip-team-body"):
         assert f'id="{element}"' in index, f"missing element: {element}"
+    assert "trip-planning-mode" not in index, (
+        "every trip is planned as a team, so there is no mode to choose"
+    )
     schedule = (MODULES / "trip-schedule-view.js").read_text(encoding="utf-8")
     assert "planning_mode === 'team'" in schedule, (
         "the schedule view must send team plans to the team timeline"

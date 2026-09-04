@@ -119,6 +119,33 @@ def _seed(service: ReviewService) -> dict:
     return {"plan_id": plan_id, "actor": actor, "people": people, "stops": stops}
 
 
+def check_a_new_plan_travels_with_its_owner(service, seed) -> None:
+    """Creating a trip puts the person who created it on it.
+
+    There is one way to plan a trip and it needs somebody to move. A plan
+    created with nobody on it could not be previewed, saved or exported until
+    the user worked out that they had to add themselves first.
+    """
+    plan = service.trip_plan_service.create_trip_plan(
+        {
+            "title": "Fresh plan",
+            "start_date": "2026-09-14",
+            "end_date": "2026-09-30",
+            "origin_name": "Shanghai", "origin_lat": 31.2304,
+            "origin_lng": 121.4737,
+            "destination_name": "Shanghai", "destination_lat": 31.2304,
+            "destination_lng": 121.4737,
+        },
+        seed["actor"],
+    )
+    plan = service.get_trip_plan(plan["id"], seed["actor"], "leader")
+    travellers = [member["user_id"] for member in plan["members"]]
+    assert travellers == [seed["actor"]], (
+        f"a new trip travels with {travellers} instead of the person who made it"
+    )
+    assert plan["planning_mode"] == "team", plan["planning_mode"]
+
+
 def check_members_are_team_accounts(service, seed) -> None:
     """Only people the company can send are planned for."""
     try:
@@ -555,6 +582,38 @@ def check_a_stale_suggestion_cannot_be_applied(service, seed) -> None:
     )
 
 
+def check_a_route_that_starts_before_the_trip_says_so(service, seed) -> None:
+    """An appointment holds its date even when the trip is moved past it.
+
+    The customer's time is a fact, so a trip whose start is pushed beyond it
+    keeps planning around the appointment - and then runs before the day it
+    claims to begin on. Said nowhere, that route reads as one that fits.
+    """
+    plan_id, stop_id, actor = _solo_team_plan(service)
+    stop = [item for item in service.get_trip_plan(plan_id, actor, "leader")["stops"]
+            if item["id"] == stop_id][0]
+    service.update_trip_stop(
+        plan_id, stop_id,
+        {"planned_date": "2026-09-16", "planned_start_period": "AM",
+         "schedule_locked": True, "confirmation_status": "confirmed",
+         "row_version": stop["row_version"]},
+        actor, "leader",
+    )
+    saved = service.generate_trip_itinerary(
+        plan_id, {"start_date": "2026-09-28", "end_date": "2026-10-20"},
+        actor, "leader",
+    )
+    assert saved is not None, "a trip planned around an appointment must save"
+    kept, _ = _planned(service, plan_id, stop_id, actor)
+    assert kept == "2026-09-16", (
+        f"the appointment moved to {kept} when the trip dates changed"
+    )
+    warnings = saved["itinerary_summary"]["warnings"]
+    assert any("before the requested start date" in str(item) for item in warnings), (
+        f"a route running before the trip starts must be reported: {warnings}"
+    )
+
+
 def check_overrun_is_a_risk_not_a_refusal(service, seed) -> None:
     """With fixed appointments the dates are what gives, so say it and save it."""
     plan_id, actor = seed["plan_id"], seed["actor"]
@@ -572,6 +631,7 @@ def main() -> None:
     initialize_database_safely(settings)
     service = ReviewService()
     seed = _seed(service)
+    check_a_new_plan_travels_with_its_owner(service, seed)
     check_members_are_team_accounts(service, seed)
     check_missing_endpoints_are_rejected(service, seed)
     check_member_order_is_stable(service, seed)
@@ -583,6 +643,7 @@ def main() -> None:
     check_generate_does_not_end_flexible_planning(service, seed)
     check_apply_a_suggestion(service, seed)
     check_a_stale_suggestion_cannot_be_applied(service, seed)
+    check_a_route_that_starts_before_the_trip_says_so(service, seed)
     check_overrun_is_a_risk_not_a_refusal(service, seed)
     close_db()
     print("PASS: team itinerary survives preview, generate and reload")

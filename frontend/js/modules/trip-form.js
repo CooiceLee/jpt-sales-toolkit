@@ -19,18 +19,13 @@ function readTripPlanFormPayload() {
         route_order_mode: routeDraft?.routeOrderMode
             || (document.getElementById('trip-route-order-mode')?.value === 'manual' ? 'manual' : 'auto'),
         transport_mode_priority: routeDraft?.transportModePriority || ['flight', 'drive', 'ground_public'],
-        departure_window_start: routeDraft
-            ? routeDraft.departureWindowStart || null
-            : document.getElementById('trip-departure-window-start')?.value || null,
-        departure_window_end: routeDraft
-            ? routeDraft.departureWindowEnd || null
-            : document.getElementById('trip-departure-window-end')?.value || null,
-        return_window_start: routeDraft
-            ? routeDraft.returnWindowStart || null
-            : document.getElementById('trip-return-window-start')?.value || null,
-        return_window_end: routeDraft
-            ? routeDraft.returnWindowEnd || null
-            : document.getElementById('trip-return-window-end')?.value || null,
+        // Sent as nothing on every save, so a plan that still carries the old
+        // windows is cleared the first time it is saved rather than being
+        // scheduled around dates nobody can see any more.
+        departure_window_start: null,
+        departure_window_end: null,
+        return_window_start: null,
+        return_window_end: null,
     };
 }
 
@@ -42,7 +37,8 @@ function readTripPlanHeaderFormPayload() {
         start_date: document.getElementById('trip-start-date')?.value || null,
         end_date: document.getElementById('trip-end-date')?.value || null,
         region: document.getElementById('trip-plan-region')?.value || null,
-        planning_mode: document.getElementById('trip-planning-mode')?.value || 'legacy',
+        // One way to plan a trip: as a team, of one person or of six.
+        planning_mode: 'team',
         origin_name: document.getElementById('trip-origin-name')?.value?.trim() || null,
         origin_lat: numericOrNull(document.getElementById('trip-origin-lat')?.value),
         origin_lng: numericOrNull(document.getElementById('trip-origin-lng')?.value),
@@ -63,13 +59,9 @@ function populateTripPlanForm(plan, options = {}) {
     setInputValue('trip-start-date', header.start_date || '');
     setInputValue('trip-end-date', header.end_date || '');
     setInputValue('trip-plan-region', header.region || '');
-    setInputValue('trip-planning-mode', header.planning_mode || 'legacy');
-    // A team trip runs between the plan's own dates, and a member who leaves on
-    // their own day says so on their own row. Two more windows saying the same
-    // thing for everybody at once only gave the reader a second place to look.
-    document.querySelectorAll('[data-single-traveller-only]').forEach(node => {
-        node.hidden = header.planning_mode === 'team';
-    });
+    // A trip runs between the plan's own dates. Two more windows saying the
+    // same thing were a second place to look and a second thing to keep in
+    // step, so they are gone: the plan's start and end are the only answer.
     setInputValue('trip-origin-name', header.origin_name || '');
     setInputValue('trip-origin-lat', header.origin_lat ?? '');
     setInputValue('trip-origin-lng', header.origin_lng ?? '');
@@ -82,18 +74,6 @@ function populateTripPlanForm(plan, options = {}) {
     ) || 'custom');
     setInputValue('trip-travel-mode', 'auto');
     setInputValue('trip-route-order-mode', routeDraft?.routeOrderMode || plan.route_order_mode || 'auto');
-    setInputValue('trip-departure-window-start', tripDateTimeLocalValue(
-        routeDraft ? routeDraft.departureWindowStart : plan.departure_window_start
-    ));
-    setInputValue('trip-departure-window-end', tripDateTimeLocalValue(
-        routeDraft ? routeDraft.departureWindowEnd : plan.departure_window_end
-    ));
-    setInputValue('trip-return-window-start', tripDateTimeLocalValue(
-        routeDraft ? routeDraft.returnWindowStart : plan.return_window_start
-    ));
-    setInputValue('trip-return-window-end', tripDateTimeLocalValue(
-        routeDraft ? routeDraft.returnWindowEnd : plan.return_window_end
-    ));
     setInputValue('trip-holidays', (header.holiday_dates || []).join(', '));
     setInputValue('trip-description', header.description || '');
     const avoidWeekends = document.getElementById('trip-avoid-weekends');

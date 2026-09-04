@@ -105,6 +105,13 @@ def _seed(service: ReviewService) -> tuple[str, str, str]:
          '["drive","flight","ground_public"]', "Shenzhen city", 22.5431, 114.0579,
          "Shenzhen city", 22.5431, 114.0579, 1, stamp, actor, stamp, actor),
     )
+    # Every trip travels with somebody. A plan written straight into the
+    # database has to say who, the same way creating one through the app does.
+    conn.execute(
+        "INSERT INTO trip_plan_members (id,plan_id,user_id,created_at,created_by,"
+        "updated_at,updated_by,row_version) VALUES (?,?,?,?,?,?,?,1)",
+        (generate_uuid(), plan_id, actor, stamp, actor, stamp, actor),
+    )
     customer_id = generate_uuid()
     conn.execute(
         "INSERT INTO customers (id,display_name,normalized_name,lat,lng,created_at,updated_at,row_version)"
@@ -123,17 +130,26 @@ def _seed(service: ReviewService) -> tuple[str, str, str]:
     return plan_id, stop_id, actor
 
 
+def _route(service: ReviewService, plan: dict, data: dict | None = None) -> dict:
+    """The route this plan produces, through the path the application runs."""
+    from backend.services.trip_team_adapter import calculate_team_itinerary
+
+    return calculate_team_itinerary(
+        service, service.trip_plan_service.member_repo, plan, data or {}
+    )
+
+
 def check_itinerary(service: ReviewService, plan_id: str, stop_id: str, actor: str) -> None:
     """The schedule shows the transfers and the wait, and only when flying."""
     key = f"origin>{stop_id}"
     plan = service.get_trip_plan(plan_id, actor, "leader")
 
-    plain = service._calculate_trip_itinerary(plan, {})
+    plain = _route(service, plan)
     assert not (plain["legs"][0].get("segments") or []), "no airports means no expansion"
 
     airports = {**SZX, **FRA, "selected_mode": "flight",
                 "departure_airport_stay_half_days": 2}
-    flown = service._calculate_trip_itinerary(plan, {"leg_overrides": {key: airports}})
+    flown = _route(service, plan, {"leg_overrides": {key: airports}})
     outbound = flown["legs"][0]
     segments = outbound["segments"]
     assert [item["role"] for item in segments] == [
@@ -141,12 +157,13 @@ def check_itinerary(service: ReviewService, plan_id: str, stop_id: str, actor: s
     ]
     assert segments[0]["stay_half_days"] == 2
     assert outbound["travel_half_days"] >= 4, "the wait at the airport takes time"
-    items = flown["summary"]["schedule_items"]
+    items = flown["schedule_items"]
     assert any(item["item_type"] == "airport" for item in items), "the wait is on the timeline"
     assert len(flown["legs"]) == len(plain["legs"]), "expansion adds no stored connections"
 
-    grounded = service._calculate_trip_itinerary(
-        plan, {"leg_overrides": {key: {**airports, "selected_mode": "drive"}}}
+    grounded = _route(
+        service, plan,
+        {"leg_overrides": {key: {**airports, "selected_mode": "drive"}}},
     )
     assert not (grounded["legs"][0].get("segments") or []), (
         "a ground connection must never route through an airport"
@@ -161,9 +178,13 @@ def check_persistence(service: ReviewService, plan_id: str, stop_id: str, actor:
         plan_id, {"leg_overrides": {key: airports}}, actor, "leader"
     )
     saved = service.trip_plan_service.leg_repo.saved_airports(plan_id)
-    # Keyed by (member_id, leg_key): the shared path belongs to no member, and
-    # two colleagues covering the same stops must not overwrite each other.
-    assert saved[(None, key)]["arrival_airport_name"] == "法兰克福机场"
+    # Keyed by (member_id, leg_key): every leg belongs to the person who
+    # travels it, so two colleagues covering the same stops cannot overwrite
+    # each other. Nothing is stored against "nobody".
+    assert saved[(actor, key)]["arrival_airport_name"] == "法兰克福机场"
+    assert not any(member is None for member, _ in saved), (
+        "a leg with no traveller is nobody's journey"
+    )
     assert not any(
         leg.get("mode_locked")
         for leg in service.trip_plan_service.leg_repo.list_active(plan_id)
@@ -186,10 +207,10 @@ def check_weekend_departure(service, plan_id: str, actor: str) -> None:
     )
     conn.commit()
     plan = service.get_trip_plan(plan_id, actor, "leader")
-    calc = service._calculate_trip_itinerary(plan, {})
-    first = calc["legs"][0]
-    assert first["planned_start_date"] == "2026-09-19", (
-        f"travel must start on the Saturday the trip starts, got {first['planned_start_date']}"
+    calc = _route(service, plan)
+    travel = [item for item in calc["schedule_items"] if item["item_type"] == "leg"]
+    assert travel[0]["date"] == "2026-09-19", (
+        f"travel must start on the Saturday the trip starts, got {travel[0]['date']}"
     )
     visit = calc["stop_updates"][0]
     assert visit["planned_date"] >= "2026-09-21", (
@@ -309,13 +330,13 @@ def check_booked_time_beats_preferences(service, plan_id: str, actor: str) -> No
         )
         conn.commit()
         plan = service.get_trip_plan(plan_id, actor, "leader")
-        calc = service._calculate_trip_itinerary(plan, {"stop_order": [stop_id]})
+        calc = _route(service, plan, {"stop_order": [stop_id]})
         visit = calc["stop_updates"][0]
         assert visit["planned_date"] == booked_date, (
             f"booked {booked_date} was moved to {visit['planned_date']}"
         )
         assert visit["planned_start_period"] == booked_period
-        kinds = [item["kind"] for item in calc["summary"]["risks"]]
+        kinds = [item["kind"] for item in calc["risks"]]
         assert expected_risk in kinds, f"expected {expected_risk}, got {kinds}"
     conn.execute(
         "UPDATE trip_plan_stops SET schedule_locked=0, planned_date=NULL,"
@@ -747,7 +768,7 @@ def check_schema() -> None:
     for side in ("departure", "arrival"):
         for suffix in ("name", "lat", "lng", "stay_half_days"):
             assert f"{side}_airport_{suffix}" in columns
-    assert APP_SCHEMA_VERSION == 14
+    assert APP_SCHEMA_VERSION == 15
 
 
 def main() -> None:

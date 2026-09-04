@@ -104,13 +104,17 @@ def _visit_end(start_date, start_period, half_days: int):
     return day.isoformat(), period
 
 
-PLANNING_MODES = ("legacy", "team")
+PLANNING_MODES = ("team",)
 
 
 def _planning_mode(value) -> str:
-    """The mode is a deliberate choice, never guessed from who is on the trip."""
-    text = (value or "").strip().lower()
-    return text if text in PLANNING_MODES else "legacy"
+    """There is one way to plan a trip: as a team, of one person or of six.
+
+    Two ways meant two of everything to keep in step and a reader who had to
+    know which one they were looking at. Anything else that arrives - an older
+    client, a plan from before - is read as a team.
+    """
+    return "team"
 
 
 def _md_separator(headers: list, right_align=frozenset()) -> str:
@@ -335,6 +339,15 @@ class TripPlanService:
                 now,
                 actor_id,
             ),
+        )
+        # A new trip already has one traveller: whoever it belongs to. The
+        # planner needs somebody to move, and asking the reader to add
+        # themselves before anything works is a step that explains nothing.
+        conn.execute(
+            "INSERT INTO trip_plan_members (id, plan_id, user_id, created_at, "
+            "created_by, updated_at, updated_by, row_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+            (generate_uuid(), plan_id, owner_id, now, actor_id, now, actor_id),
         )
         conn.commit()
         return self.core.get_trip_plan(plan_id, actor_id, "leader") or {"id": plan_id}
@@ -1518,94 +1531,9 @@ class TripPlanService:
             if not title:
                 raise ValueError("title cannot be empty")
             data["title"] = title
-        if (plan.get("planning_mode") or "legacy") == "team":
-            return self._generate_team_itinerary(
-                plan, data, actor_id, actor_role, expected_version
-            )
-        calculation = self.core._calculate_trip_itinerary(plan, data)
-        summary = calculation["summary"]
-        if not summary["within_date_window"]:
-            raise ValueError(
-                "The itinerary exceeds the selected end date "
-                f"{summary['requested_end_date']} "
-                f"{summary.get('requested_end_period') or ''} by "
-                f"{summary['overrun_half_days']} half-day slot(s). "
-                "Adjust the route, dates, or visit durations before saving."
-            )
-        stop_updates = calculation["stop_updates"]
-        legs = calculation["legs"]
-        plan_updates = calculation["plan_updates"]
-
-        conn = self.core.lead_repo.conn
-        now = now_iso()
-        try:
-            for item in stop_updates:
-                table = (
-                    "trip_plan_free_stops"
-                    if item.get("stop_kind") == "free"
-                    else "trip_plan_stops"
-                )
-                conn.execute(
-                    f"""
-                    UPDATE {table}
-                    SET sequence_no = ?, planned_date = ?, planned_end_date = ?,
-                        planned_start_period = ?, planned_end_period = ?,
-                        duration_half_days = ?, stay_days = ?,
-                        preferred_period = ?, schedule_locked = ?,
-                        confirmation_status = ?,
-                        travel_from_label = ?, travel_mode = ?,
-                        travel_distance_km = ?, travel_time_hours = ?, travel_days = ?,
-                        updated_at = ?, updated_by = ?, row_version = row_version + 1
-                    WHERE id = ? AND plan_id = ? AND archived_at IS NULL
-                    """,
-                    (
-                        item["sequence_no"],
-                        item["planned_date"],
-                        item["planned_end_date"],
-                        item["planned_start_period"],
-                        item["planned_end_period"],
-                        item["duration_half_days"],
-                        item["stay_days"],
-                        item["preferred_period"],
-                        1 if item["schedule_locked"] else 0,
-                        item["confirmation_status"],
-                        item["travel_from_label"],
-                        item["travel_mode"],
-                        item["travel_distance_km"],
-                        item["travel_time_hours"],
-                        item["travel_days"],
-                        now,
-                        actor_id,
-                        item["id"],
-                        plan_id,
-                    ),
-                )
-
-            self.leg_repo.replace_active(plan_id, legs, actor_id, now)
-
-            plan_updates["updated_at"] = now
-            plan_updates["updated_by"] = actor_id
-            plan_updates["row_version"] = int(plan.get("row_version") or 1) + 1
-            assignments = ", ".join(f"{key} = ?" for key in plan_updates)
-            params = [*plan_updates.values(), plan_id]
-            where = "id = ?"
-            if expected_version is not None:
-                where += " AND row_version = ?"
-                params.append(expected_version)
-            cursor = conn.execute(
-                f"UPDATE trip_plans SET {assignments} WHERE {where}",
-                tuple(params),
-            )
-            if cursor.rowcount == 0:
-                latest = self.core.get_trip_plan(plan_id, actor_id, actor_role)
-                if latest:
-                    self.core._assert_row_version(latest, expected_version)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-
-        return self.core.get_trip_plan(plan_id, actor_id, actor_role)
+        return self._generate_team_itinerary(
+            plan, data, actor_id, actor_role, expected_version
+        )
 
     def suggest_trip_flexible_visits(
         self, plan_id: str, data: dict, actor_id: str, actor_role: str
@@ -1721,15 +1649,21 @@ class TripPlanService:
         plan = self.core.get_trip_plan(plan_id, actor_id, actor_role)
         if not plan:
             return None
-        if (plan.get("planning_mode") or "legacy") == "team":
-            return {
-                **plan,
-                "itinerary_summary": calculate_team_itinerary(
-                    self.core, self.member_repo, plan, data
-                ),
-            }
-        calculation = self.core._calculate_trip_itinerary(plan, data)
-        return self.core._trip_itinerary_preview_plan(plan, calculation)
+        summary = calculate_team_itinerary(
+            self.core, self.member_repo, plan, data
+        )
+        # The same shape a preview has always had. A caller that asked for a
+        # preview is shown the route it would get, marked as not yet saved -
+        # anything less and the page draws the previous route while reporting
+        # the new one's totals.
+        return self.core._trip_itinerary_preview_plan(
+            plan,
+            {
+                "summary": summary,
+                "stop_updates": summary.get("stop_updates") or [],
+                "legs": summary.get("legs") or [],
+            },
+        )
 
     def get_trip_transport_suggestions(
         self,

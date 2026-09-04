@@ -33,6 +33,14 @@
             '{member} is expected back on {date}, after the planned end of the trip on {deadline}. Confirm the return arrangement.',
             risk
         ),
+        booked_on_skipped_day: risk => t(
+            '{stop} is booked for {date}, a day this trip otherwise keeps free. Keep the appointment, or ask the customer for a working day.',
+            risk
+        ),
+        booked_outside_preferred_period: risk => t(
+            '{stop} is booked for the {bookedPeriod}, not the {preferredPeriod} you asked for. The time the customer agreed is the one the route uses.',
+            risk
+        ),
         member_departure_after_plan_end: risk => t(
             '{member} is set to leave on {departureDate}, after the trip ends on {deadline}. They are travelling with the team until this is corrected.',
             risk
@@ -60,6 +68,8 @@
             plannedDate: risk.planned_date,
             departureDate: risk.departure_date,
             period: t(risk.period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),
+            bookedPeriod: t(risk.booked_period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),
+            preferredPeriod: t(risk.preferred_period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),
             count: risk.visit_count || (risk.stop_ids || []).length,
         });
     }

@@ -76,10 +76,6 @@
     function headerChanged() {
         if (State.tripBusy) return;
         TripPlanningDraft.change(draft => {
-            draft.departureWindowStart = document.getElementById('trip-departure-window-start')?.value || '';
-            draft.departureWindowEnd = document.getElementById('trip-departure-window-end')?.value || '';
-            draft.returnWindowStart = document.getElementById('trip-return-window-start')?.value || '';
-            draft.returnWindowEnd = document.getElementById('trip-return-window-end')?.value || '';
         });
         schedulePreview();
     }

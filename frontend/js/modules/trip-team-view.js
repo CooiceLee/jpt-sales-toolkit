@@ -64,7 +64,7 @@
         if (!target || !panel) return;
         // The card belongs to team planning. A single-traveller plan has no team
         // to show, so it is not there at all rather than shown empty.
-        panel.hidden = plan?.planning_mode !== 'team';
+        panel.hidden = !plan?.id;
         if (panel.hidden) return;
         const members = plan?.members || [];
         target.innerHTML = `

@@ -85,6 +85,7 @@ echo "Step 2/4: Python compile"
 echo
 echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_password_service.py
+"$PYTHON_BIN" test_password_change_takes_effect.py
 "$PYTHON_BIN" test_authorization_crypto.py
 "$PYTHON_BIN" test_authorization_clock.py
 "$PYTHON_BIN" test_authorization_data_layer.py
