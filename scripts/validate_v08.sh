@@ -93,6 +93,7 @@ echo "Step 3/4: core regression tests"
 "$PYTHON_BIN" test_authorization_api.py
 "$PYTHON_BIN" test_authorization_role_boundary.py
 "$PYTHON_BIN" test_authorization_security_regressions.py
+"$PYTHON_BIN" test_static_file_boundary.py
 "$PYTHON_BIN" test_tech_workload_summary.py
 "$PYTHON_BIN" test_desktop_packaging_contract.py
 "$PYTHON_BIN" test_release_hygiene.py

@@ -54,6 +54,29 @@ def _frontend_build_stamp(frontend_dir) -> int:
 ASSET_VERSION_PATTERN = re.compile(r'(/static/[^"\'?\s]+)\?v=[^"\'\s]*')
 
 
+def _page_file(frontend_dir: Path, path: str) -> Path | None:
+    """The page asset this request asks for, or None if it is not ours to send.
+
+    A URL is text, and `%2e%2e/VERSION` is text that names a file outside the
+    page directory. Only the resolved path can say where a request actually
+    points, so that is what is checked; filtering the characters `../` leaves
+    every other spelling of the same escape working. Anything that is not a
+    file inside this directory is a route for the page to handle, not a
+    download.
+    """
+    root = frontend_dir.resolve()
+    try:
+        target = (root / path).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not target.is_relative_to(root) or target == root:
+        return None
+    try:
+        return target if target.is_file() else None
+    except OSError:
+        return None
+
+
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     configured_origins = [
@@ -194,14 +217,12 @@ def create_app() -> FastAPI:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="API endpoint not found",
                 )
-            file_path = frontend_dir / path
+            file_path = _page_file(frontend_dir, path)
             # index.html is always built rather than sent from disk, whichever
             # name it is asked for: the copy on disk still carries the version
             # markers that are rewritten per build, and serving it raw hands the
             # browser the old asset URLs it already has cached.
-            if file_path.name == "index.html" or not (
-                file_path.exists() and file_path.is_file()
-            ):
+            if file_path is None or file_path.name == "index.html":
                 return index_html()
             return FileResponse(file_path)
 
