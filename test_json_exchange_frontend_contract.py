@@ -91,7 +91,10 @@ const elements = {
     addEventListener(type, handler) { listeners[type] = handler; }
   },
   'json-preflight-result': { innerHTML: '' },
-  'json-import-result': { innerHTML: '' },
+  'json-import-result': {
+    innerHTML: '',
+    insertAdjacentHTML(position, html) { this.innerHTML += html; },
+  },
   'json-import-btn': {
     disabled: false, title: '', attributes: {},
     setAttribute(name, value) { this.attributes[name] = value; }

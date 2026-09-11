@@ -15,7 +15,7 @@ function renderReviewTable(containerId, columns, rows) {
                     <tr>
                         ${columns.map(([, getter]) => {
                             const value = typeof getter === 'function' ? getter(row) : row[getter];
-                            return `<td>${escapeHtml(value ?? '-')}</td>`;
+                            return `<td data-business>${escapeHtml(value ?? '-')}</td>`;
                         }).join('')}
                     </tr>
                 `).join('')}
@@ -45,13 +45,13 @@ function renderLeadReviewTable(containerId, rows, includeReasons) {
             <tbody>
                 ${rows.map(row => `
                     <tr>
-                        <td><button type="button" class="text-link" onclick="openInquiryPanel('${row.id}')">${escapeHtml(row.display_id || '-')}</button></td>
+                        <td data-business><button type="button" class="text-link" onclick="openInquiryPanel('${row.id}')">${escapeHtml(row.display_id || '-')}</button></td>
                         <td>
-                            <button type="button" class="text-link" onclick="jumpToCustomerStageCards('${row.id}', '${row.stage || ''}', '${row.customer_id || ''}')">${escapeHtml(row.customer_name || '-')}</button>
+                            <button type="button" class="text-link" data-business onclick="jumpToCustomerStageCards('${row.id}', '${row.stage || ''}', '${row.customer_id || ''}')">${escapeHtml(row.customer_name || '-')}</button>
                             <button type="button" class="table-mini-link" onclick="focusReviewMapCustomer('${row.customer_id || ''}')">Locate</button>
                         </td>
                         <td><button type="button" class="text-link" onclick="jumpToCustomerStageCards('${row.id}', '${row.stage || ''}', '${row.customer_id || ''}')">${escapeHtml(row.stage || '-')}</button></td>
-                        <td>${escapeHtml(formatMoney(row.value || 0))}</td>
+                        <td>${escapeHtml(MoneyTotals.text(row.value_by_currency))}</td>
                         <td>${escapeHtml(includeReasons ? (row.risk_reasons || []).join(', ') : (row.owner_name || '-'))}</td>
                     </tr>
                 `).join('')}

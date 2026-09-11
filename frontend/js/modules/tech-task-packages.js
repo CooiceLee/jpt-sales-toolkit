@@ -87,7 +87,10 @@
             const report = await methods(kind)[1](file);
             window.TechTaskPackageView.renderReport(state.result, report, 'Task package import complete');
             document.getElementById(state.input).value = '';
-            try { await refreshAllCounts(); } catch (error) { console.error('Task package count refresh failed:', error); }
+            if (!await refreshAllCounts()) {
+                document.getElementById(state.result)?.insertAdjacentHTML('beforeend',
+                    `<p class="error-state">${escapeHtml(tr('Import completed, but navigation counts could not be refreshed. Reopen JPT to load the latest counts.'))}</p>`);
+            }
         } catch (error) {
             window.TechTaskPackageView.renderMessage(state.result, error.message || 'Import failed', 'error');
         } finally {

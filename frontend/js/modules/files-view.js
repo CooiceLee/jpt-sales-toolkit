@@ -14,7 +14,7 @@ function renderFilesTab(inq) {
         <div class="followup-item" style="border-left:3px solid var(--info);">
             <div class="followup-header">
                 <div class="followup-meta">
-                    <span class="followup-method">${escapeHtml(attachment.original_name || 'Attachment')}</span>
+                    <span class="followup-method" data-business>${escapeHtml(attachment.original_name || 'Attachment')}</span>
                     <span class="stage-badge">${escapeHtml(attachment.category || 'other')}</span>
                 </div>
                 <div style="display:flex;gap:8px;">
@@ -26,7 +26,9 @@ function renderFilesTab(inq) {
             <div class="followup-dates">
                 <span>${formatFileSize(attachment.size_bytes)}</span>
                 <span>v${attachment.version_no || 1}</span>
-                <span>${attachment.uploader_name ? `By ${escapeHtml(attachment.uploader_name)}` : ''}</span>
+                <span data-business>${attachment.uploader_name
+                    ? I18n.t('By {name}', { name: escapeHtml(attachment.uploader_name) })
+                    : ''}</span>
                 <span>${formatDate(attachment.uploaded_at)}</span>
             </div>
         </div>
@@ -35,13 +37,13 @@ function renderFilesTab(inq) {
     return `
         ${list || '<div class="empty-state">No files uploaded yet.</div>'}
         <button type="button" class="btn btn-secondary mt-4" onclick="showAttachmentForm()">+ Upload File</button>
-        <div id="attachment-form" class="hidden" style="margin-top:16px;padding:16px;background:var(--cream-100);border-radius:var(--radius-md);">
+        <div id="attachment-form" class="hidden" data-panel-form style="margin-top:16px;padding:16px;background:var(--cream-100);border-radius:var(--radius-md);">
             <input type="hidden" id="attachment-index" value="-1">
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Category</label>
                     <select id="attachment-category" class="form-select">
-                        ${categories.map(item => `<option value="${item.value}">${item.label}</option>`).join('')}
+                        ${categories.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">

@@ -26,7 +26,7 @@
             <div class="visit-day-toolbar">
                 <select class="form-input" id="trip-execution-date" onchange="TripVisitState.setVisitDate(this.value)" ${days.length ? '' : 'disabled'}>
                     ${days.length
-                        ? days.map(day => `<option value="${day}" ${day === activeDate ? 'selected' : ''}>${day}</option>`).join('')
+                        ? days.map(day => `<option value="${h(day)}" ${day === activeDate ? 'selected' : ''}>${h(day)}</option>`).join('')
                         : `<option value="">${h(t('Unscheduled stops'))}</option>`}
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="TripPlannerModule.exportVisitDay()">${h(t('Export day report'))}</button>

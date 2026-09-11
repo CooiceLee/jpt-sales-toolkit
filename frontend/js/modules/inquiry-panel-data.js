@@ -4,13 +4,19 @@
 
     async function load(leadId) {
         const taskOnly = RoleCapabilities.isTech();
-        const [lead, activities, preSalesTasks, afterSalesTasks, attachments] = await Promise.all([
+        const [lead, activities, preSalesPage, afterSalesPage, attachments] = await Promise.all([
             ApiClient.getLead(leadId),
             taskOnly ? [] : ApiClient.listActivities(leadId),
-            ApiClient.listPreSalesTasks({ lead_id: leadId, include_archived: true, limit: 100000 }),
-            ApiClient.listAfterSalesTasks({ lead_id: leadId }),
+            ApiClient.listAllPreSalesTasks({ lead_id: leadId, include_archived: true }),
+            ApiClient.listAllAfterSalesTasks({ lead_id: leadId }),
             taskOnly ? [] : ApiClient.listAttachments(leadId)
         ]);
+        const preSalesTasks = preSalesPage.items;
+        const afterSalesTasks = afterSalesPage.items;
+        // Carried so the tabs can say when they are showing part of a list.
+        // A panel that shows the first page as though it were all of them is
+        // how a task somebody is waiting on becomes invisible.
+        const tasksComplete = PagedFetch.isComplete(preSalesPage, afterSalesPage);
         const primaryContact = getLeadPrimaryContact(lead);
         return {
             id: lead.id,
@@ -38,6 +44,7 @@
             _lead: lead,
             _customer: lead.customer,
             _activities: activities,
+            tasks_complete: tasksComplete,
             _preSalesTasks: preSalesTasks,
             _afterSalesTasks: afterSalesTasks,
             _attachments: attachments

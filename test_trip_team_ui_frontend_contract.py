@@ -196,9 +196,11 @@ def check_risk_bar_reads_backend_risks() -> None:
         itinerary_summary: { risks: [
             { kind: 'member_double_booked', user_id: 'z', date: '2026-09-16',
               period: 'AM', stop_ids: ['a', 'b'] },
+            // Exactly what the backend sends: the calculated end day, and no
+            // "date" key. Feeding one here is what hid a literal {date} on the
+            // risk bar for as long as this check has existed.
             { kind: 'member_return_overrun', member_id: 'z',
-              calculated_end_date: '2026-09-30', date: '2026-09-30',
-              deadline: '2026-09-28' },
+              calculated_end_date: '2026-09-30', deadline: '2026-09-28' },
             { kind: 'parallel_visits_unassigned', date: '2026-09-16',
               period: 'PM', visit_count: 2, stop_ids: ['a', 'b'] },
             { kind: 'cannot_reach_booked_visit', user_id: 'z',
@@ -213,6 +215,10 @@ def check_risk_bar_reads_backend_risks() -> None:
                for line in data["lines"]), data["lines"]
     assert not any("{" in line for line in data["lines"]), (
         f"a risk sentence left a placeholder unfilled: {data['lines']}"
+    )
+    overrun = next(line for line in data["lines"] if "2026-09-28" in line)
+    assert "2026-09-30" in overrun, (
+        f"the return-overrun sentence does not say which day: {overrun}"
     )
 
 

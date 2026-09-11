@@ -4,7 +4,7 @@ Lead router - lead management endpoints.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -14,6 +14,7 @@ from ..services import LeadService, ActivityService
 from ..services.lead_service import (
     InvalidLeadAssignmentError,
     InvalidLeadContactError,
+    InvalidLeadCustomerError,
     mask_lead_for_role,
 )
 from ..services.business_region_service import InvalidBusinessRegionError
@@ -27,6 +28,16 @@ from .lead_attachment_permissions import (
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
+# The five fields the database constrains. Typed here so a value outside the
+# set is answered as a bad request: it used to reach SQLite, whose CHECK
+# constraint failed as an unhandled error, and a 500 says nothing about which
+# field was wrong or what it accepts. The sets are the schema's own.
+SalesStage = Literal["New", "Assigned", "Following", "Quoted", "Won", "Lost"]
+FulfillmentStatus = Literal["Not Started", "In Progress", "Completed"]
+ServiceStatus = Literal["None", "Open", "In Progress", "Resolved", "Closed"]
+QualityGrade = Literal["A", "B", "C", "D"]
+Urgency = Literal["High", "Medium", "Low"]
+
 
 class LeadCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -37,8 +48,8 @@ class LeadCreate(BaseModel):
     title: str
     source_channel: Optional[str] = None
     original_email: Optional[str] = None
-    sales_stage: str = "New"
-    quality_grade: Optional[str] = None
+    sales_stage: SalesStage = "New"
+    quality_grade: Optional[QualityGrade] = None
     product_category: Optional[str] = None
     application: Optional[str] = None
     inquiry_date: Optional[str] = None
@@ -56,11 +67,11 @@ class LeadUpdate(BaseModel):
     title: Optional[str] = None
     source_channel: Optional[str] = None
     original_email: Optional[str] = None
-    sales_stage: Optional[str] = None
-    fulfillment_status: Optional[str] = None
-    service_status: Optional[str] = None
-    quality_grade: Optional[str] = None
-    urgency: Optional[str] = None
+    sales_stage: Optional[SalesStage] = None
+    fulfillment_status: Optional[FulfillmentStatus] = None
+    service_status: Optional[ServiceStatus] = None
+    quality_grade: Optional[QualityGrade] = None
+    urgency: Optional[Urgency] = None
     estimated_value: Optional[float] = None
     product_category: Optional[str] = None
     product_series: Optional[str] = None
@@ -158,7 +169,8 @@ async def create_lead(
     data = request.model_dump(exclude_none=True)
     try:
         return service.create(data, user["id"])
-    except (InvalidLeadAssignmentError, InvalidLeadContactError) as e:
+    except (InvalidLeadAssignmentError, InvalidLeadContactError,
+            InvalidLeadCustomerError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
@@ -266,7 +278,8 @@ async def update_lead(
             actor_role,
             request.row_version,
         )
-    except (InvalidLeadAssignmentError, InvalidLeadContactError) as e:
+    except (InvalidLeadAssignmentError, InvalidLeadContactError,
+            InvalidLeadCustomerError) as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except ConflictError as e:
         raise HTTPException(

@@ -137,10 +137,9 @@
         try {
             const report = await ApiClient.importData(file);
             window.LegacyImportView.renderImport(report);
-            try {
-                await refreshAllCounts();
-            } catch (refreshError) {
-                console.error('JSON import count refresh failed:', refreshError);
+            if (!await refreshAllCounts()) {
+                target.insertAdjacentHTML('beforeend',
+                    `<p class="error-state">${escapeHtml(tr('Import completed, but navigation counts could not be refreshed. Reopen JPT to load the latest counts.'))}</p>`);
             }
             document.getElementById('json-import-file').value = '';
             return report;

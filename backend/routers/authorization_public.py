@@ -70,7 +70,12 @@ async def recover_leader_device(
 async def create_device_request(
     service: OfflineAuthorizationService = Depends(get_offline_service),
 ):
-    request = service.create_device_request()
+    try:
+        request = service.create_device_request()
+    except (AuthorizationError, ValueError) as exc:
+        # Including "this machine could not be identified": a request written
+        # with an invented id would be signed for a device that does not exist.
+        raise_service_error(exc)
     return json_attachment(request, f"jpt-device-{request['device_id'][:12]}.jptreq")
 
 

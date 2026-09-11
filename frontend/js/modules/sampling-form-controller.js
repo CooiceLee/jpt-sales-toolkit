@@ -30,7 +30,7 @@
             : '';
         select.disabled = false;
         select.innerHTML = `<option value="">${escapeHtml(tr('Unassigned'))}</option>` + techUsers
-            .map(user => `<option value="${escapeHtml(user.id)}" ${user.id === selectedId ? 'selected' : ''}>${escapeHtml(user.display_name || user.username)}</option>`)
+            .map(user => `<option value="${escapeHtml(user.id)}" data-business ${user.id === selectedId ? 'selected' : ''}>${escapeHtml(user.display_name || user.username)}</option>`)
             .join('') + preserved;
         return true;
     }

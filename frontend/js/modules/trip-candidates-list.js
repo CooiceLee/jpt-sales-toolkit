@@ -33,7 +33,7 @@ function renderTripCandidates() {
                 <tr>
                     <th>${escapeHtml(I18n.t('Customer'))}</th>
                     <th>${escapeHtml(I18n.t('Location'))}</th>
-                    <th>${escapeHtml(I18n.t('Score'))}</th>
+                    <th>${escapeHtml(I18n.t('Engagement priority'))}</th>
                     <th>${escapeHtml(I18n.t('Open'))}</th>
                     <th>${escapeHtml(I18n.t('Value'))}</th>
                     <th>${escapeHtml(I18n.t('Reasons'))}</th>
@@ -44,13 +44,17 @@ function renderTripCandidates() {
                 ${candidates.map((item, index) => `
                     <tr>
                         <td>
-                            <div style="font-weight:600;">${escapeHtml(item.customer_name)}</div>
-                            <div style="font-size:12px;color:var(--ink-500);">${escapeHtml(item.primary_lead_display_id || '')}</div>
+                            <div style="font-weight:600;" data-business>${escapeHtml(item.customer_name)}</div>
+                            <div style="font-size:12px;color:var(--ink-500);" data-business>${escapeHtml(item.primary_lead_display_id || '')}</div>
                         </td>
-                        <td>${escapeHtml([item.city, item.country].filter(Boolean).join(', ') || '-')}</td>
+                        <td data-business>${escapeHtml([item.city, item.country].filter(Boolean).join(', ') || '-')}</td>
                         <td><span class="score-pill">${escapeHtml(item.score)}</span></td>
                         <td>${item.open_count || 0}</td>
-                        <td>${escapeHtml(formatMoney(item.pipeline_value || item.won_value || 0))}</td>
+                        <td>${escapeHtml(MoneyTotals.text(
+                            Object.keys(item.pipeline_value_by_currency || {}).length
+                                ? item.pipeline_value_by_currency
+                                : item.won_value_by_currency
+                        ))}</td>
                         <td>${escapeHtml((item.reasons || []).map(reason => I18n.t(reason)).join(', ') || '-')}</td>
                         <td class="trip-candidate-actions">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="focusTripCandidate(${index})">${escapeHtml(I18n.t('Map'))}</button>

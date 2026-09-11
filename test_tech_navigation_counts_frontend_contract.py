@@ -183,19 +183,32 @@ async function renderForRole(isTech) {
     I18n: { t: value => value },
     RoleCapabilities: { isTech: () => isTech },
     ApiClient: {
-      listLeads: async () => leads,
-      listAfterSalesTasks: async () => tasks,
+      // Both lists are read to the end now, so the stub answers the paged
+      // calls the module actually makes.
+      listAllLeads: async () => ({ items: leads, complete: true }),
+      listAllAfterSalesTasks: async () => ({ items: tasks, complete: true }),
     },
     getSharedLeadFilters: () => ({}),
     leadToCardItem: (lead, extra) => ({ ...lead, ...extra }),
     State: { currentFilters: { aftersales: 'all' } },
     WorklistSort: { aftersales: items => items },
     setText() {},
+    // The queue draws through its workbench now; the double records what
+    // reached the screen the same way the renderCards double did.
+    AftersalesWorkbench: { render: items => { rendered = items; } },
     renderCards: (_id, items) => { rendered = items; },
     setPanelError() {},
   };
   context.window = context;
   vm.createContext(context);
+  // The list says when it could not be read whole, so the module it says it
+  // with has to be loaded too.
+  vm.runInContext(
+    fs.readFileSync('frontend/js/modules/paged-fetch.js', 'utf8'), context);
+  // Which query a list on screen answers - a loader writes to the page only
+  // while its own ticket is the current one.
+  vm.runInContext(
+    fs.readFileSync('frontend/js/modules/worklist-request.js', 'utf8'), context);
   vm.runInContext(source, context);
   await context.loadAftersales();
   return rendered;

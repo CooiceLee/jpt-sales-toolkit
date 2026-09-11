@@ -1,5 +1,7 @@
 function renderCurrentTripPlan() {
     const container = document.getElementById('trip-current-plan');
+    window.TripZones?.renderHeader?.(State.currentTripPlan);
+    window.TripBriefingPicker?.render?.();   // same plan, drawn from one place
     if (!container) return;
     const plan = State.currentTripPlan;
     if (!plan) {
@@ -9,14 +11,14 @@ function renderCurrentTripPlan() {
     const stops = plan.stops || [];
     if (!stops.length) {
         container.innerHTML = `
-            <div class="trip-current-title">${escapeHtml(plan.title)}</div>
+            <div class="trip-current-title" data-business>${escapeHtml(plan.title)}</div>
             ${renderTripItinerarySummary(plan)}
             <div class="empty-state compact">${escapeHtml(I18n.t('No stops yet'))}</div>
         `;
         return;
     }
     container.innerHTML = `
-        <div class="trip-current-title">${escapeHtml(plan.title)}</div>
+        <div class="trip-current-title" data-business>${escapeHtml(plan.title)}</div>
         ${renderTripItinerarySummary(plan)}
         ${stops.map((stop, index) => renderTripStopCard(stop, index, stops.length)).join('')}
     `;
@@ -26,14 +28,14 @@ function renderTripStopCard(stop, index, total) {
     if (stop.stop_kind === 'free') return renderTripFreeStopCard(stop, index, total);
     return `<div class="trip-stop trip-stop-customer" data-stop-id="${escapeHtml(stop.id)}" data-stop-kind="customer">
                 <div class="trip-stop-head">
-                    <strong>${escapeHtml(stop.sequence_no)}. ${escapeHtml(stop.customer_name)}</strong>
+                    <strong data-business>${escapeHtml(stop.sequence_no)}. ${escapeHtml(stop.customer_name)}</strong>
                     <div class="trip-stop-actions">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="moveTripStop('${stop.id}', -1)" ${index === 0 ? 'disabled' : ''}>${escapeHtml(I18n.t('Up'))}</button>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="moveTripStop('${stop.id}', 1)" ${index === total - 1 ? 'disabled' : ''}>${escapeHtml(I18n.t('Down'))}</button>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="removeTripStop('${stop.id}')">${escapeHtml(I18n.t('Remove'))}</button>
                     </div>
                 </div>
-                <div class="trip-stop-meta">${escapeHtml([stop.city, stop.country, stop.lead_display_id].filter(Boolean).join(' · '))}</div>
+                <div class="trip-stop-meta" data-business>${escapeHtml([stop.city, stop.country, stop.lead_display_id].filter(Boolean).join(' · '))}</div>
                 <div class="trip-stop-schedule">${escapeHtml(formatTripStopSchedule(stop))}</div>
                 <div class="trip-date-row">
                     <label class="trip-field-label">
@@ -61,7 +63,7 @@ function renderTripFreeStopCard(stop, index, total) {
     const location = [stop.address, stop.city, stop.country].filter(Boolean).join(' · ');
     return `<div class="trip-stop trip-stop-free" data-stop-id="${escapeHtml(stop.id)}" data-stop-kind="free">
         <div class="trip-stop-head">
-            <strong>${escapeHtml(stop.sequence_no)}. ${escapeHtml(name)}</strong>
+            <strong data-business>${escapeHtml(stop.sequence_no)}. ${escapeHtml(name)}</strong>
             <span class="trip-stop-kind">${escapeHtml(category)} · ${escapeHtml(I18n.t('Personal stop'))}</span>
         </div>
         <div class="trip-stop-meta">${escapeHtml(location || I18n.t('Location confirmed by coordinates'))}</div>

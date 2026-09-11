@@ -1,16 +1,14 @@
 /** Loading, full-replacement saving and explicit geocoding for visit briefings. */
 (function() {
     let requestEpoch = 0;
-    let locationEpoch = 0;
-    let candidates = [];
     const h = value => escapeHtml(value ?? '');
 
     function setEditorOpen(open) {
-        const root = document.getElementById('trip-briefing-editor');
+        const root = TripBriefingReveal.editor();
         if (!root) return null;
-        root.hidden = !open;
-        root.closest('.trip-schedule-workspace')?.classList.toggle('has-open-briefing', Boolean(open));
         if (open) TripBriefingReveal.show(root);
+        else root.hidden = true;
+        root.closest('.trip-briefing-workspace')?.classList.toggle('has-open-briefing', Boolean(open));
         return root;
     }
 
@@ -32,7 +30,7 @@
         if (TripBriefingDraft.getStopId() === stopId) return setEditorOpen(true);
         if (TripBriefingDraft.guard()) return;
         const epoch = ++requestEpoch;
-        locationEpoch += 1;
+        window.TripBriefingGeocode?.cancelLocationSearch?.();
         setEditorLoading('Loading customer visit preparation...');
         try {
             const data = await ApiClient.getTripBriefing(planId, stopId);
@@ -49,8 +47,7 @@
     function close(options = {}) {
         if (!options.force && !TripBriefingDraft.confirmDiscard()) return false;
         requestEpoch += 1;
-        locationEpoch += 1;
-        candidates = [];
+        window.TripBriefingGeocode?.cancelLocationSearch?.();
         TripBriefingDraft.reset();
         const root = setEditorOpen(false);
         if (root) root.innerHTML = '';
@@ -64,31 +61,60 @@
         let payload;
         try { payload = TripBriefingForm.payload(); }
         catch (error) { alert(error.message); return; }
-        // The team is filled in for reading. Sent back it would turn "whoever
-        // is travelling" into a fixed list, and somebody joining the trip later
-        // would be left off this visit without a word.
-        if (TripBriefingDraft.isWholeTeam(payload.participants)) {
+        // A list nobody chose still means "whoever is travelling". A list the
+        // reader chose keeps its people, even when it happens to be everybody.
+        if (TripBriefingDraft.staysInherited(payload.participants)) {
             payload.participants = [];
         }
+        // An address search started before this save is still out, and its
+        // answer draws buttons that were not there to be held. Choosing one
+        // rebuilt the form - unfrozen - over values this save had already
+        // taken, so the new address was neither sent nor kept. The search is
+        // dropped here; after a failed save the reader can search again.
+        window.TripBriefingGeocode?.cancelLocationSearch?.();
+        // This save owns this editor until it finishes: the fields it took its
+        // values from are held, and the identity it belongs to is carried so
+        // the tail cannot close an editor the reader has since opened.
+        const session = TripBriefingSession.begin({ planId, stopId, epoch: requestEpoch });
+        const mine = () => TripBriefingSession.isCurrent(session, requestEpoch);
         try {
             setBusy(true);
             const data = await ApiClient.putTripBriefing(planId, stopId, payload);
+            if (!mine()) {
+                // Written, and the reader has moved on. Saying nothing would
+                // read as lost work; touching the screen would take the plan
+                // they are on now away from them.
+                notify(I18n.t('The earlier visit preparation was saved. Reopen that visit to see it.'));
+                return;
+            }
             TripBriefingDraft.markClean(data);
             close({ force: true });
-            // Who attends and where the visit is both decide the route, so the
-            // server marks the itinerary out of date when either changes. Read
-            // the plan back rather than reloading the whole page: a full reload
-            // stops when another editor holds unsaved work, which would leave
-            // "saved" on screen over the previous calculation.
-            await TripPlanRefresh.reread(planId);
-            notify(I18n.t('Customer visit preparation saved.'));
+            // Written and read back are two different things to be wrong
+            // about. Who attends and where the visit is both decide the route,
+            // so the server marks the itinerary out of date when either
+            // changes; the plan is read back under the number the screen
+            // already had, so this cannot finish in place of a plan the reader
+            // asked for meanwhile. If that read fails, the write still stands -
+            // saying nothing left the reader looking at the old summary with no
+            // idea whether their work was saved.
+            try {
+                await TripPlanRefresh.reread(planId, { token: session.token });
+                notify(I18n.t('Customer visit preparation saved.'));
+            } catch (refreshError) {
+                console.error('Refresh after saving a visit briefing failed:', refreshError);
+                notify(I18n.t('The visit preparation was saved, but the page could not be refreshed. Reopen this visit to see the latest - do not save again.'));
+            }
         } catch (error) {
             console.error('Save trip briefing error:', error);
+            if (!mine()) return;
             if (error?.name === 'ConflictError') {
                 TripBriefingDraft.setStatus(I18n.t('This preparation changed elsewhere. Your draft was not saved; refresh latest before editing again.'));
                 alert(I18n.t('This preparation changed elsewhere. Your draft remains visible. Use Refresh latest to load the current saved version.'));
             } else await handleTripError(error, 'Save customer visit preparation');
-        } finally { setBusy(false); }
+        } finally {
+            TripBriefingSession.release(session, requestEpoch);
+            if (mine()) setBusy(false);
+        }
     }
 
     async function refreshLatest() {
@@ -99,61 +125,8 @@
         await open(stopId);
     }
 
-    function locationFields() {
-        const values = {};
-        document.querySelectorAll('[data-location-field]').forEach(input => {
-            values[input.dataset.locationField] = input.value.trim();
-        });
-        return values;
-    }
-
-    async function searchLocation() {
-        const fields = locationFields();
-        if (![fields.address, fields.city, fields.postal_code, fields.country].some(Boolean)) {
-            alert(I18n.t('Enter an address, city, postal code, or country first.')); return;
-        }
-        const epoch = ++locationEpoch;
-        const planId = State.currentTripPlan?.id;
-        const stopId = TripBriefingDraft.getStopId();
-        const fingerprint = JSON.stringify(fields);
-        const isCurrent = () => epoch === locationEpoch
-            && planId === State.currentTripPlan?.id
-            && stopId === TripBriefingDraft.getStopId()
-            && fingerprint === JSON.stringify(locationFields());
-        const status = document.getElementById('trip-briefing-location-status');
-        const root = document.getElementById('trip-briefing-location-candidates');
-        if (status) status.textContent = I18n.t('Searching location...');
-        if (root) root.innerHTML = '';
-        try {
-            const result = await ApiClient.searchGeocode({
-                address: fields.address, city: fields.city, postal_code: fields.postal_code, country: fields.country,
-            }, 5);
-            if (!isCurrent()) return;
-            candidates = (result.candidates || []).filter(item => Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng)));
-            if (root) root.innerHTML = candidates.map((item, index) => `<button type="button" class="btn btn-secondary btn-sm"
-                onclick="TripBriefingActions.chooseLocation(${index})">${h(item.normalized_address || `${item.lat}, ${item.lng}`)}</button>`).join('');
-            if (status) status.textContent = candidates.length
-                ? I18n.t('Choose one result to confirm the custom visit coordinates.')
-                : I18n.t('No matching location found. Refine the address or enter exact coordinates manually.');
-        } catch (error) {
-            if (!isCurrent()) return;
-            console.error('Briefing location search error:', error);
-            if (status) status.textContent = I18n.t('Location search failed. Check the network or enter coordinates manually.');
-        }
-    }
-
-    function chooseLocation(index) {
-        if (!candidates[index]) return;
-        TripBriefingForm.setLocation(candidates[index]);
-    }
-
-    function cancelLocationSearch() {
-        locationEpoch += 1;
-        candidates = [];
-        const root = document.getElementById('trip-briefing-location-candidates');
-        if (root) root.innerHTML = '';
-    }
-
     window.TripBriefingActions = Object.freeze({ open, close, save, refreshLatest,
-        searchLocation, chooseLocation, cancelLocationSearch });
+        searchLocation: (...args) => TripBriefingGeocode.searchLocation(...args),
+        chooseLocation: (...args) => TripBriefingGeocode.chooseLocation(...args),
+        cancelLocationSearch: (...args) => TripBriefingGeocode.cancelLocationSearch(...args) });
 })();

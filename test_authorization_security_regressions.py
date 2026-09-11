@@ -197,6 +197,39 @@ def assert_username_case_unique(client: TestClient, headers: dict) -> None:
     ), 400, "rename member to case-colliding username")
 
 
+def assert_a_refused_request_does_not_echo_the_secret(client: TestClient,
+                                                     headers: dict) -> None:
+    """A malformed authorization call is answered without the secrets in it.
+
+    The default answer to a validation error quotes the body back. These
+    bodies carry a password and an issuer passphrase, so one wrong field name
+    returned both in plain text - to the page that displays the error and to
+    anything that keeps the answer. The reply still has to say which field is
+    wrong, or nobody can fix the call.
+    """
+    password = "SeenOnlyByTheCaller2026!"
+    passphrase = "issuer-passphrase-never-in-an-answer"
+    answer = client.post("/api/authorization/leader/recover", json={
+        "user_name": "leader.boundary",          # the field is `username`
+        "password": password,
+        "issuer_passphrase": passphrase,
+    })
+    assert answer.status_code == 422, answer.status_code
+    body = answer.text
+    assert password not in body and passphrase not in body, body[:400]
+    assert "username" in body and "user_name" in body, body[:400]
+    assert "Field required" in body or "not permitted" in body, body[:400]
+
+    # The same reply shape everywhere else: still says which field and why.
+    business = client.post("/api/leads", headers=headers["leader.boundary"], json={
+        "customer_id": "no-such-customer", "title": "x", "owner_id": "x",
+        "sales_stage": "NotAStage",
+    })
+    assert business.status_code == 422, business.status_code
+    assert "sales_stage" in business.text, business.text[:300]
+    assert "NotAStage" not in business.text, business.text[:300]
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="jpt_security_regressions_") as directory:
         close_db()
@@ -213,6 +246,8 @@ def main() -> None:
                     assert_tech_formal_follow_up_rejected(client, headers, data)
                     assert_tech_task_whitelist(client, headers, data)
                     assert_username_case_unique(client, headers)
+                    assert_a_refused_request_does_not_echo_the_secret(
+                        client, headers)
             finally:
                 close_db()
     print("PASS: global Tech security boundaries and case-insensitive member identity")

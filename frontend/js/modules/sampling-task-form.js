@@ -23,7 +23,7 @@
     function render() {
         const managerClass = RoleCapabilities.canManageTaskRequests() ? '' : 'hidden';
         return `
-            <div id="sample-task-form" class="sample-task-form hidden">
+            <div id="sample-task-form" class="sample-task-form hidden" data-panel-form>
                 <input type="hidden" id="sample-task-index" value="-1">
                 <input type="hidden" id="sample-task-create-token" value="">
                 <div class="task-detail-heading">${escapeHtml(tr('Task control'))}</div>

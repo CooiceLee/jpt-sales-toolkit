@@ -115,6 +115,19 @@ def assert_after_sales_fields(client: TestClient, ids: dict, headers: dict, lead
         json={"remarks": "Out of scope", "row_version": updated["row_version"]},
     ), 403, "unrelated Sales access remains denied")
 
+    # A value the form never offers is a rejected input, not a server fault.
+    # Typed as free text, it travelled to the database CHECK and came back a
+    # 500 - and a 500 is what a reader is told to report as a bug in the app.
+    expect(client.post(
+        f"/api/leads/{lead['id']}/after-sales-tasks",
+        headers=headers["leader.boundary"],
+        json={"issue_type": "Installation", "issue_description": "Not an option"},
+    ), 422, "an unknown issue type is refused at the boundary")
+    expect(client.patch(
+        f"/api/after-sales-tasks/{task['id']}", headers=headers["leader.boundary"],
+        json={"status": "Escalated", "row_version": updated["row_version"]},
+    ), 422, "an unknown status is refused at the boundary")
+
     rows = expect(client.get(
         "/api/after-sales-tasks", headers=headers["leader.boundary"],
         params={"lead_id": lead["id"]},

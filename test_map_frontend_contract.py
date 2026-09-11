@@ -149,6 +149,9 @@ context.window = context;
 vm.createContext(context);
 for (const path of [
   'frontend/js/modules/map-support.js',
+  // The popup shows a value per currency, so it needs the same renderer the
+  // rest of the interface uses.
+  'frontend/js/modules/money-totals-view.js',
   'frontend/js/modules/review-map-view.js',
   'frontend/js/modules/review-map.js',
   'frontend/js/modules/trip-candidates-map.js',

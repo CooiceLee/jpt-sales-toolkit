@@ -1,6 +1,11 @@
 """Offline authorization primitives and future provider contract."""
 
-from .device import build_device_request, device_fingerprint, validate_device_request
+from .device import (
+    DeviceIdentityError,
+    build_device_request,
+    device_fingerprint,
+    validate_device_request,
+)
 from .issuer import initialize_issuer, load_issuer_key, public_key_info
 from .package import issue_authorization, verify_authorization
 from .provider import AuthorizationProvider
@@ -16,5 +21,6 @@ __all__ = [
     "public_key_info",
     "resolve_authorization_provider",
     "validate_device_request",
+    "DeviceIdentityError",
     "verify_authorization",
 ]

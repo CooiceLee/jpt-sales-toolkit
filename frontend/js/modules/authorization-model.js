@@ -20,6 +20,10 @@
             mode: raw.mode || 'legacy',
             activated: raw.activated === true,
             deviceId: raw.device_id || '',
+            // Why there is no device id. Dropped here, the startup screen had
+            // nothing to say and fell through to a password box that refuses
+            // every password.
+            deviceError: raw.device_error || '',
             trustRequired: raw.trust_required === true,
             member: raw.member || null,
             authorization: authorization ? {
@@ -96,6 +100,12 @@
         requiresActivation(value) {
             const normalized = value?.deviceId !== undefined ? value : status(value);
             return normalized.mode === 'setup' || (normalized.mode === 'offline' && !normalized.activated);
+        },
+        // A machine with no identity is not "not activated yet": there is no
+        // authorization to match and no file that would make one match.
+        unidentified(value) {
+            const normalized = value?.deviceId !== undefined ? value : status(value);
+            return normalized.mode === 'unidentified' || Boolean(normalized.deviceError);
         }
     };
 })();

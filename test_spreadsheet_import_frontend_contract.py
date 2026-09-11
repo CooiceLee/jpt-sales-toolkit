@@ -45,7 +45,11 @@ def main() -> None:
     assert "Create a full backup before import" in progress
     assert "isBackupComplete" in progress
     assert "selectionChanged" in actions and "error.outcomeUnconfirmed" in actions
-    assert "refreshAllCounts().catch" in actions and "Import completed, but navigation counts" in actions
+    # refreshAllCounts reports failure by returning false rather than throwing,
+    # so catching it caught nothing and the warning never appeared.
+    assert "refreshAllCounts().catch" not in actions
+    assert "if (!await refreshAllCounts())" in actions
+    assert "Import completed, but navigation counts" in actions
     assert "picker.setAttribute('aria-disabled'" in progress
     assert "当前工作簿尚未导入" in i18n and "本次导入结果无法确认" in i18n
     assert "mode === 'spreadsheet-network'" in regression

@@ -786,7 +786,9 @@ console.log(JSON.stringify({ kept, focused }));
     )
 
     saving = _source("frontend/js/modules/trip-briefing-actions.js")
-    assert "TripPlanRefresh.reread(planId)" in saving, (
+    # Under the identity the save belongs to: taking a fresh number let a late
+    # save answer in place of the plan the reader had moved on to.
+    assert "TripPlanRefresh.reread(planId, { token: session.token })" in saving, (
         "saving a visit can change who attends or where it is, and both decide "
         "the route: the plan must be re-read, not redrawn from memory - and "
         "read on its own, since a whole-planner reload stops whenever another "

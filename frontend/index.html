@@ -27,11 +27,97 @@
                         <label class="form-label">Password</label>
                         <input type="password" id="login-password" class="form-input" required placeholder="Enter password" autocomplete="current-password">
                     </div>
-                    <div id="login-error" role="alert" aria-live="assertive" style="color:var(--error);margin-bottom:12px;display:none;"></div>
+                    <div id="login-error" role="alert" aria-live="assertive" style="color:var(--danger);margin-bottom:12px;display:none;"></div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" onclick="handleLogin()" style="width:100%;">Sign In</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Which lead is this action about? -->
+    <div id="action-picker-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="action-picker-title">
+        <div class="modal-content" style="max-width:560px;">
+            <div class="modal-header">
+                <h2 class="modal-title" id="action-picker-title">Choose a lead</h2>
+                <button type="button" class="btn btn-secondary btn-sm" data-modal-dismiss onclick="BusinessActionPicker.close()">Cancel</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="action-picker-search">Search by company, number or subject</label>
+                    <input type="search" id="action-picker-search" class="form-input"
+                        onchange="BusinessActionPicker.search()">
+                </div>
+                <div id="action-picker-status" class="new-inquiry-status" role="status" aria-live="polite"></div>
+                <div id="action-picker-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Record an enquiry by hand, for anybody with no document to import -->
+    <div id="new-inquiry-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="new-inquiry-title-heading">
+        <div class="modal-content" style="max-width:620px;">
+            <div class="modal-header">
+                <h2 class="modal-title" id="new-inquiry-title-heading">New inquiry</h2>
+                <button type="button" class="btn btn-secondary btn-sm" data-modal-dismiss onclick="closeNewInquiryModal()">Cancel</button>
+            </div>
+            <div class="modal-body" id="new-inquiry-body">
+                <form onsubmit="return false;">
+                    <h3 class="form-section-title">Customer</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="new-inquiry-company">Company name</label>
+                            <input type="text" id="new-inquiry-company" class="form-input" autocomplete="organization" autofocus>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="new-inquiry-email">Contact email</label>
+                            <input type="email" id="new-inquiry-email" class="form-input" autocomplete="email">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="new-inquiry-country">Country</label>
+                            <input type="text" id="new-inquiry-country" class="form-input" autocomplete="country-name">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="new-inquiry-city">City</label>
+                            <input type="text" id="new-inquiry-city" class="form-input" autocomplete="address-level2">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="new-inquiry-search"
+                        onclick="NewInquiryActions.findCustomers()">Search existing customers</button>
+                    <div id="new-inquiry-matches" class="new-inquiry-matches-box"></div>
+
+                    <h3 class="form-section-title">Inquiry</h3>
+                    <div class="form-group">
+                        <label class="form-label" for="new-inquiry-title">What this enquiry is about</label>
+                        <input type="text" id="new-inquiry-title" class="form-input">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="new-inquiry-product">Product category</label>
+                            <input type="text" id="new-inquiry-product" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="new-inquiry-application">Application</label>
+                            <input type="text" id="new-inquiry-application" class="form-input">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="new-inquiry-date">Inquiry date</label>
+                        <input type="date" id="new-inquiry-date" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="new-inquiry-requirements">Special requirements</label>
+                        <textarea id="new-inquiry-requirements" class="form-input" rows="3"></textarea>
+                    </div>
+                    <div id="new-inquiry-status" class="new-inquiry-status" role="status" aria-live="polite"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="new-inquiry-save"
+                    onclick="NewInquiryActions.save()">Save inquiry</button>
             </div>
         </div>
     </div>
@@ -115,7 +201,7 @@
         <div class="modal-content" style="max-width:720px;">
             <div class="modal-header">
                 <h2 class="modal-title" id="coordinate-modal-title">Correct Location</h2>
-                <button type="button" class="btn btn-text" onclick="closeCoordinateModal()" aria-label="Close location editor" style="position:absolute;right:16px;top:16px;">&times;</button>
+                <button type="button" class="btn btn-text" data-modal-dismiss onclick="closeCoordinateModal()" aria-label="Close location editor" style="position:absolute;right:16px;top:16px;">&times;</button>
             </div>
             <div class="modal-body">
                 <p style="margin-bottom:12px;font-weight:500;" id="coord-customer-name"></p>
@@ -358,7 +444,7 @@
                         </div>
                         <div class="kpi-card">
                             <div class="kpi-label">Won Value</div>
-                            <div class="kpi-value">$<span id="kpi-pipeline">0</span><span class="kpi-unit">K</span></div>
+                            <div class="kpi-value"><span id="kpi-pipeline">—</span></div>
                             <div class="kpi-footer">Total deal amount</div>
                         </div>
                     </div>
@@ -446,7 +532,13 @@
 
                 <!-- Handler Module -->
                 <div id="module-handler" class="module">
-                    <h1 class="module-title">Step 02 · Inquiry Handler</h1>
+                    <div class="workspace-head">
+                        <h1 class="module-title">Step 02 · Inquiry Handler</h1>
+                        <span class="workspace-count" id="inquiry-count">0 inquiries</span>
+                        <div class="workspace-actions">
+                            <button type="button" class="btn btn-primary" data-lead-creator onclick="showNewInquiryModal()">+ New Inquiry</button>
+                        </div>
+                    </div>
                     <div class="filters-bar">
                         <div class="filter-primary">
                             <select class="filter-select" id="filter-stage">
@@ -459,16 +551,53 @@
                                 <option value="Lost">Lost</option>
                             </select>
                         </div>
-                        <span class="filter-spacer"></span>
-                        <span class="filter-summary" id="inquiry-count">0 inquiries</span>
-                        <button type="button" class="btn btn-primary filter-action" onclick="showNewInquiryModal()">+ New Inquiry</button>
+                        <div class="wb-switch" id="handler-view-switch" role="group" aria-label="View">
+                            <button type="button" class="filter-tab active" data-view="list"
+                                aria-pressed="true" onclick="HandlerWorkbench.setView('list')">List</button>
+                            <button type="button" class="filter-tab" data-view="table"
+                                aria-pressed="false" onclick="HandlerWorkbench.setView('table')">Table</button>
+                        </div>
+                        <div class="wb-switch" id="handler-density-switch" role="group" aria-label="Density">
+                            <button type="button" class="filter-tab active" data-density="comfortable"
+                                aria-pressed="true" onclick="HandlerWorkbench.setDensity('comfortable')">Comfortable</button>
+                            <button type="button" class="filter-tab" data-density="compact"
+                                aria-pressed="false" onclick="HandlerWorkbench.setDensity('compact')">Compact</button>
+                        </div>
                     </div>
-                    <div class="cards-grid" id="handler-cards"></div>
+                    <div class="wb-state" id="handler-state" hidden></div>
+                    <div class="wb-layout">
+                        <div class="wb-list-panel">
+                            <div class="wb-list" id="handler-cards"></div>
+                        </div>
+                        <div class="wb-table-panel">
+                            <div class="wb-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                                        <th>Customer</th>
+                                                        <th>Lead</th>
+                                                        <th>Current Stage</th>
+                                                        <th>Inquiry date</th>
+                                                        <th>Product</th>
+                                                        <th>Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="handler-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Follow-up Module -->
                 <div id="module-followup" class="module">
-                    <h1 class="module-title">Step 03 · Follow-up Tracker</h1>
+                    <div class="workspace-head">
+                        <h1 class="module-title">Step 03 · Follow-up Tracker</h1>
+                        <span class="workspace-count" id="followup-count">0 active</span>
+                        <div class="workspace-actions">
+                            <button type="button" class="btn btn-primary" onclick="logFollowUp()">+ Log follow-up</button>
+                        </div>
+                    </div>
                     <div class="filters-bar">
                         <div class="filter-primary">
                             <div class="filter-tabs">
@@ -478,9 +607,18 @@
                                 <button type="button" class="filter-tab" data-filter="week">Next 7 days</button>
                             </div>
                         </div>
-                        <span class="filter-spacer"></span>
-                        <span class="filter-summary" id="followup-count">0 active</span>
-                        <button type="button" class="btn btn-primary filter-action" onclick="logFollowUp()">+ Log follow-up</button>
+                        <div class="wb-switch" id="followup-view-switch" role="group" aria-label="View">
+                            <button type="button" class="filter-tab active" data-view="list"
+                                aria-pressed="true" onclick="FollowupWorkbench.setView('list')">List</button>
+                            <button type="button" class="filter-tab" data-view="table"
+                                aria-pressed="false" onclick="FollowupWorkbench.setView('table')">Table</button>
+                        </div>
+                        <div class="wb-switch" id="followup-density-switch" role="group" aria-label="Density">
+                            <button type="button" class="filter-tab active" data-density="comfortable"
+                                aria-pressed="true" onclick="FollowupWorkbench.setDensity('comfortable')">Comfortable</button>
+                            <button type="button" class="filter-tab" data-density="compact"
+                                aria-pressed="false" onclick="FollowupWorkbench.setDensity('compact')">Compact</button>
+                        </div>
                     </div>
                     <div class="followup-activity-bar">
                         <label for="followup-activity-filter">Last activity</label>
@@ -506,12 +644,35 @@
                         </div>
                         <span class="followup-filter-help">Uses the latest formal follow-up; otherwise the inquiry or creation date.</span>
                     </div>
-                    <div class="cards-grid" id="followup-cards"></div>
+                    <div class="wb-state" id="followup-state" hidden></div>
+                    <div class="wb-layout">
+                        <div class="wb-list-panel">
+                            <div class="wb-list" id="followup-cards"></div>
+                        </div>
+                        <div class="wb-table-panel">
+                            <div class="wb-table-scroll">
+                                <table class="data-table">
+                                    <thead><tr>
+                                        <th>Customer</th><th>Lead</th><th>Stage</th>
+                                        <th>Last</th><th>Last follow-up note</th><th>Due</th>
+                                        <th class="num">Amount</th><th>Owner</th>
+                                    </tr></thead>
+                                    <tbody id="followup-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Sampling Module -->
                 <div id="module-sampling" class="module">
-                    <h1 class="module-title">Step 04 · Pre-sales / Sampling</h1>
+                    <div class="workspace-head">
+                        <h1 class="module-title">Step 04 · Pre-sales / Sampling</h1>
+                        <span class="workspace-count" id="sampling-count">0 leads · 0 tasks</span>
+                        <div class="workspace-actions">
+                            <button type="button" class="btn btn-primary" data-task-manager onclick="newSampleRequest()">+ New pre-sales task</button>
+                        </div>
+                    </div>
                     <div class="filters-bar">
                         <div class="filter-primary">
                             <div class="filter-tabs" id="sampling-tabs">
@@ -522,16 +683,53 @@
                                 <button type="button" class="filter-tab" data-filter="Cancelled">Cancelled</button>
                             </div>
                         </div>
-                        <span class="filter-spacer"></span>
-                        <span class="filter-summary" id="sampling-count">0 leads · 0 tasks</span>
-                        <button type="button" class="btn btn-primary filter-action" data-task-manager onclick="newSampleRequest()">+ New pre-sales task</button>
+                        <div class="wb-switch" id="sampling-view-switch" role="group" aria-label="View">
+                            <button type="button" class="filter-tab active" data-view="list"
+                                aria-pressed="true" onclick="SamplingWorkbench.setView('list')">List</button>
+                            <button type="button" class="filter-tab" data-view="table"
+                                aria-pressed="false" onclick="SamplingWorkbench.setView('table')">Table</button>
+                        </div>
+                        <div class="wb-switch" id="sampling-density-switch" role="group" aria-label="Density">
+                            <button type="button" class="filter-tab active" data-density="comfortable"
+                                aria-pressed="true" onclick="SamplingWorkbench.setDensity('comfortable')">Comfortable</button>
+                            <button type="button" class="filter-tab" data-density="compact"
+                                aria-pressed="false" onclick="SamplingWorkbench.setDensity('compact')">Compact</button>
+                        </div>
                     </div>
-                    <div class="cards-grid" id="sampling-cards"></div>
+                    <div class="wb-state" id="sampling-state" hidden></div>
+                    <div class="wb-layout">
+                        <div class="wb-list-panel">
+                            <div class="wb-list" id="sampling-cards"></div>
+                        </div>
+                        <div class="wb-table-panel">
+                            <div class="wb-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                                        <th>Customer</th>
+                                                        <th>Lead</th>
+                                                        <th>Task status</th>
+                                                        <th>Due</th>
+                                                        <th>Pre-sales</th>
+                                                        <th>Current progress</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="sampling-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Deal Module -->
                 <div id="module-deal" class="module">
-                    <h1 class="module-title">Step 05 · Deal Closer</h1>
+                    <div class="workspace-head">
+                        <h1 class="module-title">Step 05 · Deal Closer</h1>
+                        <span class="workspace-count" id="deal-count"></span>
+                        <div class="workspace-actions">
+                            <button type="button" class="btn btn-primary" onclick="createQuote()">+ Create quote</button>
+                        </div>
+                    </div>
                     <div class="kpi-grid kpi-grid-4">
                         <div class="kpi-card">
                             <div class="kpi-label">Quoting</div>
@@ -543,11 +741,13 @@
                         </div>
                         <div class="kpi-card highlight">
                             <div class="kpi-label">Won Value</div>
-                            <div class="kpi-value">$<span id="deal-value">0</span><span class="kpi-unit">K</span></div>
+                            <div class="kpi-value"><span id="deal-value">—</span></div>
+                            <div class="kpi-note" id="deal-value-note"></div>
                         </div>
                         <div class="kpi-card">
                             <div class="kpi-label">Avg Cycle</div>
-                            <div class="kpi-value"><span id="deal-cycle">0</span><span class="kpi-unit">d</span></div>
+                            <div class="kpi-value"><span id="deal-cycle">—</span></div>
+                            <div class="kpi-note" id="deal-cycle-note"></div>
                         </div>
                     </div>
                     <div class="filters-bar">
@@ -558,15 +758,53 @@
                                 <button type="button" class="filter-tab" data-filter="Lost">Lost</button>
                             </div>
                         </div>
-                        <span class="filter-spacer"></span>
-                        <button type="button" class="btn btn-primary filter-action" onclick="createQuote()">+ Create quote</button>
+                        <div class="wb-switch" id="deal-view-switch" role="group" aria-label="View">
+                            <button type="button" class="filter-tab active" data-view="list"
+                                aria-pressed="true" onclick="DealWorkbench.setView('list')">List</button>
+                            <button type="button" class="filter-tab" data-view="table"
+                                aria-pressed="false" onclick="DealWorkbench.setView('table')">Table</button>
+                        </div>
+                        <div class="wb-switch" id="deal-density-switch" role="group" aria-label="Density">
+                            <button type="button" class="filter-tab active" data-density="comfortable"
+                                aria-pressed="true" onclick="DealWorkbench.setDensity('comfortable')">Comfortable</button>
+                            <button type="button" class="filter-tab" data-density="compact"
+                                aria-pressed="false" onclick="DealWorkbench.setDensity('compact')">Compact</button>
+                        </div>
                     </div>
-                    <div class="cards-grid" id="deal-cards"></div>
+                    <div class="wb-state" id="deal-state" hidden></div>
+                    <div class="wb-layout">
+                        <div class="wb-list-panel">
+                            <div class="wb-list" id="deal-cards"></div>
+                        </div>
+                        <div class="wb-table-panel">
+                            <div class="wb-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                                        <th>Customer</th>
+                                                        <th>Lead</th>
+                                                        <th>Current Stage</th>
+                                                        <th>PO date</th>
+                                                        <th>Quotation</th>
+                                                        <th>Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="deal-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Fulfillment Module -->
                 <div id="module-fulfillment" class="module">
-                    <h1 class="module-title">Step 06 · Order Fulfillment</h1>
+                    <div class="workspace-head">
+                        <h1 class="module-title">Step 06 · Order Fulfillment</h1>
+                        <span class="workspace-count" id="fulfillment-count">0 orders</span>
+                        <div class="workspace-actions">
+                            <button type="button" class="btn btn-primary" onclick="logStatus()">Update fulfillment status</button>
+                        </div>
+                    </div>
                     <div class="filters-bar">
                         <div class="filter-primary">
                             <div class="filter-tabs" id="fulfillment-tabs">
@@ -576,16 +814,53 @@
                                 <button type="button" class="filter-tab" data-filter="Completed">Completed</button>
                             </div>
                         </div>
-                        <span class="filter-spacer"></span>
-                        <span class="filter-summary" id="fulfillment-count">0 orders</span>
-                        <button type="button" class="btn btn-primary filter-action" onclick="logStatus()">+ Log status</button>
+                        <div class="wb-switch" id="fulfillment-view-switch" role="group" aria-label="View">
+                            <button type="button" class="filter-tab active" data-view="list"
+                                aria-pressed="true" onclick="FulfillmentWorkbench.setView('list')">List</button>
+                            <button type="button" class="filter-tab" data-view="table"
+                                aria-pressed="false" onclick="FulfillmentWorkbench.setView('table')">Table</button>
+                        </div>
+                        <div class="wb-switch" id="fulfillment-density-switch" role="group" aria-label="Density">
+                            <button type="button" class="filter-tab active" data-density="comfortable"
+                                aria-pressed="true" onclick="FulfillmentWorkbench.setDensity('comfortable')">Comfortable</button>
+                            <button type="button" class="filter-tab" data-density="compact"
+                                aria-pressed="false" onclick="FulfillmentWorkbench.setDensity('compact')">Compact</button>
+                        </div>
                     </div>
-                    <div class="cards-grid" id="fulfillment-cards"></div>
+                    <div class="wb-state" id="fulfillment-state" hidden></div>
+                    <div class="wb-layout">
+                        <div class="wb-list-panel">
+                            <div class="wb-list" id="fulfillment-cards"></div>
+                        </div>
+                        <div class="wb-table-panel">
+                            <div class="wb-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                                        <th>Customer</th>
+                                                        <th>Lead</th>
+                                                        <th>Status</th>
+                                                        <th>PO date</th>
+                                                        <th>PO</th>
+                                                        <th>Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="fulfillment-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- After-sales Module -->
                 <div id="module-aftersales" class="module">
-                    <h1 class="module-title">Step 07 · After-sales</h1>
+                    <div class="workspace-head">
+                        <h1 class="module-title">Step 07 · After-sales</h1>
+                        <span class="workspace-count" id="aftersales-count">0 issues</span>
+                        <div class="workspace-actions">
+                            <button type="button" class="btn btn-primary" data-task-manager onclick="logIssue()">+ Log issue</button>
+                        </div>
+                    </div>
                     <div class="filters-bar">
                         <div class="filter-primary">
                             <div class="filter-tabs" id="aftersales-tabs">
@@ -595,11 +870,42 @@
                                 <button type="button" class="filter-tab" data-filter="Resolved">Resolved</button>
                             </div>
                         </div>
-                        <span class="filter-spacer"></span>
-                        <span class="filter-summary" id="aftersales-count">0 issues</span>
-                        <button type="button" class="btn btn-primary filter-action" onclick="logIssue()">+ Log issue</button>
+                        <div class="wb-switch" id="aftersales-view-switch" role="group" aria-label="View">
+                            <button type="button" class="filter-tab active" data-view="list"
+                                aria-pressed="true" onclick="AftersalesWorkbench.setView('list')">List</button>
+                            <button type="button" class="filter-tab" data-view="table"
+                                aria-pressed="false" onclick="AftersalesWorkbench.setView('table')">Table</button>
+                        </div>
+                        <div class="wb-switch" id="aftersales-density-switch" role="group" aria-label="Density">
+                            <button type="button" class="filter-tab active" data-density="comfortable"
+                                aria-pressed="true" onclick="AftersalesWorkbench.setDensity('comfortable')">Comfortable</button>
+                            <button type="button" class="filter-tab" data-density="compact"
+                                aria-pressed="false" onclick="AftersalesWorkbench.setDensity('compact')">Compact</button>
+                        </div>
                     </div>
-                    <div class="cards-grid" id="aftersales-cards"></div>
+                    <div class="wb-state" id="aftersales-state" hidden></div>
+                    <div class="wb-layout">
+                        <div class="wb-list-panel">
+                            <div class="wb-list" id="aftersales-cards"></div>
+                        </div>
+                        <div class="wb-table-panel">
+                            <div class="wb-table-scroll">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                                        <th>Customer</th>
+                                                        <th>Lead</th>
+                                                        <th>Service status</th>
+                                                        <th>Issues</th>
+                                                        <th>PO</th>
+                                                        <th>Owner</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="aftersales-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Data Review Module -->
@@ -637,7 +943,7 @@
                     <div class="kpi-grid kpi-grid-5">
                         <div class="kpi-card"><div class="kpi-label">Open Leads</div><div class="kpi-value" id="review-open">0</div></div>
                         <div class="kpi-card"><div class="kpi-label">Won Leads</div><div class="kpi-value" id="review-won">0</div></div>
-                        <div class="kpi-card highlight"><div class="kpi-label">Won Value</div><div class="kpi-value">$<span id="review-won-value">0</span><span class="kpi-unit">K</span></div></div>
+                        <div class="kpi-card highlight"><div class="kpi-label">Won Value</div><div class="kpi-value"><span id="review-won-value">—</span></div></div>
                         <div class="kpi-card"><div class="kpi-label">Win Rate</div><div class="kpi-value"><span id="review-win-rate">0</span><span class="kpi-unit">%</span></div></div>
                         <div class="kpi-card"><div class="kpi-label">Overdue</div><div class="kpi-value" id="review-overdue">0</div></div>
                     </div>
@@ -660,7 +966,7 @@
                             <div id="review-risk-table"></div>
                         </div>
                         <div class="review-panel review-panel-wide">
-                            <div class="card-title">High Value Open Leads</div>
+                            <div class="card-title">Largest open leads by currency</div>
                             <div id="review-value-table"></div>
                         </div>
                     </div>
@@ -688,12 +994,116 @@
                         <button type="button" class="btn btn-secondary" onclick="loadTripPlanner()">Refresh</button>
                         <button type="button" class="btn btn-primary" onclick="createTripPlanFromForm()">New plan</button>
                     </div>
+                    <div class="trip-zone-bar">
+                        <div class="trip-zone-plan">
+                            <strong id="trip-zone-plan-name">No plan selected</strong>
+                            <span id="trip-zone-plan-dates"></span>
+                        </div>
+                        <div class="trip-zone-tabs" role="tablist" aria-label="Trip planning steps">
+                            <button type="button" class="trip-zone-tab active" data-trip-zone-tab="settings"
+                                role="tab" aria-selected="true" onclick="TripZones.show('settings')">Plan setup</button>
+                            <button type="button" class="trip-zone-tab" data-trip-zone-tab="route"
+                                role="tab" aria-selected="false" onclick="TripZones.show('route')">Route &amp; schedule</button>
+                            <button type="button" class="trip-zone-tab" data-trip-zone-tab="briefing"
+                                role="tab" aria-selected="false" onclick="TripZones.show('briefing')">Visit preparation</button>
+                            <button type="button" class="trip-zone-tab" data-trip-zone-tab="execution"
+                                role="tab" aria-selected="false" onclick="TripZones.show('execution')">Execution &amp; return</button>
+                        </div>
+                    </div>
+                    <section class="trip-plan-setup" aria-label="Plan setup" data-trip-zone="settings">
+                            <section id="trip-team-panel" class="review-panel" aria-labelledby="trip-team-title" hidden>
+                                <div class="card-title" id="trip-team-title">Travel Team</div>
+                                <div id="trip-team-body"></div>
+                            </section>
+                            <div class="review-panel">
+                                <div class="card-title">Plan</div>
+                                <div class="trip-form">
+                                    <label class="trip-field-label"><span>Plan title</span><input type="text" class="form-input" id="trip-title" placeholder="Plan title" onchange="TripPlanTitleActions.titleChanged()"></label>
+                                    <div class="trip-date-row">
+                                        <label class="trip-field-label"><span>Trip start date</span>
+                                            <input type="date" class="form-input" id="trip-start-date"></label>
+                                        <label class="trip-field-label"><span>Trip end date</span>
+                                            <input type="date" class="form-input" id="trip-end-date"></label>
+                                    </div>
+                                    <select class="form-input" id="trip-plan-region" title="Plan region" aria-label="Plan region">
+                                        <option value="">Plan region (optional)</option>
+                                        <option value="EU">Europe</option>
+                                        <option value="AM">North America / Canada / Australia</option>
+                                        <option value="RIMEA">Russia / Turkey / Middle East</option>
+                                        <option value="SEA">Southeast Asia</option>
+                                    </select>
+                                    <div class="trip-route-grid">
+                                        <label class="trip-field-label">
+                                            <span>China departure location</span>
+                                            <select class="form-input" id="trip-origin-preset" onchange="TripTransportActions.hubChanged('origin', this.value)">
+                                                <option value="custom">Custom location</option>
+                                                <option value="PVG">Shanghai Pudong (PVG)</option>
+                                                <option value="PEK">Beijing Capital (PEK)</option>
+                                                <option value="CAN">Guangzhou Baiyun (CAN)</option>
+                                                <option value="SZX">Shenzhen Bao'an (SZX)</option>
+                                            </select>
+                                        </label>
+                                        <label class="trip-field-label">
+                                            <span>Return to China location</span>
+                                            <select class="form-input" id="trip-destination-preset" onchange="TripTransportActions.hubChanged('destination', this.value)">
+                                                <option value="custom">Custom location</option>
+                                                <option value="PVG">Shanghai Pudong (PVG)</option>
+                                                <option value="PEK">Beijing Capital (PEK)</option>
+                                                <option value="CAN">Guangzhou Baiyun (CAN)</option>
+                                                <option value="SZX">Shenzhen Bao'an (SZX)</option>
+                                            </select>
+                                        </label>
+                                        <label class="trip-field-label"><span>Departure place</span><input type="text" class="form-input" id="trip-origin-name" placeholder="Departure place"></label>
+                                        <label class="trip-field-label"><span>Return place</span><input type="text" class="form-input" id="trip-destination-name" placeholder="Return place"></label>
+                                        <details class="trip-advanced-coordinates">
+                                            <summary>Exact coordinates</summary>
+                                            <div class="trip-coordinate-grid">
+                                                <label class="trip-field-label"><span>Departure latitude</span>
+                                                    <input type="number" step="0.000001" class="form-input" id="trip-origin-lat" placeholder="Departure latitude"></label>
+                                                <label class="trip-field-label"><span>Departure longitude</span>
+                                                    <input type="number" step="0.000001" class="form-input" id="trip-origin-lng" placeholder="Departure longitude"></label>
+                                                <label class="trip-field-label"><span>Return latitude</span>
+                                                    <input type="number" step="0.000001" class="form-input" id="trip-destination-lat" placeholder="Return latitude"></label>
+                                                <label class="trip-field-label"><span>Return longitude</span>
+                                                    <input type="number" step="0.000001" class="form-input" id="trip-destination-lng" placeholder="Return longitude"></label>
+                                            </div>
+                                        </details>
+                                    </div>
+                                    <div class="trip-date-row">
+                                        <select class="form-input" id="trip-route-order-mode" onchange="TripTransportActions.routeModeChanged(this.value)">
+                                            <option value="auto">Automatic stop order</option>
+                                            <option value="manual">Keep manual stop order</option>
+                                        </select>
+                                        <label class="trip-check">
+                                            <input type="checkbox" id="trip-avoid-weekends" checked>
+                                            <span>Skip weekends</span>
+                                        </label>
+                                    </div>
+                                    <input type="hidden" id="trip-travel-mode" value="auto">
+                                    <div class="trip-subsection">
+                                        <div class="trip-subsection-title">Allowed transport and priority</div>
+                                        <div id="trip-transport-priority"></div>
+                                        <small class="trip-form-help">Search current travel options, then review a result before adding it to the route.</small>
+                                    </div>
+                                    <input type="text" class="form-input" id="trip-holidays" placeholder="Holidays: 2026-05-01, 2026-10-01">
+                                    <textarea class="form-input" id="trip-description" rows="3" placeholder="Planning notes"></textarea>
+                                    <div id="trip-draft-status" class="trip-draft-status" role="status" aria-live="polite"></div>
+                                    <div class="trip-action-row">
+                                        <button type="button" class="btn btn-secondary" onclick="previewCurrentTripItinerary()">Preview route</button>
+                                        <button type="button" class="btn btn-primary" onclick="generateCurrentTripItinerary()">Save route</button>
+                                    </div>
+                                </div>
+                                <div id="trip-plan-list" style="margin-top:16px;"></div>
+                            </div>
+                    </section>
                     <div class="trip-layout">
                         <div class="trip-main">
+                            <div class="trip-map-zone" data-trip-zone="route">
                             <div id="trip-map-lanes" class="trip-map-lanes" role="group" aria-label="Map route view" hidden></div>
                             <div id="trip-map"></div>
                             <p id="trip-map-notice" class="trip-map-notice" role="status" aria-live="polite" hidden></p>
-                    <section id="trip-suggestions-panel" class="review-panel trip-suggestions-panel" aria-labelledby="trip-suggestions-title" hidden>
+                            </div>
+                    <section id="trip-suggestions-panel" class="review-panel trip-suggestions-panel" aria-labelledby="trip-suggestions-title" hidden data-trip-zone="route">
                         <div class="trip-schedule-heading">
                             <div>
                                 <div class="card-title" id="trip-suggestions-title">Flexible visits</div>
@@ -703,8 +1113,8 @@
                         </div>
                         <div id="trip-suggestions-body"></div>
                     </section>
-                    <div id="trip-risk-bar" class="trip-risk-bar" role="status" aria-live="polite" hidden></div>
-                    <section id="trip-schedule-panel" class="review-panel trip-schedule-panel" aria-labelledby="trip-schedule-title">
+                    <div id="trip-risk-bar" class="trip-risk-bar" role="status" aria-live="polite" hidden data-trip-zone="route"></div>
+                    <section id="trip-schedule-panel" class="review-panel trip-schedule-panel" aria-labelledby="trip-schedule-title" data-trip-zone="route">
                         <div class="trip-schedule-heading">
                             <div>
                                 <div class="card-title" id="trip-schedule-title">Daily Schedule</div>
@@ -714,14 +1124,9 @@
                         </div>
                         <div class="trip-schedule-workspace">
                             <div id="trip-schedule-list" class="trip-schedule-list"></div>
-                            <aside id="trip-briefing-editor" class="trip-briefing-editor" hidden aria-label="Customer visit preparation"></aside>
                         </div>
                     </section>
-                            <div class="review-panel">
-                                <div class="card-title">Visit Execution</div>
-                                <div id="trip-visit-execution"></div>
-                            </div>
-                            <div class="review-panel">
+                            <div class="review-panel" data-trip-zone="route">
                                 <div class="card-title">Selected Stops</div>
                                 <div class="trip-free-stop-tools">
                                     <button type="button" class="btn btn-secondary btn-sm" id="trip-add-free-stop"
@@ -802,6 +1207,12 @@
                                     <div id="trip-leg-list"></div>
                                 </details>
                                 <div id="trip-current-plan"></div>
+                            </div>
+                            <div class="review-panel" data-trip-zone="execution">
+                                <div class="card-title">Visit Execution</div>
+                                <div id="trip-visit-execution"></div>
+                            </div>
+                            <div class="review-panel" data-trip-zone="execution">
                                 <section class="trip-export-panel" aria-labelledby="trip-export-title">
                                     <div class="trip-export-heading">
                                         <div>
@@ -878,7 +1289,8 @@
                                         </div>
                                     </details>
                                 </section>
-                                <section class="trip-working-import-panel" aria-labelledby="trip-working-import-title">
+                            </div>
+                                <section class="trip-working-import-panel" data-trip-zone="execution" aria-labelledby="trip-working-import-title">
                                     <div class="trip-export-kicker">Visit results</div>
                                     <h3 id="trip-working-import-title">Enter the results from a field workbook</h3>
                                     <p>Open the workbook the visitors sent back and see what it would change before anything is saved. Only the workbook this app issued can be read.</p>
@@ -889,82 +1301,15 @@
                                     </div>
                                     <div id="trip-working-import-result" class="trip-working-import-result" role="status" aria-live="polite"></div>
                                 </section>
+                            <div class="review-panel" data-trip-zone="briefing">
+                                <div class="card-title">Visit Preparation</div>
+                                <div class="trip-briefing-workspace">
+                                    <aside id="trip-briefing-picker" class="trip-briefing-picker" aria-label="Visits to prepare"></aside>
+                                    <aside id="trip-briefing-editor" class="trip-briefing-editor" hidden aria-label="Customer visit preparation"></aside>
+                                </div>
                             </div>
                         </div>
-                        <aside class="trip-side">
-                            <section id="trip-team-panel" class="review-panel" aria-labelledby="trip-team-title" hidden>
-                                <div class="card-title" id="trip-team-title">Travel Team</div>
-                                <div id="trip-team-body"></div>
-                            </section>
-                            <div class="review-panel">
-                                <div class="card-title">Plan</div>
-                                <div class="trip-form">
-                                    <input type="text" class="form-input" id="trip-title" placeholder="Plan title" onchange="TripPlanTitleActions.titleChanged()">
-                                    <div class="trip-date-row">
-                                        <input type="date" class="form-input" id="trip-start-date">
-                                        <input type="date" class="form-input" id="trip-end-date">
-                                    </div>
-                                    <select class="form-input" id="trip-plan-region" title="Plan region" aria-label="Plan region">
-                                        <option value="">Plan region (optional)</option>
-                                        <option value="EU">Europe</option>
-                                        <option value="AM">North America / Canada / Australia</option>
-                                        <option value="RIMEA">Russia / Turkey / Middle East</option>
-                                        <option value="SEA">Southeast Asia</option>
-                                    </select>
-                                    <div class="trip-route-grid">
-                                        <label class="trip-field-label">
-                                            <span>China departure location</span>
-                                            <select class="form-input" id="trip-origin-preset" onchange="TripTransportActions.hubChanged('origin', this.value)">
-                                                <option value="custom">Custom location</option>
-                                                <option value="PVG">Shanghai Pudong (PVG)</option>
-                                                <option value="PEK">Beijing Capital (PEK)</option>
-                                                <option value="CAN">Guangzhou Baiyun (CAN)</option>
-                                                <option value="SZX">Shenzhen Bao'an (SZX)</option>
-                                            </select>
-                                        </label>
-                                        <label class="trip-field-label">
-                                            <span>Return to China location</span>
-                                            <select class="form-input" id="trip-destination-preset" onchange="TripTransportActions.hubChanged('destination', this.value)">
-                                                <option value="custom">Custom location</option>
-                                                <option value="PVG">Shanghai Pudong (PVG)</option>
-                                                <option value="PEK">Beijing Capital (PEK)</option>
-                                                <option value="CAN">Guangzhou Baiyun (CAN)</option>
-                                                <option value="SZX">Shenzhen Bao'an (SZX)</option>
-                                            </select>
-                                        </label>
-                                        <input type="text" class="form-input" id="trip-origin-name" placeholder="Origin">
-                                        <input type="text" class="form-input" id="trip-destination-name" placeholder="Destination">
-                                        <input type="number" step="0.000001" class="form-input" id="trip-origin-lat" placeholder="Origin lat">
-                                        <input type="number" step="0.000001" class="form-input" id="trip-origin-lng" placeholder="Origin lng">
-                                        <input type="number" step="0.000001" class="form-input" id="trip-destination-lat" placeholder="Destination lat">
-                                        <input type="number" step="0.000001" class="form-input" id="trip-destination-lng" placeholder="Destination lng">
-                                    </div>
-                                    <div class="trip-date-row">
-                                        <select class="form-input" id="trip-route-order-mode" onchange="TripTransportActions.routeModeChanged(this.value)">
-                                            <option value="auto">Automatic stop order</option>
-                                            <option value="manual">Keep manual stop order</option>
-                                        </select>
-                                        <label class="trip-check">
-                                            <input type="checkbox" id="trip-avoid-weekends" checked>
-                                            <span>Skip weekends</span>
-                                        </label>
-                                    </div>
-                                    <input type="hidden" id="trip-travel-mode" value="auto">
-                                    <div class="trip-subsection">
-                                        <div class="trip-subsection-title">Allowed transport and priority</div>
-                                        <div id="trip-transport-priority"></div>
-                                        <small class="trip-form-help">Search current travel options, then review a result before adding it to the route.</small>
-                                    </div>
-                                    <input type="text" class="form-input" id="trip-holidays" placeholder="Holidays: 2026-05-01, 2026-10-01">
-                                    <textarea class="form-input" id="trip-description" rows="3" placeholder="Planning notes"></textarea>
-                                    <div id="trip-draft-status" class="trip-draft-status" role="status" aria-live="polite"></div>
-                                    <div class="trip-action-row">
-                                        <button type="button" class="btn btn-secondary" onclick="previewCurrentTripItinerary()">Preview route</button>
-                                        <button type="button" class="btn btn-primary" onclick="generateCurrentTripItinerary()">Save route</button>
-                                    </div>
-                                </div>
-                                <div id="trip-plan-list" style="margin-top:16px;"></div>
-                            </div>
+                        <aside class="trip-side" data-trip-zone="route">
                             <div class="review-panel">
                                 <div class="card-title">Candidate Customers</div>
                                 <div id="trip-candidate-list"></div>
@@ -1222,12 +1567,13 @@
         <!-- Detail Panel -->
         <aside class="detail-panel" id="detail-panel" role="dialog" aria-modal="false" aria-labelledby="panel-title">
             <div class="panel-header">
-                <span class="panel-title" id="panel-title">Inquiry Details</span>
+                <span class="panel-title" id="panel-title" data-business>Inquiry Details</span>
                 <button type="button" class="panel-close" onclick="closePanel()" aria-label="Close lead details">&times;</button>
             </div>
             <div class="panel-tabs" id="panel-tabs"></div>
             <div class="panel-content" id="panel-content"></div>
             <div class="panel-footer">
+                <span id="panel-save-state" class="panel-save-state" role="status" aria-live="polite"></span>
                 <button type="button" class="btn btn-secondary" onclick="closePanel()">Cancel</button>
                 <button type="button" class="btn btn-primary" id="panel-save-btn" onclick="saveInquiry()">Save Changes</button>
             </div>
@@ -1240,6 +1586,7 @@
     <script src="/static/js/shared/utils.js?v=1.1"></script>
     <script src="/static/js/shared/render.js?v=1.0"></script>
     <script src="/static/js/modules/map-support.js?v=1.0"></script>
+    <script src="/static/js/modules/worklist-request.js?v=1.0"></script>
     <script src="/static/js/app.js?v=6.10"></script>
     <script src="/static/js/modules/review-map-view.js?v=1.0"></script>
     <script src="/static/js/modules/review-map.js?v=1.0"></script>
@@ -1271,9 +1618,16 @@
     <script src="/static/js/modules/intake-submit.js?v=1.0"></script>
     <script src="/static/js/modules/card-template.js?v=1.2"></script>
     <script src="/static/js/modules/cards.js?v=1.2"></script>
+    <script src="/static/js/modules/worklist-workbench.js?v=1.0"></script>
+    <script src="/static/js/modules/worklist-rows.js?v=1.0"></script>
+    <script src="/static/js/modules/queue-workbenches.js?v=1.0"></script>
+    <script src="/static/js/modules/dashboard-links.js?v=1.0"></script>
     <script src="/static/js/modules/followup-filter-model.js?v=1.0"></script>
     <script src="/static/js/modules/followup-filter-controls.js?v=1.0"></script>
     <script src="/static/js/modules/worklist-sort.js?v=1.0"></script>
+    <script src="/static/js/modules/followup-workbench-rows.js?v=1.0"></script>
+    <script src="/static/js/modules/followup-workbench.js?v=1.0"></script>
+    <script src="/static/js/modules/handler-worklist.js?v=1.0"></script>
     <script src="/static/js/modules/sales-worklists.js?v=1.1"></script>
     <script src="/static/js/modules/service-worklists.js?v=1.1"></script>
     <script src="/static/js/modules/pre-sales-task-model.js?v=1.0"></script>
@@ -1304,6 +1658,16 @@
     <script src="/static/js/modules/files-form.js?v=1.0"></script>
     <script src="/static/js/modules/files-actions.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-save-errors.js?v=1.0"></script>
+    <script src="/static/js/modules/paged-fetch.js?v=1.0"></script>
+    <script src="/static/js/modules/money-totals-view.js?v=1.0"></script>
+    <script src="/static/js/modules/deal-cycle.js?v=1.0"></script>
+    <script src="/static/js/modules/business-action-picker.js?v=1.0"></script>
+    <script src="/static/js/modules/new-inquiry-state.js?v=1.0"></script>
+    <script src="/static/js/modules/new-inquiry-form.js?v=1.0"></script>
+    <script src="/static/js/modules/new-inquiry-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-panel-action.js?v=1.0"></script>
+    <script src="/static/js/modules/panel-save-state.js?v=1.0"></script>
+    <script src="/static/js/modules/inquiry-edit-freeze.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-save.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-fields.js?v=1.0"></script>
     <script src="/static/js/modules/inquiry-field-renderer.js?v=1.0"></script>
@@ -1332,6 +1696,7 @@
     <!-- Trip planning -->
     <script src="/static/js/modules/trip-china-hubs.js?v=1.0"></script>
     <script src="/static/js/modules/trip-duration.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-zones.js?v=1.0"></script>
     <script src="/static/js/modules/trip-form.js?v=1.0"></script>
     <script src="/static/js/modules/trip-form-compat.js?v=1.0"></script>
     <script src="/static/js/modules/trip-suggestion-state.js?v=1.0"></script>
@@ -1362,8 +1727,11 @@
     <script src="/static/js/modules/trip-briefing-scroll.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-draft.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-rows.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-picker.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-session.js?v=1.0"></script>
     <script src="/static/js/modules/trip-briefing-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-briefing-geocode.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-duration-payload.js?v=1.0"></script>
     <script src="/static/js/modules/trip-schedule-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-risks.js?v=1.0"></script>

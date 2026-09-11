@@ -52,6 +52,7 @@
             <div class="task-panel-heading">
                 <h3>${escapeHtml(tr('Pre-sales tasks'))}</h3>
                 <span>${escapeHtml(tr('{count} tasks', { count: tasks.length }))}</span>
+                ${inquiry.tasks_complete === false ? `<span class="error-state">${escapeHtml(tr('Showing part of this list only.'))}</span>` : ''}
                 ${RoleCapabilities.canManageTaskRequests() ? `<button type="button" class="btn btn-primary btn-sm" onclick="showSampleTaskForm()">${escapeHtml(tr('+ New task'))}</button>` : ''}
             </div>
             <div>${list}</div>${SamplingTaskForm.render()}`;

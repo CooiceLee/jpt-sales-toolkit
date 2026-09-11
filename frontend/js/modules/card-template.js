@@ -62,15 +62,20 @@
         const details = rows[type] || rows.handler;
         return `<div class="card-details">${details.map(([label, content]) => `
             <span class="card-label">${escapeHtml(tr(label))}</span>
-            <span class="card-value" title="${String(content).replace(/<[^>]+>/g, '')}">${content}</span>
+            <span class="card-value" data-business title="${String(content).replace(/<[^>]+>/g, '')}">${content}</span>
         `).join('')}</div>`;
     }
 
     function renderCard(item, type) {
         const stage = item.stage || 'Inquiry';
         const stageClass = stage.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z-]/g, '');
-        const grade = item.quality_rating || 'C';
-        const gradeClass = String(grade).toLowerCase().replace(/[^a-z0-9-]/g, '');
+        // No grade is not grade C. A lead nobody has assessed says so, so that
+        // the badge stays a judgement somebody made.
+        const grade = item.quality_rating || null;
+        const gradeLabel = grade || '–';
+        const gradeClass = grade
+            ? String(grade).toLowerCase().replace(/[^a-z0-9-]/g, '')
+            : 'none';
         const cardClasses = ['inquiry-card'];
         if (stage === 'Lost') cardClasses.push('is-lost');
         const stageIndex = ['New', 'Assigned', 'Following', 'Quoted', 'Won'].indexOf(stage);
@@ -98,11 +103,13 @@
                           }))}">${escapeHtml(tr('{count} to review', {
                               count: Number(item.quality_issue_count) || 0
                           }))}</span>
-                    <div class="grade-badge grade-${gradeClass}">${escapeHtml(grade)}</div>
+                    <div class="grade-badge grade-${gradeClass}" title="${escapeHtml(
+                        grade ? I18n.t('Lead quality grade') : I18n.t('Not graded yet')
+                    )}">${escapeHtml(gradeLabel)}</div>
                 </div>
-                <div class="card-company">${value(item.company_name || tr('Unknown Company'))}</div>
-                <div class="card-contact">
-                    <span>${escapeHtml(item.contact_name || '')}</span>
+                <div class="card-company" data-business>${value(item.company_name || tr('Unknown Company'))}</div>
+                <div class="card-contact" data-business>
+                    <span data-business>${escapeHtml(item.contact_name || '')}</span>
                     <span>${escapeHtml(item.country || '')}</span>
                 </div>
                 ${renderDetails(item, type)}

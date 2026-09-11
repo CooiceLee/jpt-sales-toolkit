@@ -52,7 +52,7 @@ window.loadDataReview = async function() {
 
         setText('review-open', summary.open_leads || 0);
         setText('review-won', summary.won_leads || 0);
-        setText('review-won-value', formatK(summary.won_value || 0));
+        setText('review-won-value', MoneyTotals.text(summary.won_value_by_currency));
         setText('review-win-rate', Math.round((summary.win_rate || 0) * 100));
         setText('review-overdue', summary.overdue_followups || 0);
         setText('review-brief', data.brief || '');
@@ -60,7 +60,7 @@ window.loadDataReview = async function() {
         renderReviewTable('review-stage-table', [
             ['Stage', 'stage'],
             ['Count', 'count'],
-            ['Value', row => formatMoney(row.value)]
+            ['Value', row => MoneyTotals.text(row.value_by_currency)]
         ], data.stage_breakdown || []);
 
         renderReviewTable('review-owner-table', [
@@ -68,14 +68,14 @@ window.loadDataReview = async function() {
             ['Open', 'open'],
             ['Won', 'won'],
             ['Win', row => `${Math.round((row.win_rate || 0) * 100)}%`],
-            ['Pipeline', row => formatMoney(row.pipeline_value)]
+            ['Pipeline', row => MoneyTotals.text(row.pipeline_value_by_currency)]
         ], data.owner_breakdown || []);
 
         renderReviewTable('review-region-table', [
             ['Region', 'label'],
             ['Total', 'total'],
             ['Open', 'open'],
-            ['Won Value', row => formatMoney(row.won_value)]
+            ['Won Value', row => MoneyTotals.text(row.won_value_by_currency)]
         ], data.region_breakdown || []);
 
         renderLeadReviewTable('review-risk-table', data.risk_leads || [], true);

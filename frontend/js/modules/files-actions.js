@@ -4,6 +4,7 @@ function fileActionText(text, params = {}) {
 }
 
 window.saveAttachment = async function() {
+    let written = false;
     const leadId = State.currentInquiry?.id;
     const fileInput = document.getElementById('attachment-file');
     const category = document.getElementById('attachment-category')?.value || 'other';
@@ -29,9 +30,15 @@ window.saveAttachment = async function() {
         return;
     }
 
+    // Validate, then check for a save already in flight, then freeze. Taking
+    // the freeze first disabled the save button, so the check below saw its
+    // own doing and returned - no request, and no finally to unfreeze.
     const saveButton = document.getElementById('attachment-save-btn');
     if (saveButton?.disabled) return;
     if (saveButton) saveButton.disabled = true;
+    const action = InquiryPanelAction.begin({
+        editor: 'attachment-form', button: 'attachment-save-btn',
+    });
     try {
         if (attachment?.id) {
             await ApiClient.updateAttachment(leadId, attachment.id, {
@@ -42,20 +49,30 @@ window.saveAttachment = async function() {
         } else {
             await ApiClient.uploadAttachment(leadId, category, file);
         }
-        await refreshCurrentInquiryData(leadId);
+        written = true;
+        if (!await refreshCurrentInquiryData(leadId, action)) {
+            // The upload finished; the reader is looking at somebody else.
+            await refreshNavigationCounts();
+            return;
+        }
         renderPanelContent('files');
         notify(attachment?.id
             ? fileActionText('File metadata updated.')
             : fileActionText('File uploaded.'));
         hideAttachmentForm();
     } catch (err) {
+        // Uploaded but not redrawn is not a failed upload; sending somebody
+        // back to attach the same file again is how duplicates appear.
+        if (written) return InquiryPanelAction.savedButNotRefreshed(err);
+        if (!InquiryPanelAction.isCurrent(action)) {
+            return InquiryPanelAction.failedAfterMovingOn(err);
+        }
         console.error('Attachment upload error:', err);
         alert(fileActionText('Error uploading file: {error}', {
             error: fileActionText(err?.message || 'Unknown error')
         }));
     } finally {
-        const currentButton = document.getElementById('attachment-save-btn');
-        if (currentButton) currentButton.disabled = false;
+        InquiryPanelAction.release(action);
     }
 };
 
@@ -89,11 +106,18 @@ window.archiveAttachment = async function(index) {
 
     if (!confirm(fileActionText('Archive this file?'))) return;
 
+    const action = InquiryPanelAction.begin();
+    let archived = false;
     try {
         await ApiClient.archiveAttachment(leadId, attachment.id);
-        await refreshCurrentInquiryData(leadId);
+        archived = true;
+        if (!await refreshCurrentInquiryData(leadId, action)) return;
         renderPanelContent('files');
     } catch (err) {
+        if (archived) return InquiryPanelAction.archivedButNotRefreshed(err);
+        if (!InquiryPanelAction.isCurrent(action)) {
+            return InquiryPanelAction.failedAfterMovingOn(err);
+        }
         console.error('Attachment archive error:', err);
         alert(fileActionText('Error archiving file: {error}', {
             error: fileActionText(err?.message || 'Unknown error')

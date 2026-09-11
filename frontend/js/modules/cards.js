@@ -42,4 +42,7 @@
     }
 
     window.renderCards = renderCards;
+    // The follow-up workbench renders rows instead of cards, but selection,
+    // keyboard activation and the empty state have to stay the same ones.
+    window.WorklistCards = Object.freeze({ bind: bindCardActions, emptyState });
 })();

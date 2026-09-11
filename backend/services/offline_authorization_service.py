@@ -6,6 +6,7 @@ import hmac
 from typing import Optional
 
 from ..authorization import build_device_request, device_fingerprint, verify_authorization
+from ..authorization.device import DeviceIdentityError
 from ..authorization.provider import AuthorizationProvider
 from ..authorization.common import AuthorizationError
 from ..repositories import (
@@ -14,7 +15,10 @@ from ..repositories import (
     UserRepository,
 )
 from ..repositories.offline_activation_transaction import activate_verified_package
-from .offline_authorization_status import build_installation_status
+from .offline_authorization_status import (
+    build_installation_status,
+    unidentified_device_status,
+)
 from .password_service import hash_password
 
 
@@ -28,7 +32,13 @@ class OfflineAuthorizationService(AuthorizationProvider):
 
     def status(self) -> dict:
         organization = self.organizations.get_default()
-        current_device = device_fingerprint()
+        try:
+            current_device = device_fingerprint()
+        except DeviceIdentityError as error:
+            # The machine could not be identified. That is not "not activated
+            # yet": no authorization can be matched, and inventing an id would
+            # quietly turn this into a different device every time.
+            return unidentified_device_status(organization, str(error))
         active = self.authorizations.get_active_for_device(current_device)
         member = self.users.get_by_id(active["user_id"]) if active else None
         return build_installation_status(
@@ -68,6 +78,9 @@ class OfflineAuthorizationService(AuthorizationProvider):
 
     def validate_user(self, user: dict) -> bool:
         status = self.status()
+        if status.get("device_error"):
+            # Refused, and the reason is on the status the page already reads.
+            return False
         if status["mode"] == "legacy":
             return True
         member = status.get("member") or {}

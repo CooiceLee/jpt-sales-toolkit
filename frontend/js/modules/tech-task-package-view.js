@@ -65,7 +65,7 @@
             const users = await ApiClient.listUsers('tech');
             const active = (users || []).filter(user => user.is_active !== false);
             select.innerHTML = `<option value="">${escapeHtml(tr('Select technical member'))}</option>` +
-                active.map(user => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.display_name)}</option>`).join('');
+                active.map(user => `<option value="${escapeHtml(user.id)}" data-business>${escapeHtml(user.display_name)}</option>`).join('');
             recipientsLoaded = true;
         } catch (_error) {
             select.innerHTML = `<option value="">${escapeHtml(tr('Unable to load technical members'))}</option>`;

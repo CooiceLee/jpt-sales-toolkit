@@ -29,6 +29,10 @@ def _new_group(core, row: dict, country_code: str | None, region: str | None) ->
     }
 
 
+def _amount(value):
+    return float(value) if value is not None and value != "" else None
+
+
 def _lead(row: dict) -> dict:
     return {
         "id": row["lead_id"],
@@ -38,8 +42,11 @@ def _lead(row: dict) -> dict:
         "service_status": row["service_status"],
         "owner_id": row["owner_id"],
         "owner_name": row.get("owner_name"),
-        "estimated_value": float(row["estimated_value"]) if row.get("estimated_value") else 0,
-        "deal_amount": float(row["deal_amount"]) if row.get("deal_amount") else 0,
+        # An enquiry nobody has priced is not an enquiry worth zero: writing
+        # the missing amount down as 0 made it a subtotal of 0 in a currency
+        # nobody chose, and that is what the map's readers then added up.
+        "estimated_value": _amount(row.get("estimated_value")),
+        "deal_amount": _amount(row.get("deal_amount")),
         "currency": row.get("currency"),
         "product_category": row.get("product_category"),
         "application": row.get("application"),

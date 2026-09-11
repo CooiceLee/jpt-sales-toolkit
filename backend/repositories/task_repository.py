@@ -129,7 +129,7 @@ class PreSalesTaskRepository(BaseRepository):
             sql += " AND (l.owner_id = ? OR la.user_id = ?)"
             params.extend([filters["visible_to_user_id"]] * 2)
 
-        sql += " ORDER BY t.created_at DESC LIMIT ? OFFSET ?"
+        sql += " ORDER BY t.created_at DESC, t.id DESC LIMIT ? OFFSET ?"
         params.extend([filters.get("limit", 100), filters.get("offset", 0)])
 
         cursor = self.conn.execute(sql, params)
@@ -316,7 +316,7 @@ class AfterSalesTaskRepository(BaseRepository):
             sql += " AND (l.owner_id = ? OR la.user_id = ?)"
             params.extend([filters["visible_to_user_id"]] * 2)
 
-        sql += " ORDER BY t.created_at DESC LIMIT ? OFFSET ?"
+        sql += " ORDER BY t.created_at DESC, t.id DESC LIMIT ? OFFSET ?"
         params.extend([filters.get("limit", 100), filters.get("offset", 0)])
 
         cursor = self.conn.execute(sql, params)

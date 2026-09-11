@@ -20,6 +20,8 @@
         const task = representative(tasks);
         const latestFollowUp = lead.latest_follow_up || {};
         return leadToCardItem(lead, {
+            deal_amount: lead.deal_amount ?? null,
+            estimated_value: lead.estimated_value ?? null,
             sample_status: task?.status || '',
             sample_result: task?.sample_result || '',
             pre_sales_owner: task?.assignee_name || '',
@@ -41,15 +43,18 @@
 
     async function loadWorklist() {
         const filter = State.currentFilters.sampling || 'all';
+        const request = WorklistRequest.begin('sampling');
         try {
-            const [leads, rawTasks] = await Promise.all([
-                ApiClient.listLeads({
-                    ...getSharedLeadFilters(),
-                    limit: 100000
-                }),
-                ApiClient.listPreSalesTasks({ limit: 100000 })
+            // Read page by page. An enormous limit only moves the cliff to a
+            // number nobody is watching, and the queue silently loses whatever
+            // falls past it.
+            const [leadPage, taskPage] = await Promise.all([
+                ApiClient.listAllLeads(getSharedLeadFilters()),
+                ApiClient.listAllPreSalesTasks()
             ]);
-            const tasks = rawTasks.map(PreSalesTaskModel.toView);
+            if (!WorklistRequest.isCurrent(request)) return;
+            const leads = leadPage.items;
+            const tasks = taskPage.items.map(PreSalesTaskModel.toView);
             const filteredTasks = filter === 'all'
                 ? tasks
                 : tasks.filter(task => task.status === filter);
@@ -65,18 +70,22 @@
             const displayedTaskCount = items.reduce(
                 (total, item) => total + item._sampleTasks.length, 0
             );
-            setText('sampling-count', tr('{leadCount} leads · {taskCount} tasks', {
-                leadCount: items.length,
-                taskCount: displayedTaskCount
-            }));
-            renderCards('sampling-cards', items, 'sampling');
+            setText('sampling-count', [
+                tr('{leadCount} leads · {taskCount} tasks', {
+                    leadCount: items.length,
+                    taskCount: displayedTaskCount,
+                }),
+                PagedFetch.note(leadPage, taskPage),
+            ].filter(Boolean).join(' · '));
+            SamplingWorkbench.render(items);
         } catch (error) {
             console.error('Pre-sales worklist error:', error);
+            if (!WorklistRequest.isCurrent(request)) return;
             setText('sampling-count', tr('Unable to load'));
-            setPanelError(
-                'sampling-cards',
-                tr('Unable to load pre-sales tasks. Please retry.')
-            );
+            SamplingWorkbench.render([], {
+                title: 'Unable to load',
+                text: 'Unable to load pre-sales tasks. Please retry.',
+            });
         }
     }
 

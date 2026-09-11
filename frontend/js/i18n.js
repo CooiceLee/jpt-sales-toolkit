@@ -110,6 +110,9 @@
         ['Owner Performance', '负责人表现'], ['Region Performance', '区域表现'], ['Risk Leads', '风险商机'],
         ['High Value Open Leads', '高价值进行中商机'], ['New plan', '新建计划'], ['Candidate Customers', '候选客户'],
         ['Score', '评分'], ['Value', '预估金额'], ['Reasons', '推荐依据'], ['Map', '地图'],
+        // 这一列排的是"下一步先见谁"，不是客户价值排名，也不含金额大小。
+        ['Engagement priority', '业务推进优先级'],
+        ['Largest open leads by currency', '各币种高金额商机'],
         ['Showing {shown} of {total}', '显示 {shown} / {total}'], ['Load more', '加载更多'],
         ['Multiple open leads', '多个进行中商机'], ['Quoted opportunities', '已报价商机'],
         ['Active follow-up', '活跃跟进'], ['Pipeline value', '商机金额'],
@@ -690,6 +693,7 @@
         ['{count} fields', '{count} 个字段'],
         ['Sent: {date}', '发送时间：{date}'], ['Response: {date}', '回复时间：{date}'],
         ['Next: {action}', '下一步：{action}'], ['Date: {date}', '日期：{date}'],
+        ['Tech: {name}', '技术：{name}'], ['By {name}', '上传者 {name}'],
 
         // Pre-sales / sample task panel. Enum values stay English in form values and API payloads.
         ['Sample requests', '售前 / 样品任务'], ['+ New request', '+ 新建任务'],
@@ -817,6 +821,34 @@
         ['- Errors: {count}', '- 错误：{count}'],
         ['Coordinate review pages', '坐标复核分页'], ['Showing {from}–{to} of {total}', '显示第 {from}–{to} 条，共 {total} 条'],
         ['Previous', '上一页'], ['Next', '下一页'],
+        // 跟进工作台的行与开关。"Next" 是分页的下一页，行里的"下一步"必须用
+        // 自己的词条，否则界面走查会把它翻成"下一页"。
+        ['Next step ', '下一步 '], ['Last follow-up ', '最近跟进 '],
+        ['not set', '未设置'], ['not quoted', '未报价'],
+        ['No date set', '未设置日期'], ['Last', '最近跟进'], ['Est.', '预估'],
+        ['Longest without activity first', '最久没有活动的排在前面'],
+        ['Visit Preparation', '拜访准备'], ['Visits to prepare', '待准备的拜访'],
+        ['Service status', '售后状态'], ['PO date', 'PO 日期'],
+        ['The earlier visit preparation was saved. Reopen that visit to see it.',
+            '刚才那次拜访准备已经保存。重新打开那次拜访即可看到。'],
+        ['The visit preparation was saved, but the page could not be refreshed. Reopen this visit to see the latest - do not save again.',
+            '拜访准备已经保存，但页面没能刷新。重新打开这次拜访查看最新内容——不要再保存一次。'],
+        // 团队与授权页的表格与操作：原来是直接写死的英文，界面走查没有词条可对
+        ['Expiry', '有效期'], ['Time', '时间'], ['Event', '事件'], ['Details', '明细'],
+        ['Offline signed packages', '离线签发授权包'], ['Legacy migration mode', '旧版迁移模式'],
+        ['Remote authorization', '远程授权'], ['First-run setup', '首次启用设置'],
+        ['Not initialized', '尚未初始化'],
+        ['Issue', '签发'], ['Deactivate', '停用'], ['Reactivate', '恢复'],
+        ['No team members yet.', '还没有团队成员。'],
+        ['No authorization events yet.', '还没有授权事件。'],
+        ['{count} issues', '{count} 个问题'],
+        ['{count} visits', '{count} 次拜访'], ['Whole team', '全体成员'],
+        ['No customer visits in this plan yet. Add stops in Route & Schedule.',
+            '这个计划里还没有客户拜访。请到"路线与日程"添加停靠点。'],
+        ['List', '列表'], ['Table', '表格'],
+        ['Later than a week' , '一周以后'],
+        ['Last follow-up note', '最近跟进内容'],
+        ['Comfortable', '舒适'], ['Compact', '紧凑'],
 
         // Runtime dialogs and confirmations are translated before opening native UI.
         ['No lead selected.', '尚未选择商机。'], ['Please enter follow-up content.', '请输入跟进内容。'],
@@ -953,6 +985,71 @@
         ['Trip members must be active team accounts', '出行人员必须是有效的团队账号'],
         ['Set a departure point for the plan, or for every team member', '请为计划或每位出行人员设置出发地'],
         ['Set a return point for the plan, or for every team member', '请为计划或每位出行人员设置返回地'],
+        ['Showing the first {count} records. Narrow the filters to see the rest.', '仅显示前 {count} 条记录，请缩小筛选范围查看其余部分。'],
+        ['Showing part of this list only.', '仅显示该列表的一部分。'],
+        ['New inquiry', '新建询盘'],
+        ['Choose a lead', '选择商机'],
+        ['Plan setup', '计划设置'],
+        ['Route & schedule', '路线与日程'],
+        ['Visit preparation', '拜访准备'],
+        ['Execution & return', '执行与回传'],
+        ['No plan selected', '未选择计划'],
+        ['Untitled plan', '未命名计划'],
+        ['No dates set', '未设置日期'],
+        ['Unsaved changes', '有未保存的修改'],
+        ['Saving…', '保存中…'],
+        ['Saved', '已保存'],
+        ['Not saved', '未保存'],
+        ['screen not refreshed', '界面未刷新'],
+        ['Saved, but the panel could not be refreshed. Reopen this lead to see the latest data — do not save again.', '已保存，但界面没能刷新。重新打开这条商机即可看到最新内容——不要再保存一次。'],
+        ['Saved. The navigation counts could not be refreshed, so they may be out of date — reopen JPT to reload them.', '已保存。左侧导航计数没能刷新，可能不是最新的——重新打开 JPT 即可加载最新计数。'],
+        ['Archived, but the panel could not be refreshed. Reopen this lead to see the latest data — do not archive again.', '已归档，但界面没能刷新。重新打开这条商机即可看到最新内容——不要再归档一次。'],
+        ['An earlier change could not be saved: {error}', '之前的一处改动没能保存：{error}'],
+        ['Plan title', '计划名称'],
+        ['Trip start date', '出发日期'],
+        ['Trip end date', '返回日期'],
+        ['Departure place', '出发地'],
+        ['Return place', '返回地'],
+        ['Exact coordinates', '精确坐标'],
+        ['Departure latitude', '出发地纬度'],
+        ['Departure longitude', '出发地经度'],
+        ['Return latitude', '返回地纬度'],
+        ['Return longitude', '返回地经度'],
+        ['Cannot reach JPT Sales Toolkit. Check that the program is running, then try again.', '连接不上 JPT Sales Toolkit，请确认程序正在运行后重试。'],
+        ['Search by company, number or subject', '按公司、编号或主题搜索'],
+        ['Record a follow-up on which lead?', '在哪条商机上记录跟进？'],
+        ['Create a pre-sales task on which lead?', '在哪条商机上创建售前任务？'],
+        ['Record a quotation on which lead?', '在哪条商机上录入报价？'],
+        ['Log an after-sales issue on which lead?', '在哪条商机上登记售后问题？'],
+        ['Update fulfillment on which order?', '更新哪个订单的履约状态？'],
+        ['Update fulfillment status', '更新履约状态'],
+        ['No lead you can open matches that search.', '没有搜索到你有权打开的商机。'],
+        ['Could not search: {error}', '搜索失败：{error}'],
+        ['Company name', '公司名称'],
+        ['Contact email', '联系邮箱'],
+        ['What this enquiry is about', '本次询盘的主题'],
+        ['Search existing customers', '搜索已有客户'],
+        ['Save inquiry', '保存询盘'],
+        ['Special requirements', '特殊要求'],
+        ['Inquiry date', '询盘日期'],
+        ['Existing customers that may be the same company:', '可能是同一家公司的已有客户：'],
+        ['No existing customer matches. Saving will create one from the details above.', '没有匹配到已有客户，保存时将按上面填写的信息新建一个。'],
+        ['None of these — create a new customer', '都不是——新建客户'],
+        ['Enter a company name or an email address to search.', '请填写公司名称或邮箱后再搜索。'],
+        ['Searching…', '搜索中…'],
+        ['Saving…', '保存中…'],
+        ['Still needed: {fields}', '还需填写：{fields}'],
+        ['Could not search for customers: {error}', '搜索客户失败：{error}'],
+        ['Could not save: {error}', '保存失败：{error}'],
+        ['Enquiry {id} created for {company}.', '已为{company}创建询盘 {id}。'],
+        ['Technical accounts cannot create leads. Ask a leader to assign the work.', '技术账号不能创建商机，请让 Leader 分配任务。'],
+        ['{count} customers', '{count} 位客户'],
+        ['no currency', '未填币种'],
+        ['{count} without an amount', '{count} 条未填金额'],
+        ['Lead quality grade', '商机质量等级'],
+        ['Not graded yet', '尚未评级'],
+        ['No won deal has both an enquiry date and a PO date yet.', '暂无同时填写询盘日期和 PO 日期的成交记录。'],
+        ['From {counted} of {total} won deals with both dates.', '来自 {total} 笔成交中日期齐全的 {counted} 笔。'],
         ['Visit time preference must be Automatic, AM, or PM', '拜访时段偏好只能是自动、上午或下午'],
         ['Unknown leg override: ', '交通选择对应的行程段已不存在：'],
         ['The route does not reach {stop} before {date} {period}, when it is booked. Confirm the travel, or move the appointment.', '按当前路线无法在约定的 {date} {period} 之前到达{stop}。请确认出行安排，或调整约定时间。'],
@@ -1072,6 +1169,13 @@
         ['Activation failed.', '激活失败。'],
         ['Authorization Check Failed', '授权状态检查失败'],
         ['Unable to verify authorization status. Restart JPT and try again.', '无法验证授权状态。请重启 JPT 后重试。'],
+        ['This computer could not be identified', '读不到这台电脑的设备标识'],
+        ['Could not be read', '读不到'],
+        ['JPT cannot check this computer\'s authorization until it can identify '
+            + 'the computer itself. A new authorization file will not help. Restart '
+            + 'JPT; if this keeps happening, send the line below to your Leader.\n{reason}',
+            'JPT 读不到这台电脑的设备标识，就无法核对它的授权。换一个授权文件也解决不了。'
+            + '请重启 JPT；如果一直这样，把下面这行原话发给你的 Leader。\n{reason}'],
 
         // Dynamically rendered coordinate and inquiry-panel labels.
         ['Locked', '已锁定'], ['{count} won', '{count} 个已赢单'], ['{count} open', '{count} 个进行中'],
@@ -1119,6 +1223,32 @@
 
     function normalize(value) { return String(value || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'; }
     function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    // Reading a finished sentence backwards to find which template produced it
+    // is a guess, and it used to be an unrestricted one: "{count} won" matched
+    // "Overdue follow-up, Quoted but not won" and rendered "…but not 个已赢单",
+    // while "{start} to {end}" turned the browser's own "Failed to fetch" into
+    // "Failed 至 fetch" and a customer's "Shanghai to Berlin" into "Shanghai 至
+    // Berlin". A placeholder that holds a number only matches a number, and one
+    // that holds a date only matches something that starts like a date, so a
+    // sentence of prose no longer stands in for either.
+    const NUMBER_PLACEHOLDERS = new Set([
+        'count', 'total', 'shown', 'counted', 'missing', 'days', 'index',
+        'number', 'visitCount', 'warnings', 'errors', 'skipped', 'conflicts',
+    ]);
+    const DATE_PLACEHOLDERS = new Set([
+        'start', 'end', 'date', 'deadline', 'from', 'to', 'plannedDate',
+        'departureDate', 'due', 'when',
+    ]);
+    // Checked after matching rather than woven into the pattern: dates in this
+    // interface come in several shapes ("2026-09-15 AM", "Jul 17, 2026"), and a
+    // rule about what they contain is easier to be sure of than one about how
+    // they are spelled.
+    function placeholderFits(key, captured) {
+        const text = String(captured ?? '');
+        if (NUMBER_PLACEHOLDERS.has(key)) return /^-?[0-9][0-9,.]*$/.test(text);
+        if (DATE_PLACEHOLDERS.has(key)) return /[0-9]/.test(text);
+        return true;
+    }
     function compileTemplate(template) {
         const keys = [];
         let pattern = '';
@@ -1142,11 +1272,35 @@
     function matchTemplate(value, compiled) {
         const match = compiled.regex.exec(value);
         if (!match) return null;
-        return Object.fromEntries(compiled.keys.map((key, index) => [key, match[index + 1]]));
+        const fits = compiled.keys.every(
+            (key, index) => placeholderFits(key, match[index + 1])
+        );
+        return fits
+            ? Object.fromEntries(compiled.keys.map((key, index) => [key, match[index + 1]]))
+            : null;
+    }
+    // Two ways to answer "what is this text". t() knows: the caller handed the
+    // template and its values in. The screen walker does not, and guessing by
+    // reading a finished sentence backwards is what rewrote customer content -
+    // no restriction on the guess can tell a product word from a company that
+    // happens to be called the same thing, or a product line "Laser 1 to
+    // Laser 2" from a date range.
+    //
+    // So the walker no longer guesses. It translates a node only when the
+    // whole of its text is a phrase this interface knows, and leaves anything
+    // else exactly as it was given - dates and numbers inside it included.
+    // Sentences built from templates are drawn again by the view they belong
+    // to when the language changes, in the language it is now.
+    function resolveExact(value) {
+        if (Object.hasOwn(translations, value)) return { source: value, params: {} };
+        if (Object.hasOwn(reverseTranslations, value)) {
+            return { source: reverseTranslations[value], params: {} };
+        }
+        return null;
     }
     function resolveRecord(value) {
-        if (Object.hasOwn(translations, value)) return { source: value, params: {} };
-        if (Object.hasOwn(reverseTranslations, value)) return { source: reverseTranslations[value], params: {} };
+        const exact = resolveExact(value);
+        if (exact) return exact;
         for (const entry of templatePairs) {
             const params = matchTemplate(value, entry.english) || matchTemplate(value, entry.chinese);
             if (params) return { source: entry.source, params };
@@ -1205,26 +1359,35 @@
     function matchesKnownRendering(record, current) {
         return current === renderRecord(record, 'en') || current === renderRecord(record, 'zh-CN');
     }
+    // Text printed from what a customer told us is theirs. A company called
+    // "High" is not the quality grade High, and neither is a note they wrote.
+    function isBusinessContent(element) {
+        return !!element?.closest?.('[data-business]');
+    }
     function translateTextNode(node) {
         if (!node.nodeValue || !node.nodeValue.trim()) return;
         // Language toggles use the single-character label "中". It must not be
         // reverse-mapped through the business enum translation Medium -> 中.
         if (node.parentElement?.closest?.('[data-language-toggle]')) return;
+        if (isBusinessContent(node.parentElement)) return;
         const current = node.nodeValue.trim();
         let record = originalText.get(node);
         if (!record || !matchesKnownRendering(record, current)) {
-            record = resolveRecord(current);
-            originalText.set(node, record);
+            record = resolveExact(current);
+            if (record) originalText.set(node, record);
         }
+        if (!record) return;
         const translated = renderRecord(record);
         if (translated !== current) node.nodeValue = node.nodeValue.replace(current, translated);
     }
     function translateAttribute(element, attribute) {
         const current = element.getAttribute(attribute);
         if (!current) return;
+        if (isBusinessContent(element)) return;
         let saved = originalAttributes.get(element) || {};
         let record = saved[attribute];
-        if (!record || !matchesKnownRendering(record, current)) record = resolveRecord(current);
+        if (!record || !matchesKnownRendering(record, current)) record = resolveExact(current);
+        if (!record) return;
         saved[attribute] = record;
         originalAttributes.set(element, saved);
         const translated = renderRecord(record);
@@ -1238,8 +1401,15 @@
         while (walker.nextNode()) translateTextNode(walker.currentNode);
         const elements = root.nodeType === Node.ELEMENT_NODE ? [root, ...root.querySelectorAll('*')] : [...root.querySelectorAll('*')];
         elements.forEach(element => ['placeholder', 'title', 'aria-label'].forEach(attribute => translateAttribute(element, attribute)));
-        document.documentElement.lang = language;
-        syncToggle();
+        // The page's language marker and the toggle button belong to the whole
+        // document, not to whatever subtree just arrived. The observer calls
+        // this once per added node, so a list of 2,500 rows re-stamped the
+        // document 2,500 times and searched the whole page for the toggle just
+        // as often: 15ms of translating became 1.5s of it.
+        if (root === document.body || root.nodeType === Node.DOCUMENT_NODE) {
+            document.documentElement.lang = language;
+            syncToggle();
+        }
     }
     function syncToggle() {
         document.querySelectorAll('[data-language-toggle]').forEach(button => {

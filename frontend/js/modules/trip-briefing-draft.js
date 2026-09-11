@@ -12,6 +12,7 @@
     let dirty = false;
     let stopId = null;
     let record = null;
+    let inheritedRoster = false;   // the saved visit named nobody
     const clone = value => typeof structuredClone === 'function'
         ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 
@@ -75,6 +76,18 @@
         return blanks[kind]();
     }
 
+    /** The reader touched the list of people, so it is theirs now. */
+    function markRosterEdited() {
+        inheritedRoster = false;
+    }
+
+    /** Still "whoever is travelling": it came back naming nobody, and it
+     * still reads as the whole team. The second test alone is what turned a
+     * chosen list into an inherited one the moment it matched the team. */
+    function staysInherited(participants) {
+        return inheritedRoster && isWholeTeam(participants);
+    }
+
     function renderStatus(message = '') {
         const root = document.getElementById('trip-briefing-draft-status');
         if (!root) return;
@@ -82,10 +95,15 @@
         root.classList.toggle('has-warning', Boolean(message || dirty));
     }
 
+    // The list beside the editor highlights whichever visit the draft belongs
+    // to. Tying it to the draft rather than to the click means a click the
+    // guard refused never moves the highlight off the visit still being typed.
     function load(nextStopId, nextRecord) {
         stopId = nextStopId || null;
         record = nextRecord ? clone(nextRecord) : null;
         dirty = false;
+        inheritedRoster = !(nextRecord?.participants || []).length;
+        window.TripBriefingPicker?.markSelection?.(stopId);
         renderStatus();
         return record;
     }
@@ -99,6 +117,7 @@
     function markClean(nextRecord = record) {
         record = nextRecord ? clone(nextRecord) : null;
         dirty = false;
+        if (nextRecord) inheritedRoster = !(nextRecord.participants || []).length;
         renderStatus();
     }
 
@@ -106,6 +125,8 @@
         stopId = null;
         record = null;
         dirty = false;
+        inheritedRoster = false;
+        window.TripBriefingPicker?.markSelection?.(null);
         renderStatus();
     }
 
@@ -130,6 +151,7 @@
 
     window.TripBriefingDraft = Object.freeze({
         load, markDirty, markClean, reset, guard, confirmDiscard,
+        markRosterEdited, staysInherited, isInherited: () => inheritedRoster,
         isWholeTeam,
         isDirty: () => dirty, getStopId: () => stopId, getRecord: () => record,
         setStatus: renderStatus, normalizeRecord, blankRow,

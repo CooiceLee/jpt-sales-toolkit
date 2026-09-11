@@ -16,7 +16,7 @@
         return `
             <div class="task-detail-row ${wide ? 'task-detail-wide' : ''}">
                 <span class="task-detail-label">${escapeHtml(tr(label))}</span>
-                <span class="task-detail-value">${escapeHtml(display(value))}</span>
+                <span class="task-detail-value" data-business>${escapeHtml(display(value))}</span>
             </div>`;
     }
 

@@ -349,14 +349,26 @@ class CustomerRepository(BaseRepository):
         row = cursor.fetchone()
         return row["customer_id"] if row else None
 
-    def find_by_normalized_name(self, normalized_name: str) -> Optional[str]:
-        """Find customer ID by normalized name."""
+    def find_ids_by_normalized_name(
+        self, normalized_name: str, limit: int = 20
+    ) -> list[str]:
+        """Every customer on file under this name.
+
+        Two companies can carry the same name in different cities, and the
+        product lets both exist. Answering with the first one only means the
+        second can never be picked: an enquiry from it is either attached to
+        the wrong company or becomes a third copy of it.
+        """
         cursor = self.conn.execute(
-            "SELECT id FROM customers WHERE normalized_name = ? AND archived_at IS NULL",
-            (normalized_name,),
+            """
+            SELECT id FROM customers
+            WHERE normalized_name = ? AND archived_at IS NULL
+            ORDER BY created_at, id
+            LIMIT ?
+            """,
+            (normalized_name, limit),
         )
-        row = cursor.fetchone()
-        return row["id"] if row else None
+        return [row["id"] for row in cursor.fetchall()]
 
     def _has_column(self, table_name: str, column_name: str) -> bool:
         rows = self.conn.execute(f"PRAGMA table_info({table_name})").fetchall()

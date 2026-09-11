@@ -25,7 +25,10 @@ def main() -> None:
     assert "resolved" in quality and "ignored" in quality and "open" in quality
     assert '"quality_issue_count"' in policy
     assert 'type="button"' in quality
-    assert index.index("data-quality-view.js") < index.index("inquiry-form.js")
+    assert (index.index("modules/data-quality-view.js")
+            < index.index("modules/inquiry-form.js")), (
+        "the quality view must load before the form that renders it"
+    )
     assert len(quality.splitlines()) <= 125
     print("PASS: lead data-quality badge, review states, and module loading contract")
 

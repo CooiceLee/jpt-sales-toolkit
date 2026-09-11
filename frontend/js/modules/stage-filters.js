@@ -13,11 +13,16 @@
         if (!module) return;
         const moduleKey = moduleId.replace('module-', '');
 
-        module.querySelectorAll('.filter-tab').forEach(tab => {
+        // Only the tabs that are filters. The workbench's view and density
+        // buttons look the same and sit in the same bar, and binding them here
+        // cleared the page's filter: choosing "Table" on a list filtered to
+        // Quoted brought back every deal, with no tab left marked active.
+        const tabs = () => module.querySelectorAll('.filter-tabs .filter-tab');
+        tabs().forEach(tab => {
             if (tab.dataset.filterTabBound) return;
             tab.dataset.filterTabBound = '1';
             tab.addEventListener('click', () => {
-                module.querySelectorAll('.filter-tab').forEach(item => item.classList.remove('active'));
+                tabs().forEach(item => item.classList.remove('active'));
                 tab.classList.add('active');
                 State.currentFilters[moduleKey] = tab.dataset.filter;
                 State.currentFilter = tab.dataset.filter;

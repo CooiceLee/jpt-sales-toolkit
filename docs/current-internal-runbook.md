@@ -1,6 +1,10 @@
 # JPT Sales Toolkit 当前内部试运行手册
 
-当前待测候选：`v0.12.0-internal`。它包含 Trip Planner v2 的完整路线与正式导出，是 `UNSIGNED-INTERNAL` 团队测试 / Draft Pre-release。本次只生成 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包。覆盖升级以 `v0.11.9-internal` 为直接基线；旧版 schema 3 会先生成并验证本机 `pre_upgrade` 备份，再升级到 schema 6。两平台构建和团队实测全部通过前，不得标记为 Stable / Latest。
+当前已分发候选：`v0.13.2-internal`，数据版本 **schema 15**，`UNSIGNED-INTERNAL` 团队测试 / Draft Pre-release。只生成 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包。
+
+本次内测候选：`v0.13.3-internal`，已构建两平台内测安装包，**尚未分发**。本手册描述的运行入口对已分发的 0.13.2 同样有效；0.13.3 在它之上增加了本轮审计修复，拿到 0.13.3 安装包之前，团队手上的仍然是 0.13.2。
+
+覆盖升级：任何 schema 写入前自动生成并验证本机 `pre_upgrade` 备份，再迁移到 schema 15；从 0.13.1 覆盖升级不触发迁移。两平台构建和团队实测全部通过前，不得标记为 Stable / Latest。
 
 ## 入口
 
@@ -10,6 +14,7 @@
 - 浏览器轻量 smoke：服务启动后显式传入隔离测试账号，运行 `SMOKE_USER="..." SMOKE_PASSWORD="..." bash scripts/browser_smoke_v09.sh`
 - Windows / macOS 安装与授权：`docs/deployment/`
 - 团队离线 HTML 指南：`docs/guides/00-开始这里.html`
+- 团队使用指南（按任务组织）：[docs/current-team-guide.md](current-team-guide.md)
 
 `Start JPT LAN Test Server.command` 只创建/刷新六个保留名称的演示账号：`leader01 / sales01 / sales02 / sales03 / tech01 / tech02`。密码每次随机生成，只写入权限为 `0600` 的 `data-test-server/lan_test_accounts.md`；其他既有团队账号和密码不会被修改或出现在清单中。
 
@@ -33,11 +38,11 @@
 - Worklist Order：各工作页使用固定业务排序，而不是数据库偶然返回顺序。处理页按询盘日期由早到晚；跟进页按下一次跟进日期由近到远；售前/样品页优先进行中且按到期日；成交、履约、售后分别按阶段与关键业务日期排列。缺失或无效日期排在有效日期之后，同值再按询盘编号与内部 ID 稳定排序。
 - Customer Merge：Leader 使用客户名称和别名模糊候选、匹配分数与只读迁移预览核对联系人、Lead、域名和别名后执行一次安全合并；来源客户归档并保留审计。
 - Map Quality：地图明确区分精确、近似和缺失坐标；自动候选保持待复核，越界或不完整旧坐标降级为近似/缺失。Leader、owner、collaborator 可修正，watcher 与 Tech 只读；并发版本冲突要求刷新，不会静默覆盖。地址搜索和批量地理编码会把地址字段发送给一个或多个外部服务；默认公共 Nominatim，高德显式启用后为首选，但空结果、网络、超时、配额或无效响应会回退 Nominatim，Key/权限错误不回退。高德结果本地转为 WGS84；高德不替换 CARTO/OpenStreetMap 底图，打开地图仍会产生外部瓦片请求。公共 Nominatim 只用于小规模一次性查询。Windows 开始菜单启动需重新登录系统，macOS Finder 启动需由 `launchd`/MDM 注入 GUI 会话。Key 不进入前端、GitHub、安装包、启动脚本或日志；禁止外发的地址使用人工经纬度或地图选点。
-- Safe Upgrade：从 v0.11.9 schema 3 升级到 v0.12.0 schema 6 前，应用会在任何 schema 写入前生成并验证完整 `pre_upgrade` 备份。迁移使用独立版本账本；失败会恢复原数据库并停止启动，第二次启动不会重复迁移或重复创建备份。Windows/macOS 内测构建分别检查客户、Lead、任务、附件、授权、Tech 包状态和卸载保留。离线恢复入口只接受自动生成且清单标记为 `pre_upgrade` 的 ZIP；恢复前还会先把当前数据库保存为 `data/backups/pre_recovery_current_*.sqlite`，保存或校验失败时不会开始恢复。
+- Safe Upgrade：迁移到 schema 15 之前，应用会在任何 schema 写入前生成并验证完整 `pre_upgrade` 备份（0.13.1 → 0.13.2 同为 schema 15，不触发迁移）。迁移使用独立版本账本；失败会恢复原数据库并停止启动，第二次启动不会重复迁移或重复创建备份。Windows/macOS 内测构建分别检查客户、Lead、任务、附件、授权、Tech 包状态和卸载保留。离线恢复入口只接受自动生成且清单标记为 `pre_upgrade` 的 ZIP；恢复前还会先把当前数据库保存为 `data/backups/pre_recovery_current_*.sqlite`，保存或校验失败时不会开始恢复。
 
 ## 文档归档
 
-- `docs/v0.12.0-validation-result.md`：当前内测候选的验证证据账本；尚未完成的本地、CI 和原生安装门禁保持 Pending。
+- `docs/v0.13.2-validation-result.md`：当前内测候选的验证证据账本；尚未完成的原生安装门禁保持 Pending。历史版本账本保留在同目录，仅供追溯。
 - `docs/v0.11.9-validation-result.md`：直接覆盖升级基线与 Tech 导航计数修复的历史验证记录。
 - `docs/v0.11.8-validation-result.md`：Tech 任务包首版的历史验证记录。
 - `docs/v0.11.7-validation-result.md`：更早版本的全面审计、修补、源码门禁和原生三平台发布历史记录。

@@ -34,8 +34,11 @@ def main() -> None:
     assert index.index("worklist-sort.js") < index.index("sales-worklists.js")
     assert "Next 7 days" in index and "This week" not in index
     assert "window.FollowupFilterControls?.init()" in stage_filters
-    assert "...getSharedLeadFilters()" in worklist
-    assert "limit: 100000" in worklist
+    # The shared filters still decide the query, and the whole list is read
+    # page by page. An enormous limit is not a pagination design: it only moves
+    # the point where rows start disappearing.
+    assert "ApiClient.listAllLeads(getSharedLeadFilters())" in worklist
+    assert "limit: 100000" not in worklist
     assert "['Assigned', 'Following']" in worklist
     assert "missing a next follow-up date" in worklist
     assert "latest_follow_up_at: lead.latest_follow_up_at" in worklist
@@ -141,18 +144,26 @@ const formalHtml = context.renderInquiryCard({
 assert(formalHtml.includes('2026-07-01'));
 assert(formalHtml.includes('19 days inactive'));
 
-let requestedParams = null;
+// 1,101 leads behind a paged endpoint: more than one page, and the list must
+// arrive whole rather than as whatever the first page happened to hold.
+const allLeads = Array.from({ length: 1101 }, (_, index) => ({
+  id: `lead-${index}`, display_id: `JPT-${index}`, sales_stage: 'Following',
+  customer: { display_name: `Customer ${index}` }, assignments: [],
+  inquiry_date: '2025-01-01', created_at: '2025-01-01',
+  latest_follow_up_at: '2025-01-01', next_followup_date: null,
+}));
+const requests = [];
 context.ApiClient = {
   listLeads: async params => {
-    requestedParams = params;
-    return Array.from({ length: 1101 }, (_, index) => ({
-      id: `lead-${index}`, display_id: `JPT-${index}`, sales_stage: 'Following',
-      customer: { display_name: `Customer ${index}` }, assignments: [],
-      inquiry_date: '2025-01-01', created_at: '2025-01-01',
-      latest_follow_up_at: '2025-01-01', next_followup_date: null,
-    }));
+    requests.push(params);
+    const offset = Number(params.offset) || 0;
+    const limit = Number(params.limit) || allLeads.length;
+    return allLeads.slice(offset, offset + limit);
   },
 };
+vm.runInContext(fs.readFileSync('frontend/js/modules/paged-fetch.js', 'utf8'), context);
+context.ApiClient.listAllLeads = params =>
+  context.PagedFetch.all(page => context.ApiClient.listLeads({ ...params, ...page }));
 context.getSharedLeadFilters = () => ({ business_region: 'EU' });
 context.State = {
   currentFilters: { followup: 'all' },
@@ -166,19 +177,28 @@ context.syncStageFilterInputs = () => {};
 context.switchModule = () => {};
 context.loadModuleData = async () => {};
 context.openInquiryPanel = async () => {};
-context.renderCards = (containerId, items) => {
-  assert.strictEqual(containerId, 'followup-cards');
-  assert.strictEqual(items.length, 1101);
-};
+// The follow-up list is rendered by the workbench now: rows in a narrow
+// selector beside the lead's own panel. The double mirrors the page, so the
+// same 1,101 leads have to arrive here whole.
+let rendered = null;
+context.FollowupWorkbench = { render: items => { rendered = items; } };
 vm.runInContext(fs.readFileSync('frontend/js/modules/lead-navigation.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/worklist-request.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('frontend/js/modules/sales-worklists.js', 'utf8'), context);
 (async () => {
   await context.loadFollowup();
-  assert.strictEqual(requestedParams.business_region, 'EU');
-  assert.ok(requestedParams.limit > 1000);
+  assert.ok(requests.length >= 2,
+    `1,101 leads were read in ${requests.length} request(s), so a page was lost`);
+  assert.ok(requests.every(item => item.business_region === 'EU'),
+    'a page was fetched without the filters the reader had set');
+  assert.ok(requests.every(item => Number(item.limit) <= 5000),
+    'a page asked for an enormous limit instead of paging');
   await context.jumpToCustomerStageCards('', 'Following', 'customer-1');
   assert.strictEqual(context.State.stageFilters.customerId, 'customer-1');
   assert.strictEqual(context.State.stageFilters.businessRegion, '');
+  assert.ok(rendered, 'the follow-up list was never rendered');
+  assert.strictEqual(rendered.length, 1101,
+    `the workbench was handed ${rendered.length} of 1,101 leads`);
 })().catch(error => { console.error(error); process.exit(1); });
 """
     subprocess.run(

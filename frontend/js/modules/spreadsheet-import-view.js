@@ -46,7 +46,7 @@
             const selected = SpreadsheetImportState.resolutions().customer_mappings[key]
                 || item.customer_id || '__CREATE__';
             return `<label class="import-resolution-row">
-                <span><strong>${safe(item.display_name || key)}</strong><small>${safe(tr(item.status || item.match_type || 'new customer'))}</small></span>
+                <span><strong data-business>${safe(item.display_name || key)}</strong><small>${safe(tr(item.status || item.match_type || 'new customer'))}</small></span>
                 <select class="form-input" data-customer-key="${safe(key)}">${candidateOptions(item.candidates, selected, 'customer')}</select>
             </label>`;
         }).join('');

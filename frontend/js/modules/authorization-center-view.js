@@ -20,7 +20,16 @@
         setText('authorization-mode', modeLabels[status.mode] || status.mode);
         setText('authorization-member-count', activeMembers);
         setText('authorization-device-count', boundMembers);
-        setText('authorization-current-device', status.deviceId || '-');
+        // A device fingerprint is 64 characters of hex. Printed in full it
+        // fills the card and says nothing a person can use; the first eight
+        // are enough to tell two machines apart, and the whole value is still
+        // there to copy from the tooltip.
+        const device = document.getElementById('authorization-current-device');
+        if (device) {
+            const id = status.deviceId || '';
+            device.textContent = id ? `${id.slice(0, 8)}…` : '-';
+            device.title = id;
+        }
         setText('authorization-fingerprint', status.issuer.fingerprint || 'Not initialized');
         setText('authorization-trusted-fingerprint', status.issuer.fingerprint || 'Unknown');
 
@@ -46,7 +55,7 @@
                     <thead><tr><th>Member</th><th>Role</th><th>Region</th><th>Device</th><th>Expiry</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody>${members.map(member => `
                         <tr>
-                            <td><strong>${escapeHtml(member.displayName)}</strong><small>${escapeHtml(member.username)}</small></td>
+                            <td data-business><strong>${escapeHtml(member.displayName)}</strong><small>${escapeHtml(member.username)}</small></td>
                             <td>${escapeHtml(AuthorizationModel.ROLE_LABELS[member.role])}</td>
                             <td>${escapeHtml(AuthorizationModel.regionLabel(member.region))}</td>
                             <td>${escapeHtml(AuthorizationModel.deviceLabel(member.activeDevice))}</td>

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>JPT 团队自助验收清单</title>
+<style>
+:root{--wine:#8b1a1a;--ink:#1d1d1f;--muted:#68625f;--line:#ded7d2;--bg:#f4f2ef;--paper:#fff;--soft:#f8efec;--ok:#176b3a;--warn:#965900}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{width:min(1080px,calc(100% - 32px));margin:auto}
+header{padding:44px 0 30px;background:linear-gradient(135deg,#fff,#f5e9e5);border-bottom:1px solid var(--line)}
+h1{margin:7px 0 10px;font-size:clamp(30px,4.6vw,48px);letter-spacing:-.04em}
+h2{margin:30px 0 10px;font-size:22px;letter-spacing:-.02em}
+h3{margin:20px 0 8px;font-size:17px;color:var(--wine)}
+.kicker{color:var(--wine);font-size:12px;font-weight:800;letter-spacing:.18em}
+.lead{max-width:840px;color:#514c48;font-size:16px}
+main{padding:26px 0 60px}
+.notice,.panel{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px}
+.notice{border-left:4px solid var(--wine)}
+.notice strong{color:var(--wine)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--wine);background:#f8f1ee}
+td{font-size:13.5px;overflow-wrap:anywhere}
+td.tick{width:34px;text-align:center}
+.table-wrap{overflow:auto}
+.fine{color:var(--muted);font-size:12px}
+.pending{display:inline-block;border-radius:999px;background:#fdf1e3;color:var(--warn);padding:2px 9px;font-weight:750;font-size:12px}
+.done{display:inline-block;border-radius:999px;background:var(--soft);color:var(--wine);padding:2px 9px;font-weight:750;font-size:12px}
+textarea{width:100%;min-height:190px;border:1px solid #d5ceca;border-radius:10px;padding:11px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+button{border:0;border-radius:10px;padding:10px 15px;background:var(--wine);color:#fff;font:inherit;font-weight:750;cursor:pointer}
+figure{margin:14px 0}
+img{max-width:100%;border:1px solid var(--line);border-radius:12px}
+figcaption{color:var(--muted);font-size:12px;margin-top:6px}
+@media print{body{background:#fff}button{display:none}.panel,.notice{break-inside:avoid;border-color:#bbb}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="kicker">JPT · SELF-CHECK</div>
+  <h1>团队自助验收清单</h1>
+  <p class="lead">这一页只做两件事：给你一条十分钟就能走完的<strong>快速体验路线</strong>，以及四份按角色分开的<strong>验收清单</strong>——每条都写清楚"怎么算通过"，以及不通过时该把什么发回来。怎么使用产品本身，看 <code>docs/current-team-guide.md</code>；这一页不重复讲用法。</p>
+</div></header>
+<main class="wrap">
+
+<aside class="notice">
+  <strong>先看这三句。</strong>
+  <ol>
+    <li>这一页是<strong>纯本地的一张纸</strong>：勾选只存在于你当前打开的这个标签页，关掉就没了，它不会保存也不会发送任何东西。要留底就用浏览器"打印 / 存为 PDF"。</li>
+    <li>请用<strong>虚构的客户和数据</strong>试。真实客户资料、密码、签发口令、`.jptauth` 授权文件<strong>都不要</strong>发回来。</li>
+    <li>发现问题时，把下面《反馈要写什么》里的六项填上再发；只写"打不开"没法定位。</li>
+  </ol>
+</aside>
+
+<section class="panel">
+  <h2>A. 快速体验路线（约 10 分钟）</h2>
+  <p class="fine">目的：确认这台电脑上的 JPT 从零到一条完整商机是通的。全程用虚构公司名。</p>
+  <div class="table-wrap"><table>
+    <tr><th class="tick">✓</th><th>做什么</th><th>怎么算通过</th></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>打开 JPT，登录自己的账号</td><td>进入仪表盘；左侧每个模块后面都有一个数字（新库里都是 0）</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>「+ New Inquiry」建一条商机：填公司名、国家城市、联系人邮箱、这条询价是关于什么</td><td>保存后这条商机自动打开在右侧，提示里带编号（例如 JPT-2609-0001）</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>回到「待处理」队列</td><td>刚建的这条就在列表里，左侧"待处理"的数字 +1</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>在这条商机的「Follow-ups」里记一条跟进</td><td>历史里出现这条；这条商机从"待处理"进到"跟进中"，两边数字同时变</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>回仪表盘，点漏斗里的某个阶段</td><td>打开的列表正好是那个阶段的那些商机，条数与漏斗上的数字一致</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>关掉 JPT 再打开</td><td>刚才建的商机与跟进都还在</td></tr>
+  </table></div>
+  <figure><img src="assets/dashboard.png" alt="仪表盘"><figcaption>仪表盘：数字点得动的地方，点开就是它数的那一批。截图取自开发方在隔离实例上的走查。</figcaption></figure>
+</section>
+
+<section class="panel">
+  <h2>B. Leader 验收清单</h2>
+  <div class="table-wrap"><table>
+    <tr><th class="tick">✓</th><th>做什么</th><th>怎么算通过</th><th>不通过时报什么</th></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>建客户与商机，指派给某位销售</td><td>面板与列表都显示新负责人；重开这条商机还是他</td><td>商机编号、指派前后各是谁</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>「Team &amp; Authorization」→「Add member」登记一位成员</td><td>成员出现在列表里，状态是未激活</td><td>填了哪些字段、页面提示原文</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>收到成员的 <code>.jptreq</code> 后签发 <code>.jptauth</code></td><td>下载到 <code>.jptauth</code>；成员表里出现这次签发记录</td><td>提示原文（<strong>不要</strong>把 <code>.jptauth</code> 本身发回来）</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>「Export / Import」给某位销售导出定向 JSON 包</td><td>包里只有这位销售的商机</td><td>期望几条、实际几条</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>收回销售/技术的包：先预检，再导入</td><td>预检不写库；导入报告里的新增/更新条数，和列表里实际多出来的条数一致</td><td>预检报告与导入报告的数字、列表实际条数</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>导入前看一眼预检里的警告</td><td>如果提示"这个文件里是空的、本地有值，导入会清空：…"，说明这些字段会被对方的文件清掉——确认过再导</td><td>警告原文与你最后的选择</td></tr>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>C. Sales 验收清单</h2>
+  <div class="table-wrap"><table>
+    <tr><th class="tick">✓</th><th>做什么</th><th>怎么算通过</th><th>不通过时报什么</th></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>登录后看「跟进」队列</td><td>只出现指派给自己的商机</td><td>看到了哪一条不该看到的（写编号）</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>记一条跟进，填下一步与下次跟进日期</td><td>保存后历史里有；换一条商机再回来还在</td><td>商机编号、你填的内容、实际显示的内容</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>在同一条商机上请技术支持（建一件样品/售前任务）</td><td>任务出现在「样品」队列，左侧数字 +1</td><td>建任务时的提示原文</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>填一次金额与币种</td><td>写了报价单号会进"成交"队列；写了成交金额会进"履约"队列；没填币种的地方不会自己补一个币种</td><td>你填了什么、页面显示成什么</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>正在保存时试着改同一个表单</td><td>表单在保存期间是灰的、改不动；保存完自动恢复</td><td>是否能改动、有没有内容丢失</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>导入 Leader 发来的 JSON 包（先预检）</td><td>预检的预测与导入结果一致；同一个包再导一次不会翻倍</td><td>两次报告的数字</td></tr>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>D. Tech 验收清单</h2>
+  <div class="table-wrap"><table>
+    <tr><th class="tick">✓</th><th>做什么</th><th>怎么算通过</th><th>不通过时报什么</th></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>登录后看左侧</td><td>只有"样品/售前""售后""导入导出"；没有"新建询价"按钮</td><td>多出来或少掉的模块名</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>导入 Leader 给的 <code>.jpttask</code>：先预检，再导入</td><td>预检没有错误才允许导入；导入后任务出现在自己的队列里</td><td>预检报告原文</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>打开一件任务，确认需求写的是什么</td><td>需求部分只读；能填的是执行结果那几栏</td><td>哪一栏该只读却能改</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>填执行进展、下一步，保存</td><td>重开面板内容还在</td><td>任务对应的商机编号、你填的内容</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>「Download .jptresult」回传</td><td>下载到 <code>.jptresult</code> 文件</td><td>提示原文</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>故意选一个不对的文件再导一次</td><td>提示说得清是什么问题（例如"Invalid Tech task package JSON"），并且不让继续导入</td><td>提示原文与当时选的文件类型</td></tr>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>E. 出差验收清单</h2>
+  <div class="table-wrap"><table>
+    <tr><th class="tick">✓</th><th>做什么</th><th>怎么算通过</th><th>不通过时报什么</th></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>建一个出差计划，加入几位成员</td><td>每位成员的出发地/返回地可以各写各的</td><td>哪位成员的哪一项存不住</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>加几个客户停靠，其中一个约定固定时间并锁定</td><td>预览后，锁定的那次拜访仍在你约定的那个半天</td><td>约的是哪天哪个半天、实际排到了哪里</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>加一个只属于自己的停留（酒店/机场/休息）</td><td>只出现在你自己的日程里，不影响别人</td><td>谁的日程里多出了不该有的一段</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>写一次拜访准备（议题、参会人、设备）</td><td>保存时整块变灰；保存完换一条再回来，内容还在</td><td>客户名、你写的内容、回来后看到的内容</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>导出"共享"版行程发给客户看</td><td>共享版里没有内部议题与内部判断；完整版里才有</td><td>共享版里出现了哪一句不该出现的</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>导出现场工作簿，填一行结果，回传：先预检再提交</td><td>预检不写库；提交后那次拜访的结果就是你填的；同一份工作簿再传一次不会翻倍</td><td>拜访对应的客户名、你填的值、页面提示</td></tr>
+    <tr><td class="tick"><input type="checkbox"></td><td>办公室那边也改过同一条时再回传</td><td>会被拦住并要求逐条选保留哪一边，办公室的内容不会被悄悄覆盖</td><td>提示原文与冲突涉及的字段</td></tr>
+  </table></div>
+  <figure><img src="assets/trip-briefing.png" alt="拜访准备"><figcaption>左边选哪一次拜访，右边写这次拜访的准备。截图取自开发方在隔离实例上的走查。</figcaption></figure>
+</section>
+
+<section class="panel">
+  <h2>F. 反馈要写什么</h2>
+  <p>把下面这段复制走，填好发给 Leader。六项缺一项都会让定位变慢。</p>
+  <textarea readonly>1. 候选身份：（页面右下角/关于里的版本号，或 Leader 给你的候选编号）
+2. 平台：（Windows 11 x64 / macOS Apple Silicon，以及是不是刚升级过）
+3. 当前页面：（例如"跟进队列"或"出差 → 拜访准备"）
+4. 对象编号：（商机编号 JPT-…、客户名、拜访对应的客户，用虚构数据）
+5. 操作步骤：（从哪一页开始，依次点了什么，选了哪个文件）
+6. 实际提示：（页面上原样的那句话，整句抄下来；有截图更好）
+
+不要发：密码、签发口令、.jptauth 授权文件、真实客户资料。</textarea>
+  <p class="actions"><button type="button" onclick="window.print()">打印 / 存为 PDF</button></p>
+</section>
+
+<section class="panel">
+  <h2>G. 这份清单现在覆盖到哪里</h2>
+  <p>
+    <span class="done">已在开发方的隔离实例上逐条走通</span>：A～E 的每一条，都在真实页面上跑过，并留了证据。<br>
+    <span class="pending">仍是 Pending</span>：① 在<strong>另一台真实电脑</strong>上完成成员激活；② <strong>原生安装包</strong>装好之后再走一遍上面的路线。
+    这两项没做完之前，谁都不要把这次升级说成"团队已验证"。
+  </p>
+  <p class="fine">这一页不上传任何东西，也不会自动保存你的勾选；它只是一张可以打印的纸。</p>
+</section>
+
+</main>
+</body>
+</html>

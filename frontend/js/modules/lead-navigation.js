@@ -106,6 +106,11 @@ function leadToCardItem(lead, extra = {}) {
         po_number: lead.po_number || '',
         lost_reason_text: lead.lost_reason_text || '',
         quality_issue_count: canReviewQuality ? (lead.quality_issue_count || 0) : 0,
+        // The grade the lead actually carries. Left out of this mapping, every
+        // card fell back to C - including the ones somebody had graded A - and
+        // the badge read as a judgement nobody made. It is a different thing
+        // from quality_issue_count, which counts import problems.
+        quality_rating: lead.quality_grade || null,
         _lead: lead,
         ...extra
     };

@@ -10,6 +10,7 @@ import json
 import math
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from itertools import zip_longest
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +22,7 @@ from ..repositories import (
 )
 from ..repositories.base import ConflictError, generate_uuid, now_iso
 from .country_service import CountryService
+from .money_totals import UNSPECIFIED, phrase as _money_phrase, totals_by_currency
 from .review_analysis_service import ReviewAnalysisService
 from .review_map_service import ReviewMapService
 from .review_utils import clean_stay_days, csv_cell, finite_float, md_cell, num, parse_date, parse_holiday_dates
@@ -46,7 +48,9 @@ from .visibility_service import VisibilityService
 RISK_SCORE_WEIGHTS = {
     "overdue_followup": 40,
     "stale_activity": 30,
-    "high_value": 20,
+    # No amount threshold: "over 50,000" was applied to amounts in whatever
+    # currency the enquiry arrived in, so the same deal counted as a risk or
+    # not depending on the denomination it was quoted in.
     "quoted": 15,
 }
 
@@ -54,8 +58,22 @@ TRIP_SCORE_WEIGHTS = {
     "open_lead": 20,
     "quoted": 25,
     "following": 15,
-    "pipeline_value_divisor": 10000,
-    "pipeline_value_cap": 40,
+    # No money term at all, and this is settled (owner's decision,
+    # 2026-09-09): order size does not enter the automatic score.
+    #
+    # Amounts here are in whatever currency the enquiry arrived in and there is
+    # no conversion anybody has agreed to, so adding them up ranked a customer
+    # higher for quoting in a small-denomination currency. A fixed "has an
+    # amount at all" bonus was proposed and refused: having filled the amount
+    # in is not the same as the order being large.
+    #
+    # What the score is: the order in which to push business forward, not a
+    # ranking of what a customer is worth or how big their order might be. The
+    # amounts stay reported per currency for a person to judge, they are not a
+    # tie-breaker when two customers score the same, they do not decide which
+    # lead represents a customer, and a missing amount costs nothing - it is
+    # not read as no value. Which stop to visit first remains the reader's to
+    # change by hand.
     "service_context": 12,
     "coordinate_review_penalty": 8,
 }
@@ -392,12 +410,22 @@ class ReviewService:
 
     def _stage_breakdown(self, leads: list[dict]) -> list[dict]:
         order = ["New", "Assigned", "Following", "Quoted", "Won", "Lost"]
-        grouped = {stage: {"stage": stage, "count": 0, "value": 0.0} for stage in order}
+
+        def fresh(stage: str) -> dict:
+            return {"stage": stage, "count": 0, "value_by_currency": {}}
+
+        grouped = {stage: fresh(stage) for stage in order}
         for lead in leads:
             stage = lead.get("sales_stage") or "Unknown"
-            item = grouped.setdefault(stage, {"stage": stage, "count": 0, "value": 0.0})
+            item = grouped.setdefault(stage, fresh(stage))
             item["count"] += 1
-            item["value"] += self._num(lead.get("deal_amount")) or self._num(lead.get("estimated_value"))
+            amount = self._num(lead.get("deal_amount")) or self._num(
+                lead.get("estimated_value")
+            )
+            code = str(lead.get("currency") or "").strip().upper() or UNSPECIFIED
+            item["value_by_currency"][code] = round(
+                item["value_by_currency"].get(code, 0.0) + amount, 2
+            )
         return [grouped[stage] for stage in order if grouped.get(stage, {}).get("count")]
 
     def _group_performance(self, leads: list[dict], key: str, default: str) -> list[dict]:
@@ -412,22 +440,33 @@ class ReviewService:
                     "open": 0,
                     "won": 0,
                     "lost": 0,
-                    "pipeline_value": 0.0,
-                    "won_value": 0.0,
+                    "pipeline_value_by_currency": {},
+                    "won_value_by_currency": {},
                     "follow_ups": 0,
                 },
             )
             item["total"] += 1
             item["follow_ups"] += int(lead.get("follow_up_count") or 0)
             stage = lead.get("sales_stage")
+            # Subtotals are per currency, and there is no total across them:
+            # the sum of a column of different currencies is a number in no
+            # currency at all, and ordering by it ranked groups by which
+            # currency they happen to sell in.
+            code = str(lead.get("currency") or "").strip().upper() or UNSPECIFIED
             if stage == "Won":
                 item["won"] += 1
-                item["won_value"] += self._num(lead.get("deal_amount"))
+                amount = self._num(lead.get("deal_amount"))
+                item["won_value_by_currency"][code] = round(
+                    item["won_value_by_currency"].get(code, 0.0) + amount, 2
+                )
             elif stage == "Lost":
                 item["lost"] += 1
             else:
                 item["open"] += 1
-                item["pipeline_value"] += self._num(lead.get("estimated_value"))
+                amount = self._num(lead.get("estimated_value"))
+                item["pipeline_value_by_currency"][code] = round(
+                    item["pipeline_value_by_currency"].get(code, 0.0) + amount, 2
+                )
 
         result = []
         for item in grouped.values():
@@ -435,7 +474,11 @@ class ReviewService:
             item["win_rate"] = item["won"] / closed if closed else 0
             item["average_followups"] = item["follow_ups"] / item["total"] if item["total"] else 0
             result.append(item)
-        result.sort(key=lambda row: (row["won_value"], row["pipeline_value"], row["total"]), reverse=True)
+        result.sort(key=lambda row: str(row["label"]))
+        result.sort(
+            key=lambda row: (row["won"], row["total"], row["open"]),
+            reverse=True,
+        )
         return result[:20]
 
     def _lost_reason_breakdown(self, lost_leads: list[dict]) -> list[dict]:
@@ -454,7 +497,6 @@ class ReviewService:
         for lead in open_leads:
             score = 0
             reasons = []
-            value = self._num(lead.get("estimated_value")) or self._num(lead.get("deal_amount"))
             next_followup = lead.get("next_followup_date")
             if next_followup and str(next_followup) < today.isoformat():
                 score += RISK_SCORE_WEIGHTS["overdue_followup"]
@@ -462,21 +504,39 @@ class ReviewService:
             if (lead.get("days_since_activity") or 0) >= 30:
                 score += RISK_SCORE_WEIGHTS["stale_activity"]
                 reasons.append("No activity for 30+ days")
-            if value >= 50000:
-                score += RISK_SCORE_WEIGHTS["high_value"]
-                reasons.append("High value")
             if lead.get("sales_stage") == "Quoted":
                 score += RISK_SCORE_WEIGHTS["quoted"]
                 reasons.append("Quoted but not won")
             if score:
                 items.append({**self._lead_summary(lead), "risk_score": score, "risk_reasons": reasons})
-        items.sort(key=lambda item: (item["risk_score"], item["value"]), reverse=True)
+        items.sort(
+            key=lambda item: (
+                item["risk_score"], item["days_since_activity"] or 0,
+                item["display_id"] or "",
+            ),
+            reverse=True,
+        )
         return items[:limit]
 
     def _high_value_open_leads(self, open_leads: list[dict], limit: int = 10) -> list[dict]:
-        items = [self._lead_summary(lead) for lead in open_leads]
-        items.sort(key=lambda item: item["value"], reverse=True)
-        return [item for item in items if item["value"] > 0][:limit]
+        # Largest means something only inside one currency. The biggest open
+        # lead in each currency comes first, then the second biggest in each,
+        # so a currency with large denominations cannot fill the table on its
+        # own and call itself the top of the pipeline.
+        by_currency: defaultdict[str, list[dict]] = defaultdict(list)
+        for lead in open_leads:
+            item = self._lead_summary(lead)
+            if item["value"]:
+                by_currency[item["currency"]].append(item)
+        for items in by_currency.values():
+            items.sort(
+                key=lambda item: (item["value"], item["display_id"] or ""),
+                reverse=True,
+            )
+        ordered = []
+        for row in zip_longest(*(by_currency[code] for code in sorted(by_currency))):
+            ordered.extend(item for item in row if item)
+        return ordered[:limit]
 
     def _lead_summary(self, lead: dict) -> dict:
         return {
@@ -489,17 +549,34 @@ class ReviewService:
             "city": lead.get("city"),
             "owner_name": lead.get("owner_name"),
             "stage": lead.get("sales_stage"),
+            # One lead's own amount, and the currency it is in. The table used
+            # to be handed a bare number and a currency map it never got, so
+            # the column it prints from was empty.
             "value": self._num(lead.get("deal_amount")) or self._num(lead.get("estimated_value")),
+            "currency": str(lead.get("currency") or "").strip().upper() or UNSPECIFIED,
+            "value_by_currency": self._lead_value_by_currency(lead),
             "next_followup_date": lead.get("next_followup_date"),
             "days_since_activity": lead.get("days_since_activity"),
         }
 
+    def _lead_value_by_currency(self, lead: dict) -> dict:
+        amount = self._num(lead.get("deal_amount")) or self._num(
+            lead.get("estimated_value")
+        )
+        if not amount:
+            return {}
+        code = str(lead.get("currency") or "").strip().upper() or UNSPECIFIED
+        return {code: amount}
+
     def _analysis_brief(self, summary: dict) -> str:
+        # Said per currency, because the two sums it used to print were in no
+        # currency at all.
         return (
             f"{summary['total_leads']} leads reviewed, including "
             f"{summary['open_leads']} open, {summary['won_leads']} won, "
             f"and {summary['lost_leads']} lost. Pipeline value is "
-            f"{summary['pipeline_value']:,.0f}; won value is {summary['won_value']:,.0f}. "
+            f"{_money_phrase(summary.get('pipeline_value_by_currency'))}; "
+            f"won value is {_money_phrase(summary.get('won_value_by_currency'))}. "
             f"{summary['overdue_followups']} leads have overdue follow-ups and "
             f"{summary['stale_open_leads']} open leads have no activity for 30+ days."
         )
@@ -510,17 +587,21 @@ class ReviewService:
         quoted = [lead for lead in leads if lead.get("sales_stage") == "Quoted"]
         following = [lead for lead in leads if lead.get("sales_stage") == "Following"]
         service = [lead for lead in leads if lead.get("service_status") not in {None, "None", ""}]
-        pipeline_value = sum(self._num(lead.get("estimated_value")) for lead in open_leads)
-        won_value = sum(self._num(lead.get("deal_amount")) for lead in leads if lead.get("sales_stage") == "Won")
+        # This score orders who to talk to next - it is not a ranking of what a
+        # customer is worth, and it may not be built on amounts that cannot be
+        # compared with each other.
+        pipeline_totals = totals_by_currency(open_leads, "estimated_value")
+        won_totals = totals_by_currency(
+            [lead for lead in leads if lead.get("sales_stage") == "Won"], "deal_amount"
+        )
+        # Reported, not scored: whether there is any amount at all, in any
+        # currency, including one nobody recorded.
+        has_pipeline = any(pipeline_totals["by_currency"].values())
 
         score = (
             len(open_leads) * TRIP_SCORE_WEIGHTS["open_lead"]
             + len(quoted) * TRIP_SCORE_WEIGHTS["quoted"]
             + len(following) * TRIP_SCORE_WEIGHTS["following"]
-            + min(
-                pipeline_value / TRIP_SCORE_WEIGHTS["pipeline_value_divisor"],
-                TRIP_SCORE_WEIGHTS["pipeline_value_cap"],
-            )
         )
         reasons = []
         if len(open_leads) > 1:
@@ -529,7 +610,7 @@ class ReviewService:
             reasons.append("Quoted opportunities")
         if following:
             reasons.append("Active follow-up")
-        if pipeline_value:
+        if has_pipeline:
             reasons.append("Pipeline value")
         if service:
             score += TRIP_SCORE_WEIGHTS["service_context"]
@@ -538,12 +619,24 @@ class ReviewService:
             score -= TRIP_SCORE_WEIGHTS["coordinate_review_penalty"]
             reasons.append("Coordinate needs review")
 
+        # Which of this customer's leads to show beside them - not the order
+        # of the visit and not the score. The business stage first, then the
+        # one somebody touched most recently, then a stable id so the same
+        # data always shows the same lead.
+        #
+        # "Whether an amount was filled in" used to sit above the timestamp
+        # here. The amounts in this database are patchy, so that showed the
+        # lead whose record happens to be more complete rather than the one
+        # being worked on. Owner's decision, 2026-09-09: the amount is a fact
+        # on display and decides nothing - not the score, not the ordering,
+        # and not which lead represents the customer.
         primary = sorted(
             leads,
             key=lambda lead: (
                 lead.get("sales_stage") == "Quoted",
-                self._num(lead.get("estimated_value")) or self._num(lead.get("deal_amount")),
                 lead.get("updated_at") or "",
+                str(lead.get("display_id") or ""),
+                str(lead.get("id") or ""),
             ),
             reverse=True,
         )[0] if leads else {}
@@ -561,8 +654,9 @@ class ReviewService:
             "lead_count": point.get("lead_count") or len(leads),
             "open_count": len(open_leads),
             "won_count": point.get("won_count") or 0,
-            "pipeline_value": pipeline_value,
-            "won_value": won_value,
+            "has_pipeline": has_pipeline,
+            "pipeline_value_by_currency": pipeline_totals["by_currency"],
+            "won_value_by_currency": won_totals["by_currency"],
             "score": round(score, 1),
             "reasons": reasons,
             "primary_lead_id": primary.get("id"),
@@ -586,8 +680,9 @@ class ReviewService:
             "lead_count": item.get("lead_count") or 0,
             "open_count": item.get("lead_count") or 0,
             "won_count": 0,
-            "pipeline_value": 0,
-            "won_value": 0,
+            "has_pipeline": False,
+            "pipeline_value_by_currency": {},
+            "won_value_by_currency": {},
             "score": max(1, (item.get("lead_count") or 0) * 10 - 8),
             "reasons": ["Missing coordinates"],
             "primary_lead_id": item.get("latest_lead_id"),

@@ -2,7 +2,13 @@
 
 面向 JPT 海外销售团队的全流程效率工具集。
 
-当前待测候选：`v0.12.0-internal`。它包含 Trip Planner v2 的路线、交通、半天日程、拜访准备和正式行程导出，是 `UNSIGNED-INTERNAL` 团队测试 / Draft Pre-release，不等同于已签名的公开正式版。本次只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包。覆盖升级以 `v0.11.9-internal` 为直接基线；程序会在任何 schema 写入前自动生成并验证本机 `pre_upgrade` 备份，再把 schema 3 升级到 schema 6。两平台构建和团队实测全部完成前，不得把本候选标记为 Stable / Latest。当前启动、账号授权、备份、业务地区、客户合并、地图、出差规划、Sales 定向数据分发和 Tech 任务包入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
+当前已分发候选：`v0.13.2-internal`（数据版本 **schema 15**），是 `UNSIGNED-INTERNAL` 团队测试 / Draft Pre-release，不等同于已签名的公开正式版。只发布 Windows 10/11 x64 与 macOS Apple Silicon arm64 两个原生安装包，Linux 与 Intel Mac 不在范围内。
+
+它包含：出差规划（团队出行、半天日程、拜访准备、共享/完整导出、现场执行工作簿与结果回流）、售前与售后任务包交换、离线设备授权。0.13.2 是 0.13.1 的安全热修，**0.13.1 及更早的安装包应停止分发**。
+
+本次内测候选：`v0.13.3-internal`（已构建两平台内测安装包，**尚未分发**；分发与否由团队负责人决定）。它在 0.13.2 之后，包含 0.13.2 的那处安全热修。本轮的独立审计修复——面板操作归属、列表分页归属、手工录入的联系邮箱、翻译不再改写业务文本、金额与优先级按币种、出差分区与地图尺寸——**都只在源码里**，已分发的 0.13.2 安装包没有这些能力。团队使用指南里带 〔候选〕 标记的段落同理。
+
+覆盖升级：程序在任何 schema 写入前自动生成并验证本机 `pre_upgrade` 备份，再迁移到当前 schema；从 0.13.1 覆盖升级不触发迁移（同为 schema 15）。两平台构建和团队实测全部完成前，不得把本候选标记为 Stable / Latest。当前启动、账号授权、备份、业务地区、客户合并、地图、出差规划、Sales 定向数据分发和 Tech 任务包入口见 [docs/current-internal-runbook.md](docs/current-internal-runbook.md)。按任务组织的团队使用指南见 [docs/current-team-guide.md](docs/current-team-guide.md)（录入第一条、导入历史数据、Leader/Sales/Tech 分工、出差全流程、五种文件的用途、出错怎么办）。面向团队成员的离线 HTML 指南入口见 [docs/guides/00-开始这里.html](docs/guides/00-开始这里.html)。
 
 ## 功能概览
 
@@ -210,4 +216,4 @@ A: 编辑 `config/products.json` 文件，添加新的产品信息。
 
 ---
 
-*JPT Sales Toolkit v0.12.0-internal · UNSIGNED-INTERNAL Draft Pre-release candidate*
+*JPT Sales Toolkit v0.13.2-internal · UNSIGNED-INTERNAL Draft Pre-release candidate*

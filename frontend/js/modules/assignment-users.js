@@ -8,7 +8,7 @@ async function loadAssignmentUsers() {
         const ownerSelect = document.getElementById('lead-owner-select');
         if (ownerSelect) {
             ownerSelect.innerHTML = '<option value="">Select owner...</option>' +
-                users.map(u => `<option value="${u.id}" ${u.id === lead.owner_id ? 'selected' : ''}>${escapeHtml(u.display_name)}</option>`).join('');
+                users.map(u => `<option value="${u.id}" data-business ${u.id === lead.owner_id ? 'selected' : ''}>${escapeHtml(u.display_name)}</option>`).join('');
         }
 
         // Populate watcher select (exclude current assignments)
@@ -19,7 +19,7 @@ async function loadAssignmentUsers() {
             const availableUsers = users.filter(u => !assignedIds.includes(u.id));
 
             watcherSelect.innerHTML = '<option value="">Add watcher...</option>' +
-                availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.display_name)}</option>`).join('');
+                availableUsers.map(u => `<option value="${u.id}" data-business>${escapeHtml(u.display_name)}</option>`).join('');
         }
 
         // Populate collaborator select (exclude current assignments)
@@ -30,7 +30,7 @@ async function loadAssignmentUsers() {
             const availableUsers = users.filter(u => !assignedIds.includes(u.id));
 
             collaboratorSelect.innerHTML = '<option value="">Add collaborator...</option>' +
-                availableUsers.map(u => `<option value="${u.id}">${escapeHtml(u.display_name)}</option>`).join('');
+                availableUsers.map(u => `<option value="${u.id}" data-business>${escapeHtml(u.display_name)}</option>`).join('');
         }
     } catch (err) {
         console.error('Load users error:', err);

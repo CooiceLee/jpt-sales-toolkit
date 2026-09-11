@@ -46,9 +46,9 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
     const panel = document.getElementById('detail-panel');
     if (panel.classList.contains('open') && State.currentInquiry?.id === leadId) {
         document.querySelector(`.panel-tab[data-tab="${panelTabForContext(targetContext)}"]`)?.click();
-        return;
+        return true;
     }
-    if (!PanelDirtyState.confirmDiscard()) return;
+    if (!PanelDirtyState.confirmDiscard()) return false;
     const requestId = ++inquiryPanelRequestId;
     resetInquirySaveButton();
     State.currentInquiry = null;
@@ -61,12 +61,13 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
     document.getElementById('app')?.classList.add('detail-open');
     try {
         const inquiry = await InquiryPanelData.load(leadId);
-        if (requestId !== inquiryPanelRequestId) return;
+        if (requestId !== inquiryPanelRequestId) return false;
         State.currentInquiry = inquiry;
         setText('panel-title', [inquiry.inquiry_id || leadId, inquiry.company_name].filter(Boolean).join(' · '));
         renderPanelTabs(panelTabForContext(targetContext));
+        return true;
     } catch (err) {
-        if (requestId !== inquiryPanelRequestId) return;
+        if (requestId !== inquiryPanelRequestId) return false;
         console.error('Panel error:', err);
         document.getElementById('panel-content').innerHTML = `<div class="empty-state compact error-state">
             <strong>${escapeHtml(panelTr('Unable to load lead details'))}</strong>
@@ -74,6 +75,7 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
             <button type="button" class="btn btn-secondary" data-panel-retry>${escapeHtml(panelTr('Retry'))}</button>
         </div>`;
         document.querySelector('[data-panel-retry]')?.addEventListener('click', () => openInquiryPanel(leadId, targetContext));
+        return false;
     }
 };
 

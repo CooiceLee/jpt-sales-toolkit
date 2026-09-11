@@ -13,7 +13,7 @@
                 <input type="checkbox" value="${h(member.user_id)}"
                     ${chosen.has(member.user_id) ? 'checked' : ''}
                     onchange="TripFreeStopDraft.mark()">
-                <span>${h(member.display_name || member.user_id)}</span>
+                <span data-business>${h(member.display_name || member.user_id)}</span>
             </label>`).join('');
     }
 

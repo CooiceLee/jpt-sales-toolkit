@@ -335,7 +335,7 @@ const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.curre
   async getTripPlan(planId){return {id:planId,stops:[],members:[]}}}};
 context.window=context;vm.createContext(context);
 context.addEventListener=()=>{};
-for(const file of ['trip-briefing-reveal.js','trip-briefing-scroll.js','trip-briefing-draft.js','trip-briefing-rows.js','trip-briefing-form.js','trip-plan-identity.js','trip-plan-refresh.js','trip-briefing-actions.js'])
+for(const file of ['trip-briefing-reveal.js','trip-briefing-scroll.js','trip-briefing-draft.js','trip-briefing-rows.js','trip-briefing-form.js','trip-plan-identity.js','trip-plan-refresh.js','inquiry-edit-freeze.js','trip-briefing-session.js','trip-briefing-actions.js'])
  vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 const record={row_version:3,stop_row_version:7,confirmation_status:'confirmed',timezone:'Europe/Paris',
  location:{use_customer_default:false,name:'Rayxion HQ',address:'99 Demo Road',city:'Paris',postal_code:'75001',country:'France',lat:48.86,lng:2.35},

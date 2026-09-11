@@ -6,7 +6,10 @@ import json
 from datetime import date, timedelta
 from typing import Optional
 
+from functools import reduce
+
 from ..repositories.base import generate_uuid, now_iso
+from .money_totals import merge_totals
 from .trip_leg_contract import normalize_priority, validate_time_windows
 from .trip_leg_repository import TripLegRepository
 from .trip_member_repository import TripMemberRepository
@@ -235,7 +238,17 @@ class TripPlanService:
                 continue
             candidates.append(self.core._trip_candidate_from_missing(item))
 
-        candidates.sort(key=lambda item: (item["score"], item["pipeline_value"], item["open_count"]), reverse=True)
+        # Ordered by the score, then by how much there is to talk about. The
+        # amounts behind it are in different currencies with no agreed rate
+        # between them, so they decide nothing here.
+        # Two customers in the same situation are ordered by name, forwards -
+        # the numbers below are what decides, and when they agree the reader
+        # gets an order they can predict rather than a reversed alphabet.
+        candidates.sort(key=lambda item: str(item.get("customer_name") or ""))
+        candidates.sort(
+            key=lambda item: (item["score"], item["open_count"], item["lead_count"]),
+            reverse=True,
+        )
         total = len(candidates)
         page = candidates[offset:offset + limit]
         return {
@@ -256,7 +269,12 @@ class TripPlanService:
                 "exact_coordinates": sum(1 for item in candidates if item["coordinate_quality"] == "exact"),
                 "needs_coordinate_review": sum(1 for item in candidates if item["needs_coordinate_review"]),
                 "open_leads": sum(item["open_count"] for item in candidates),
-                "pipeline_value": sum(item["pipeline_value"] for item in candidates),
+                "pipeline_value_by_currency": reduce(
+                    merge_totals,
+                    ({"by_currency": item.get("pipeline_value_by_currency") or {}}
+                     for item in candidates),
+                    {"by_currency": {}},
+                )["by_currency"],
             },
             "candidates": page,
         }

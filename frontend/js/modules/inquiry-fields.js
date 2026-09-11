@@ -13,7 +13,7 @@ function renderPrimaryContactSelect(value) {
             <option value="">Select contact...</option>
             ${contacts.map(contact => {
                 const label = contact.name || contact.email || contact.id;
-                return `<option value="${escapeHtml(contact.id)}" ${value === contact.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+                return `<option value="${escapeHtml(contact.id)}" data-business ${value === contact.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
             }).join('')}
         </select>
     `;

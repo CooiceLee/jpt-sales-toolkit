@@ -25,10 +25,12 @@ function renderAftersalesTab(inq) {
                     </div>
                 </div>
                 <div class="followup-dates">
-                    <span>Date: ${formatDate(issue.issue_date)}</span>
-                    <span>${issue.technician ? `Tech: ${escapeHtml(issue.technician)}` : ''}</span>
+                    <span>${I18n.t('Date: {date}', { date: formatDate(issue.issue_date) })}</span>
+                    <span data-business>${issue.technician
+                        ? I18n.t('Tech: {name}', { name: escapeHtml(issue.technician) })
+                        : ''}</span>
                 </div>
-                <div class="followup-content">${escapeHtml(issue.issue_description || '')}</div>
+                <div class="followup-content" data-business>${escapeHtml(issue.issue_description || '')}</div>
                 ${issue.solution ? `<div class="followup-feedback"><label>Solution</label>${escapeHtml(issue.solution)}</div>` : ''}
                 ${issue.customer_satisfaction ? `<div class="followup-feedback"><label>Customer satisfaction</label>${escapeHtml(issue.customer_satisfaction)}</div>` : ''}
                 ${issue.lessons_learned ? `<div class="followup-feedback"><label>Lessons learned</label>${escapeHtml(issue.lessons_learned)}</div>` : ''}
@@ -38,9 +40,12 @@ function renderAftersalesTab(inq) {
     }).join('');
 
     return `
+        ${inq.tasks_complete === false
+            ? `<div class="error-state">${escapeHtml(I18n.t('Showing part of this list only.'))}</div>`
+            : ''}
         ${list || '<div class="empty-state">No after-sales issues recorded.</div>'}
         ${RoleCapabilities.canManageTaskRequests() ? '<button type="button" class="btn btn-secondary mt-4" onclick="showAfterSalesForm()">+ Log Issue</button>' : ''}
-        <div id="aftersales-form" class="hidden" style="margin-top:16px;padding:16px;background:var(--cream-100);border-radius:var(--radius-md);">
+        <div id="aftersales-form" class="hidden" data-panel-form style="margin-top:16px;padding:16px;background:var(--cream-100);border-radius:var(--radius-md);">
             <input type="hidden" id="as-index" value="-1">
             <div class="form-row ${RoleCapabilities.canManageTaskRequests() ? '' : 'hidden'}">
                 <div class="form-group">

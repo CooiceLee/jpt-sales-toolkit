@@ -131,11 +131,11 @@
     }
 
     function renderForm(model, source, stop) {
-        const root = document.getElementById('trip-briefing-editor');
-        if (!root || !model) return;
-        root.hidden = false;
-        TripBriefingScroll.replace(root, `<div class="trip-briefing-head"><div><strong>${h(stop?.customer_name || I18n.t('Customer visit preparation'))}</strong>
-            <small>${h([stop?.planned_date, stop?.planned_start_period].filter(Boolean).join(' ') || I18n.t('Not scheduled'))}</small></div>
+        // Drawing the form is a way of showing it: it opens the editor's zone.
+        const root = model ? TripBriefingReveal.open() : null;
+        if (!root) return;
+        TripBriefingScroll.replace(root, `<div class="trip-briefing-head"><div><strong data-business>${h(stop?.customer_name || I18n.t('Customer visit preparation'))}</strong>
+            <small data-business>${h([State.currentTripPlan?.title, [stop?.planned_date, stop?.planned_start_period].filter(Boolean).join(' ') || I18n.t('Not scheduled')].filter(Boolean).join(' · '))}</small></div>
             <button type="button" class="trip-free-stop-close" onclick="TripBriefingActions.close()" aria-label="${h(I18n.t('Close'))}">&times;</button></div>
             <div class="trip-briefing-scroll" oninput="TripBriefingDraft.markDirty()" onchange="TripBriefingDraft.markDirty()">
                 <div class="trip-briefing-summary-grid"><label class="trip-field-label"><span>${h(I18n.t('Confirmation status'))}</span>

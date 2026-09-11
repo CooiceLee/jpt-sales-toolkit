@@ -13,6 +13,7 @@ from backend.repositories.base import init_db
 from backend.routers.data_exchange import (
     ExportRequest,
     LEAD_JSON_SYNC_FIELDS,
+    _build_preflight_report,
     _lead_import_update_fields,
     export_data,
     import_data,
@@ -162,6 +163,38 @@ async def run() -> None:
             returned["owner_id"] = "leader"
 
             use_db(leader_db)
+            # Typed on the leader's side after the package left. The file
+            # carries the field as empty, so importing clears it - said out
+            # loud in the preflight, before anybody commits to it.
+            local = LeadService().get(original_id)
+            LeadService().update(
+                original_id,
+                {"special_requirements": "Written here after the export"},
+                "leader",
+                "leader",
+                local["row_version"],
+            )
+            untouched = dict(LeadService().get(original_id))
+            preflight = _build_preflight_report(sales_package, leader)
+            clearing = [item for item in preflight["issues"]
+                        if item["type"] == "field_will_be_cleared"]
+            assert len(clearing) == 1, preflight["issues"]
+            # Every field the file empties and only those: a warning that
+            # names fields nobody is losing is a warning people stop reading.
+            named = sorted(clearing[0]["message"].split("clears: ")[1].split(", "))
+            assert named == [
+                "currency",
+                "deal_amount",
+                "next_followup_date",
+                "product_series",
+                "quotation_date",
+                "quotation_id",
+                "special_requirements",
+            ], named
+            assert preflight["summary"]["warnings"] >= 1, preflight["summary"]
+            # And it says all that without touching the record it is about.
+            assert dict(LeadService().get(original_id)) == untouched
+
             result = await import_data(Upload(sales_package), leader)
             assert result["new_leads"] == 0
             assert result["updated_leads"] == 1

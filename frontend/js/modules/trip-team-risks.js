@@ -63,6 +63,10 @@
         if (!build) return '';
         return build({
             ...risk,
+            // The return-overrun risk names the day it was calculated to end
+            // on; every other kind calls that day "date". Without this the
+            // sentence reached the reader with a literal {date} in it.
+            date: risk.date || risk.calculated_end_date,
             member: memberName(plan, risk.member_id || risk.user_id),
             stop: stopName(plan, risk.stop_id),
             plannedDate: risk.planned_date,

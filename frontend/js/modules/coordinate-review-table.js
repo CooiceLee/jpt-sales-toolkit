@@ -16,13 +16,13 @@
         return `
             <tr>
                 <td>
-                    <div style="font-weight:500;">${escapeHtml(item.customer_name || item.name)}</div>
-                    ${item.region ? `<div style="font-size:12px;color:var(--ink-500);">${escapeHtml(item.region)}</div>` : ''}
+                    <div style="font-weight:500;" data-business>${escapeHtml(item.customer_name || item.name)}</div>
+                    ${item.region ? `<div style="font-size:12px;color:var(--ink-500);" data-business>${escapeHtml(item.region)}</div>` : ''}
                 </td>
                 <td>
-                    <div>${escapeHtml(location)}</div>
-                    ${item.postal_code ? `<div style="font-size:12px;color:var(--ink-500);">${escapeHtml(item.postal_code)}</div>` : ''}
-                    ${item.address ? `<div style="font-size:12px;color:var(--ink-500);">${escapeHtml(item.address)}</div>` : ''}
+                    <div data-business>${escapeHtml(location)}</div>
+                    ${item.postal_code ? `<div style="font-size:12px;color:var(--ink-500);" data-business>${escapeHtml(item.postal_code)}</div>` : ''}
+                    ${item.address ? `<div style="font-size:12px;color:var(--ink-500);" data-business>${escapeHtml(item.address)}</div>` : ''}
                 </td>
                 <td><span class="coord-status-badge status-${escapeHtml(item.status)}">${escapeHtml(item.statusLabel)}</span></td>
                 <td style="text-align:center;">${escapeHtml(Number(item.lead_count) || 0)}</td>

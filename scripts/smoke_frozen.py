@@ -109,6 +109,15 @@ def main() -> None:
             status, headers, _ = fetch(f"{base_url}/static/js/i18n.js")
             assert status == 200
             assert headers.get("Cache-Control") == "no-store, max-age=0"
+            # The packaged build must keep the page route inside the page
+            # directory. `VERSION` sits beside it, holds nothing sensitive, and
+            # is exactly what a caller would reach first if it escaped.
+            for escape in ("/%2e%2e/VERSION", "/..%2fVERSION", "/../VERSION",
+                           "/js/%2e%2e/%2e%2e/VERSION"):
+                status, _, body = fetch(f"{base_url}{escape}")
+                assert body.decode("utf-8", "replace").strip() != EXPECTED_VERSION, (
+                    f"{escape} handed back a file outside the page directory"
+                )
             status, _, body = fetch(f"{base_url}/api/authorization/status")
             authorization = json.loads(body)
             assert status == 200 and authorization["mode"] == "setup"

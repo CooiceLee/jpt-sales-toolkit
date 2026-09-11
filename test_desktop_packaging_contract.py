@@ -216,6 +216,26 @@ def test_packaging_sources() -> None:
     for destructive_flag in ("/MIR", "/PURGE", "/MOVE"):
         assert destructive_flag not in portable_installer
 
+    # The installer tells the user which build they just installed. A version
+    # typed into the script goes stale on the next candidate - it said 0.12.0
+    # while the app was 0.13.1 - so it reads the packaged VERSION instead.
+    assert "-internal portable" not in portable_installer, (
+        "the portable installer prints a hard-coded version"
+    )
+    assert '%JPT_SOURCE%\\app\\VERSION' in portable_installer
+    assert "JPT_VERSION=%%V" in portable_installer
+
+    # cmd.exe reads .cmd and .bat as Windows text; an LF-only file can lose a
+    # goto label. Both scripts use labels, and neither can be tried here.
+    for windows_script in (
+        ROOT / "packaging" / "windows" / "portable" / "Install JPT Sales Toolkit.cmd",
+        ROOT / "scripts" / "start_test_server.bat",
+    ):
+        raw = windows_script.read_bytes()
+        assert raw.count(b"\r\n") == raw.count(b"\n"), (
+            f"{windows_script.name} has Unix line endings; cmd.exe wants CRLF"
+        )
+
 
 def test_frontend_is_locally_bootstrapped() -> None:
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")

@@ -40,7 +40,7 @@
                 entry.unresolved ? ' is-unresolved' : ''}"
             ${action ? `onclick="${action}"` : 'disabled'}>
             <span class="trip-team-entry-who">${h(who)}</span>
-            <strong>${h(entry.title || entry.source_id)}${
+            <strong data-business>${h(entry.title || entry.source_id)}${
                 isLeg && entry.selected_mode
                     ? ` · ${modeLabel(entry.selected_mode)}` : ''}${
                 entry.half_day_count > 1

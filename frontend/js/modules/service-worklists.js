@@ -1,26 +1,36 @@
 (function () {
     'use strict';
-    const tr = text => window.I18n?.t(text) || text;
+    const tr = (text, params) => window.I18n?.t(text, params) || text;
 
     async function loadFulfillment() {
+        const request = WorklistRequest.begin('fulfillment');
         try {
-            const leads = await ApiClient.listLeads(getSharedLeadFilters());
+            const page = await ApiClient.listAllLeads(getSharedLeadFilters());
+            if (!WorklistRequest.isCurrent(request)) return;
+            const leads = page.items;
             let inquiries = leads
                 .filter(lead => lead.sales_stage === 'Won')
                 .map(lead => leadToCardItem(lead, {
                     fulfillment_status: lead.fulfillment_status || 'Not Started',
+                    deal_amount: lead.deal_amount ?? null,
+                    estimated_value: lead.estimated_value ?? null,
                 }));
             const filter = State.currentFilters.fulfillment || 'all';
             if (filter !== 'all') {
                 inquiries = inquiries.filter(item => item.fulfillment_status === filter);
             }
             inquiries = WorklistSort.fulfillment(inquiries);
-            setText('fulfillment-count', `${inquiries.length} orders`);
-            renderCards('fulfillment-cards', inquiries, 'fulfillment');
+            setText('fulfillment-count', [
+                tr('{count} orders', { count: inquiries.length }),
+                PagedFetch.note(page),
+            ].filter(Boolean).join(' · '));
+            FulfillmentWorkbench.render(inquiries);
         } catch (err) {
             console.error('Fulfillment error:', err);
+            if (!WorklistRequest.isCurrent(request)) return;
             setText('fulfillment-count', tr('Unable to load'));
-            setPanelError('fulfillment-cards', tr('Unable to load orders. Please retry.'));
+            FulfillmentWorkbench.render([], { title: 'Unable to load',
+                text: 'Unable to load orders. Please retry.' });
         }
     }
 
@@ -38,11 +48,18 @@
     }
 
     async function loadAftersales() {
+        const request = WorklistRequest.begin('aftersales');
         try {
-            const [leads, tasks] = await Promise.all([
-                ApiClient.listLeads(getSharedLeadFilters()),
-                ApiClient.listAfterSalesTasks(),
+            // Every page of both lists: one page of tasks used to decide the
+            // whole picture, so 105 tasks across five customers came back as
+            // one customer and the navigation count disagreed with the cards.
+            const [leadPage, taskPage] = await Promise.all([
+                ApiClient.listAllLeads(getSharedLeadFilters()),
+                ApiClient.listAllAfterSalesTasks(),
             ]);
+            if (!WorklistRequest.isCurrent(request)) return;
+            const leads = leadPage.items;
+            const tasks = taskPage.items;
             const allowedLeadIds = new Set(leads.map(lead => lead.id));
             const tasksByLead = new Map();
             tasks.forEach(task => {
@@ -62,12 +79,17 @@
             const filter = State.currentFilters.aftersales || 'all';
             if (filter !== 'all') inquiries = inquiries.filter(item => item.service_status === filter);
             inquiries = WorklistSort.aftersales(inquiries);
-            setText('aftersales-count', `${inquiries.length} issues`);
-            renderCards('aftersales-cards', inquiries, 'aftersales');
+            setText('aftersales-count', [
+                tr('{count} customers', { count: inquiries.length }),
+                PagedFetch.note(leadPage, taskPage),
+            ].filter(Boolean).join(' · '));
+            AftersalesWorkbench.render(inquiries);
         } catch (err) {
             console.error('Aftersales error:', err);
+            if (!WorklistRequest.isCurrent(request)) return;
             setText('aftersales-count', tr('Unable to load'));
-            setPanelError('aftersales-cards', tr('Unable to load after-sales issues. Please retry.'));
+            AftersalesWorkbench.render([], { title: 'Unable to load',
+                text: 'Unable to load after-sales issues. Please retry.' });
         }
     }
 

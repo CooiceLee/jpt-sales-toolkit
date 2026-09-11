@@ -10,11 +10,12 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 import re
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from .config import APP_VERSION, init_settings
 from .database_access import database_access_gate
@@ -54,6 +55,29 @@ def _frontend_build_stamp(frontend_dir) -> int:
 ASSET_VERSION_PATTERN = re.compile(r'(/static/[^"\'?\s]+)\?v=[^"\'\s]*')
 
 
+def _page_file(frontend_dir: Path, path: str) -> Path | None:
+    """The page asset this request asks for, or None if it is not ours to send.
+
+    A URL is text, and `%2e%2e/VERSION` is text that names a file outside the
+    page directory. Only the resolved path can say where a request actually
+    points, so that is what is checked; filtering the characters `../` leaves
+    every other spelling of the same escape working. Anything that is not a
+    file inside this directory is a route for the page to handle, not a
+    download.
+    """
+    root = frontend_dir.resolve()
+    try:
+        target = (root / path).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not target.is_relative_to(root) or target == root:
+        return None
+    try:
+        return target if target.is_file() else None
+    except OSError:
+        return None
+
+
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     configured_origins = [
@@ -76,6 +100,26 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def refused_request_does_not_quote_what_it_carried(request, error):
+        """A rejected request is answered with what was wrong, not what was sent.
+
+        The default answer echoes the submitted body back under "input". On the
+        authorization routes that body carries a password and an issuer
+        passphrase, so one mistyped field name came back with both of them in
+        plain text - onto the page that shows the error, and into anything that
+        keeps a copy of the answer. Which field and why is what the caller
+        needs; the value is the one thing they already have.
+        """
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": [
+                {key: value for key, value in item.items()
+                 if key not in {"input", "ctx"}}
+                for item in error.errors()
+            ]},
+        )
 
     @app.middleware("http")
     async def database_maintenance_policy(request, call_next):
@@ -194,14 +238,12 @@ def create_app() -> FastAPI:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="API endpoint not found",
                 )
-            file_path = frontend_dir / path
+            file_path = _page_file(frontend_dir, path)
             # index.html is always built rather than sent from disk, whichever
             # name it is asked for: the copy on disk still carries the version
             # markers that are rewritten per build, and serving it raw hands the
             # browser the old asset URLs it already has cached.
-            if file_path.name == "index.html" or not (
-                file_path.exists() and file_path.is_file()
-            ):
+            if file_path is None or file_path.name == "index.html":
                 return index_html()
             return FileResponse(file_path)
 

@@ -23,7 +23,7 @@
         ].filter(Boolean).join(' · ') : '';
         return `<li class="trip-team-member">
             <div>
-                <strong>${h(member.display_name || member.user_id)}</strong>
+                <strong data-business>${h(member.display_name || member.user_id)}</strong>
                 <small>${h(endpointLine(plan, member))}</small>
                 ${metrics ? `<small class="trip-team-metrics">${h(metrics)}</small>` : ''}
             </div>
@@ -51,7 +51,7 @@
         return `<div class="trip-team-add">
             <select class="form-input" id="trip-team-add-user"
                 aria-label="${h(t('Team member to add'))}">
-                ${options.map(item => `<option value="${h(item.user_id)}">${
+                ${options.map(item => `<option value="${h(item.user_id)}" data-business>${
                     h(item.display_name || item.user_id)}</option>`).join('')}
             </select>
             <button type="button" class="btn btn-primary btn-sm"

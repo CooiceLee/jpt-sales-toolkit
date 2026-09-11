@@ -24,7 +24,7 @@
     function pointPopup(point) {
         const leadLines = (point.leads || []).slice(0, 4).map(lead => `
             <div class="map-popup-lead">
-                <strong>${escapeHtml(lead.display_id || '')}</strong>
+                <strong data-business>${escapeHtml(lead.display_id || '')}</strong>
                 <span>${escapeHtml(t(lead.sales_stage || ''))}</span>
             </div>
         `).join('');
@@ -36,8 +36,8 @@
             : '';
         return `
             <div class="map-popup">
-                <div class="map-popup-title">${escapeHtml(point.customer_name)}</div>
-                <div class="map-popup-meta">${escapeHtml([point.city, point.country_name || point.country].filter(Boolean).join(', '))}</div>
+                <div class="map-popup-title" data-business>${escapeHtml(point.customer_name)}</div>
+                <div class="map-popup-meta" data-business>${escapeHtml([point.city, point.country_name || point.country].filter(Boolean).join(', '))}</div>
                 <div class="map-popup-quality ${point.coordinate_quality === 'exact' ? 'exact' : 'fallback'}">${qualityLabel(point)}${locked}</div>
                 <div class="map-popup-stats"><span>${t('{count} leads', { count: point.lead_count })}</span><span>${t('{count} won', { count: point.won_count })}</span><span>${t('{count} open', { count: point.open_count })}</span></div>
                 <div class="map-popup-leads">${leadLines}</div>
@@ -75,13 +75,13 @@
     function aggregatePopup(group) {
         const rows = group.points.slice(0, 4).map(point => `
             <div class="map-popup-lead">
-                <strong>${escapeHtml(point.customer_name)}</strong>
+                <strong data-business>${escapeHtml(point.customer_name)}</strong>
                 ${point.can_edit ? `<button type="button" class="btn btn-secondary btn-sm" onclick="openCoordinateCorrectionFromMap('${escapeHtml(point.customer_id)}')">${t('Fix')}</button>` : ''}
             </div>
         `).join('');
         return `
             <div class="map-popup map-popup-aggregate">
-                <div class="map-popup-title">${escapeHtml(group.label)}</div>
+                <div class="map-popup-title" data-business>${escapeHtml(group.label)}</div>
                 <div class="map-popup-quality fallback">${t('Country aggregate — not a precise customer location')}</div>
                 <div class="map-popup-meta">${t('{count} customers are grouped at the country center until precise coordinates are added.', { count: group.points.length })}</div>
                 <div class="map-popup-leads">${rows}</div>

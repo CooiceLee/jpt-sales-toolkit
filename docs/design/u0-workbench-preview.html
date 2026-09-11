@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JPT Sales Toolkit · 跟进工作台样板 (U0 · r2)</title>
+<style>
+/* 颜色变量逐字取自 frontend/css/style.css，这里没有第二套配色。
+   另外新增的一组是密度变量（--row-*、--field-pad、--section-gap）：它们只控制
+   间距与字号，三档密度只改这一组，不碰颜色，也不改结构。 */
+:root {
+  --wine-900: #2D0A16; --wine-800: #4A1225; --wine-700: #6B1B35;
+  --wine-600: #8B2347; --wine-500: #A52D55; --wine-400: #C74B73;
+  --wine-200: #E9CBD5; --wine-100: #F5E6EB;
+
+  --cream-50: #FDFBF7; --cream-100: #F8F5EF; --cream-200: #F0EBE1;
+  --ink-900: #1A1612; --ink-800: #2C2620; --ink-700: #44403C;
+  --ink-600: #57534E; --ink-500: #78716C; --ink-400: #A8A29E; --ink-300: #D6D3D1;
+
+  --success: #16A34A; --warning: #D97706; --danger: #DC2626; --info: #2563EB;
+  --stage-following: #3B82F6; --stage-quoting: #F59E0B;
+  --grade-a: #16A34A;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: Georgia, 'Times New Roman', serif;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+  --border-color: rgba(0,0,0,0.08);
+  /* 唯一新增的颜色值：同一个黑，比面板边框淡一档，用于面板"内部"的分隔线。
+     面板边界与内部分隔线用同一浓度时，层次会糊在一起——这正是这一版要解决
+     的问题之一。若这套获认可，落地时把它加进 style.css。 */
+  --hairline: rgba(0,0,0,0.06);
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+
+  /* 密度：三档只改这一组，不改结构，也不改配色。 */
+  /* 工作区高度：两块面板同高。按 1366×768 这类笔记本估算——窗口高度减去
+     浏览器界面、页头与工具条，大约就是这个数。 */
+  --work-height: 540px;
+  --row-pad-y: 12px; --row-pad-x: 14px; --row-gap: 3px;
+  --row-title: 15px; --row-meta: 12px; --row-lines: 12px;
+  --field-pad: 12px; --section-gap: 16px;
+}
+[data-density="compact"] ,
+[data-density="auto"][data-auto="compact"] {
+  --row-pad-y: 5px; --row-pad-x: 12px; --row-gap: 0px;
+  --row-title: 13px; --row-meta: 11px; --row-lines: 11px;
+  --field-pad: 7px; --section-gap: 10px;
+}
+/* 自动：跟随可用高度。矮屏（笔记本 768、外接会议屏）自动用紧凑，高屏用舒适；
+   判断的是真实窗口高度，不是上面那个模拟宽度的框。 */
+[data-density="auto"][data-auto="compact"] {
+  --row-pad-y: 5px; --row-pad-x: 12px; --row-gap: 0px;
+  --row-title: 13px; --row-meta: 11px; --row-lines: 11px;
+  --field-pad: 7px; --section-gap: 10px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans); background: var(--cream-100);
+  color: var(--ink-800); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.sheet { max-width: 1400px; margin: 0 auto; padding: 24px; }
+.sheet > header h1 { font-family: var(--font-display); font-size: 24px; color: var(--ink-900); }
+.sheet > header p { color: var(--ink-600); margin-top: 8px; max-width: 76ch; }
+.revision {
+  margin-top: 12px; padding: 12px 14px; background: white;
+  border: 1px solid var(--border-color); border-left: 3px solid var(--wine-600);
+  border-radius: var(--radius-md); font-size: 13px; color: var(--ink-700);
+}
+.revision b { color: var(--ink-900); }
+.revision ul { margin: 6px 0 0 18px; }
+.revision li { margin-top: 3px; }
+
+.controls {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin: 16px 0 20px; padding: 10px 12px; background: white;
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.controls strong { font-size: 12px; color: var(--ink-600); letter-spacing: .02em; }
+.controls button {
+  font: inherit; font-size: 13px; padding: 5px 12px; color: var(--ink-700);
+  border: 1px solid var(--border-color); background: white;
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.controls button[aria-pressed="true"] { background: var(--wine-600); border-color: var(--wine-600); color: white; }
+.controls .spacer { width: 1px; height: 20px; background: var(--hairline); margin: 0 4px; }
+.rowcount { margin-left: auto; font-size: 12px; color: var(--ink-600); }
+.rowcount b { color: var(--wine-700); }
+
+/* ===== 外框：模拟三种视口宽度 ===== */
+.frame {
+  background: var(--cream-100); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); padding: 18px; overflow: hidden;
+}
+.frame[data-width="1440"] { width: 1360px; }
+.frame[data-width="1366"] { width: 1286px; }
+.frame[data-width="1024"] { width: 984px; }
+
+/* ===== 页头：一条贯通的线，从酒红起笔 ===== */
+.workspace-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.module-step {
+  font-size: 11px; font-weight: 700; letter-spacing: .12em; color: var(--wine-700);
+  text-transform: uppercase;
+}
+.module-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--ink-900); }
+.workspace-count { font-size: 12px; color: var(--ink-500); }
+.workspace-actions { margin-left: auto; display: flex; gap: 8px; }
+.head-rule {
+  height: 1px; margin: 10px 0 var(--section-gap);
+  background: linear-gradient(90deg, var(--wine-500) 0, var(--wine-200) 120px, var(--hairline) 260px, var(--hairline) 100%);
+}
+.btn {
+  font: inherit; font-size: 13px; padding: 6px 14px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; cursor: pointer;
+}
+.btn-primary { background: var(--wine-600); color: white; }
+.btn-primary:hover { background: var(--wine-700); }
+.btn-secondary { background: white; border-color: var(--border-color); color: var(--ink-700); }
+.btn-text { background: none; border: none; color: var(--wine-700); padding: 4px 6px; }
+.btn:focus-visible { outline: 3px solid rgba(165,45,85,.28); outline-offset: 2px; }
+
+/* ===== 工具条 ===== */
+.filters-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.filter-tabs { display: flex; background: var(--cream-200); border-radius: var(--radius-md); padding: 3px; }
+.filter-tab {
+  font: inherit; font-size: 13px; font-weight: 500; padding: 5px 13px; color: var(--ink-600);
+  background: none; border: none; border-radius: var(--radius-sm); cursor: pointer;
+}
+.filter-tab.active { background: white; color: var(--ink-900); box-shadow: var(--shadow-sm); }
+.view-switch { display: flex; background: var(--cream-200); border-radius: var(--radius-md); padding: 3px; }
+/* 同一批商机只出现在一个视图里：列表和表格是两种看法，不是两份内容。 */
+.frame[data-view="list"] .table-panel,
+.frame[data-view="table"] .list-panel { display: none; }
+.filter-select {
+  font: inherit; font-size: 13px; padding: 5px 10px; color: var(--ink-700);
+  background: white; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+}
+.search {
+  flex: 1 1 200px; min-width: 160px; display: flex; align-items: center; gap: 6px;
+  background: white; border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+  padding: 4px 10px;
+}
+.search input { font: inherit; font-size: 13px; border: none; outline: none; width: 100%; color: var(--ink-800); }
+.result-count { font-size: 12px; color: var(--ink-500); white-space: nowrap; }
+
+/* ===== 主体：列表 + 详情，之间有一条连线 ===== */
+/* 左边是"挑哪一条"，右边是"在这一条上做事"。主次照这个来：列表只要够宽
+   到能认出客户与到期，详情要宽到不必为看完一条而反复滚动。 */
+.workbench { display: grid; grid-template-columns: 380px 18px minmax(0, 1fr); align-items: start; }
+.frame[data-width="1366"] .workbench { grid-template-columns: 340px 16px minmax(0, 1fr); }
+.frame[data-width="1024"] .workbench { grid-template-columns: minmax(0, 1fr); }
+/* 表格视图是"看全部"，那时它才是主角，占满宽度。 */
+.frame[data-view="table"] .workbench { grid-template-columns: minmax(0, 1fr) 18px 420px; }
+.frame[data-view="table"][data-width="1366"] .workbench { grid-template-columns: minmax(0, 1fr) 16px 380px; }
+.frame[data-width="1024"] .connector { display: none; }
+
+.list-panel {
+  position: relative; background: white; border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: inset 0 1px 0 #fff, var(--shadow-sm);
+  container-type: inline-size; container-name: list;
+}
+.list-scroll { max-height: calc(var(--work-height) - 37px); overflow-y: auto; overflow-x: hidden; }
+/* 固定高度的列表必然在某一行中间截断。让它淡出，而不是切一刀。 */
+.list-panel::after {
+  content: ''; position: absolute; left: 1px; right: 1px; height: 26px;
+  bottom: 37px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,.92));
+}
+/* 一条从上贯到底的脊线，行的节点长在它上面。 */
+.list-scroll::before {
+  content: ''; position: absolute; left: 21px; top: 0; bottom: 0; width: 1px;
+  background: linear-gradient(180deg, var(--wine-200), var(--hairline) 22%, var(--hairline));
+}
+.group-head {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+  padding: 6px var(--row-pad-x) 6px 38px; font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; color: var(--ink-500); background: rgba(255,255,255,.94);
+  border-bottom: 1px solid var(--hairline);
+}
+.group-head em { font-style: normal; color: var(--ink-400); font-weight: 600; letter-spacing: 0; }
+.group-head::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }
+
+.row {
+  position: relative; display: grid; gap: var(--row-gap) 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "main   amount"
+    "meta   meta"
+    "last   last"
+    "next   next";
+  padding: var(--row-pad-y) var(--row-pad-x) var(--row-pad-y) 38px;
+  border-bottom: 1px solid var(--hairline); cursor: pointer; background: white;
+  align-items: baseline;
+}
+.row-main { grid-area: main; }
+.row-meta { grid-area: meta; }
+.row-stage { grid-area: stage; display: flex; align-items: baseline; gap: 5px; }
+.row-last { grid-area: last; }
+.row-next { grid-area: next; }
+.row-amount { grid-area: amount; text-align: right; white-space: nowrap; }
+.row-last, .row-next, .row-amount {
+  font-size: var(--row-lines); color: var(--ink-600); min-width: 0;
+}
+.row-last b, .row-next b, .row-amount b {
+  color: var(--ink-800); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.row-last .text, .row-next .text { color: var(--ink-600); }
+.row .muted { color: var(--ink-400); }
+.row-last, .row-next { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-lead { display: none; }
+.row:last-child { border-bottom: none; }
+.row::before { /* 脊线上的节点 */
+  content: ''; position: absolute; left: 17px; top: calc(var(--row-pad-y) + 6px);
+  width: 9px; height: 9px; border-radius: 50%; background: white;
+  border: 1.5px solid var(--ink-300);
+}
+.row:hover { background: var(--cream-50); }
+.row.active { background: var(--wine-100); }
+.row.active::before { background: var(--wine-600); border-color: var(--wine-600); }
+.row.active::after { /* 左侧实心引导条，与右侧连线同高 */
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--wine-600);
+}
+.row:focus-visible { outline: none; background: var(--cream-50); box-shadow: inset 0 0 0 2px var(--wine-400); }
+
+.row-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.row-company {
+  font-size: var(--row-title); font-weight: 600; color: var(--ink-900);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 商机号里的连字符会成为断行点，在窄列里折成两行、把行高撑成两倍。
+   编号是一个整体，不折行；要省地方就让公司名截断。 */
+.row-id {
+  font-size: var(--row-meta); color: var(--ink-400);
+  font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
+}
+.row-flags { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.row-meta { font-size: var(--row-meta); color: var(--ink-500); display: flex; gap: 10px; min-width: 0; }
+.row-lines { font-size: var(--row-lines); color: var(--ink-600); display: grid; gap: 2px; }
+.row-lines b { color: var(--ink-800); font-weight: 600; font-variant-numeric: tabular-nums; }
+.row-lines span.muted { color: var(--ink-400); }
+
+/* 紧凑档：一条商机一行，四个核心字段各占一列——客户与商机号、当前进展、
+   最近跟进、下一步、金额都还在，收起的只有联系人与城市（详情里有）。 */
+[data-density="compact"] .row ,
+[data-density="auto"][data-auto="compact"] .row {
+  grid-template-columns: minmax(0, 1.5fr) 78px 62px minmax(0, 1.6fr) 92px;
+  grid-template-areas: "main stage last next amount";
+  align-items: baseline;
+}
+[data-density="compact"] .row-meta ,
+[data-density="auto"][data-auto="compact"] .row-meta { display: none; }
+[data-density="compact"] .row .row-lead ,
+[data-density="auto"][data-auto="compact"] .row .row-lead { display: none; }
+[data-density="compact"] .row::before { top: calc(var(--row-pad-y) + 3px); width: 7px; height: 7px; }
+[data-density="compact"] .row-main .chip ,
+[data-density="auto"][data-auto="compact"] .row-main .chip { display: none; }
+/* 紧凑档里"最近跟进"只留日期：62px 的列放不下一句话，截成"08-30 客…"
+   看起来像坏了，不像有意为之。那句话在右侧详情里。 */
+[data-density="compact"] .row-last .text,
+[data-density="auto"][data-auto="compact"] .row-last .text { display: none; }
+[data-density="compact"] .row ,
+[data-density="auto"][data-auto="compact"] .row { line-height: 1.3; }
+/* 等级徽章按基线对齐会把整行的行盒撑高（徽章要求基线以上放得下 15px），
+   紧凑档改为居中对齐，并给每个元素固定的行高。 */
+[data-density="compact"] .row-main ,
+[data-density="auto"][data-auto="compact"] .row-main { align-items: center; }
+[data-density="compact"] .row-main > * { align-self: center; line-height: 1.25; }
+[data-density="compact"] .grade ,
+[data-density="auto"][data-auto="compact"] .grade { width: 15px; height: 15px; font-size: 9px; }
+[data-density="compact"] .row-company ,
+[data-density="auto"][data-auto="compact"] .row-company { font-size: 13px; }
+[data-density="compact"] .group-head ,
+[data-density="auto"][data-auto="compact"] .group-head { padding-top: 3px; padding-bottom: 3px; }
+/* 舒适档里"进展"跟在联系人那一行，紧凑档才独占一列。 */
+.row-stage { grid-area: meta; display: none; }
+[data-density="compact"] .row-stage ,
+[data-density="auto"][data-auto="compact"] .row-stage { grid-area: stage; display: flex; }
+/* 列表变窄以后：它是选择器，不是清单。一行里认出客户，第二行给出"什么时候、
+   下一步是什么"，金额右对齐；联系人、城市、最近跟进都在右侧详情里。 */
+@container list (max-width: 620px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "main   amount"
+      "next   next";
+  }
+  .row-meta, .row-last { display: none; }
+  /* 选择器里客户名要能看全：待复核这类标记留给右侧详情。 */
+  .row-main .chip { display: none; }
+  .row-stage { grid-area: main; display: none; }
+  .row-next { font-size: var(--row-meta); }
+  .row-amount { font-size: var(--row-meta); }
+  .row-company { font-size: var(--row-title); }
+  .row-id { font-size: 10.5px; }
+}
+@container list (max-width: 420px) {
+  .row-id { display: none; }
+}
+/* 窄列表 + 紧凑档：一行 27px 放不下五列。选择器只要回答"哪家、什么时候、
+   多少钱"，进展留一个圆点；下一步那句话在右侧详情里。 */
+@container list (max-width: 620px) {
+  [data-density="compact"] .row,
+  [data-density="auto"][data-auto="compact"] .row {
+    grid-template-columns: minmax(0, 1fr) 14px 52px auto;
+    grid-template-areas: "main stage next amount";
+    column-gap: 8px;
+  }
+  [data-density="compact"] .row-stage,
+  [data-density="auto"][data-auto="compact"] .row-stage { grid-area: stage; display: flex; }
+  [data-density="compact"] .row-stage .stage-text,
+  [data-density="auto"][data-auto="compact"] .row-stage .stage-text { display: none; }
+  [data-density="compact"] .row-next .text,
+  [data-density="auto"][data-auto="compact"] .row-next .text { display: none; }
+  [data-density="compact"] .row-next,
+  [data-density="auto"][data-auto="compact"] .row-next { white-space: nowrap; }
+}
+
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dot-following { background: var(--stage-following); }
+.dot-quoted { background: var(--stage-quoting); }
+.stage-text { font-size: var(--row-meta); color: var(--ink-600); }
+.grade {
+  width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 700;
+  color: white; display: flex; align-items: center; justify-content: center; flex: none;
+}
+.grade-a { background: var(--grade-a); }
+.grade-none { background: transparent; color: var(--ink-400); border: 1px dashed var(--ink-300); }
+.chip {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+  background: var(--cream-200); color: var(--ink-600); white-space: nowrap;
+}
+.chip-review { background: var(--wine-100); color: var(--wine-700); }
+
+/* 列表页脚：部分结果与分页说明都在这条线下面 */
+.list-foot {
+  display: flex; align-items: center; gap: 10px; padding: 8px var(--row-pad-x) 8px 38px;
+  border-top: 1px solid var(--hairline); font-size: 12px; color: var(--ink-500);
+  background: var(--cream-50);
+}
+.list-foot .btn-text { margin-left: auto; }
+
+/* ===== 列表与详情之间：一条通高的细线，选中处对齐 =====
+   原来那段曲线像一根挂在外面的电线。这里只留结构本身：中间一条从上到下的
+   发丝线，选中行的高度上，线与面板左缘各有一小段酒红，三者横向对齐——关系
+   靠对齐说清楚，不靠画一根线连起来。 */
+.connector { position: relative; align-self: stretch; min-height: var(--work-height); }
+/* 空隙里什么都不画：两块白面板之间再加一条竖线只是多一道装饰。关系由
+   "选中行的酒红条"与"面板左缘同高的一小段酒红"横向对齐来说明。 */
+
+/* ===== 详情面板 ===== */
+.detail {
+  position: relative;
+  /* 查询容器必须是被调整元素的祖先。原来把 container-name 声明在
+     .detail-body 上、又想用 @container 改它自己的 grid，是查询不到的：
+     容器边界挪到面板本身，里面的两栏/单栏切换才真的按详情宽度发生。 */
+  container-type: inline-size; container-name: detail;
+  background: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 #fff, var(--shadow-md); display: flex; flex-direction: column;
+  max-height: var(--work-height); overflow: hidden;
+}
+.frame[data-width="1024"] .detail { margin-top: 16px; max-height: none; }
+/* 面板左缘上与选中行同高的一小段：面板"接"在那一行上。 */
+.detail::before {
+  content: ''; position: absolute; left: -1px; width: 2px; height: 28px;
+  top: var(--mark-top, 34px); margin-top: -14px; border-radius: 2px;
+  background: var(--wine-500); transition: top .18s ease;
+}
+.frame[data-width="1024"] .detail::before { display: none; }
+.detail-head { padding: 10px 16px 8px; border-bottom: 1px solid var(--hairline); }
+.detail-eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--wine-700);
+  display: flex; align-items: center; gap: 8px;
+}
+.detail-eyebrow::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--wine-200), transparent); }
+.detail-object { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
+.detail-object h2 { font-size: 17px; font-weight: 650; color: var(--ink-900); }
+.detail-object span { font-size: 12px; color: var(--ink-400); font-variant-numeric: tabular-nums; }
+.detail-sub { margin-top: 3px; font-size: 12px; color: var(--ink-500); display: flex; gap: 10px; flex-wrap: wrap; }
+.detail-tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--hairline); background: var(--cream-50); }
+.detail-tab {
+  font: inherit; font-size: 12px; padding: 7px 10px; border: none; background: none;
+  color: var(--ink-600); cursor: pointer; border-bottom: 2px solid transparent;
+}
+.detail-tab.active { color: var(--wine-700); font-weight: 600; border-bottom-color: var(--wine-600); }
+/* 宽了以后就不该再上下翻：字段区与跟进历史并排，各自占一栏。 */
+.detail-body {
+  padding: var(--field-pad) 16px; overflow-y: auto; flex: 1;
+  display: grid; gap: 4px 24px; align-content: start;
+  grid-template-columns: minmax(0, 1.25fr) minmax(240px, .9fr);
+  grid-template-areas: "fields history";
+}
+.detail-fields { grid-area: fields; min-width: 0; }
+.detail-history { grid-area: history; min-width: 0; }
+.detail-history .section-label { margin-top: 0; }
+/* 窄详情（表格模式下右侧约 380–420px，或 1024 堆叠）：单列，历史在下面。 */
+@container detail (max-width: 620px) {
+  .detail-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "fields" "history";
+  }
+  .detail-history .section-label { margin-top: var(--section-gap); }
+  .field-grid { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+}
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: var(--field-pad); }
+.field { display: grid; gap: 3px; min-width: 0; }
+.field.wide { grid-column: 1 / -1; }
+.field label { font-size: 11px; font-weight: 600; color: var(--ink-500); letter-spacing: .02em; }
+.field .value { font-size: 13px; color: var(--ink-800); }
+.form-input {
+  font: inherit; font-size: 13px; padding: 5px 8px; color: var(--ink-800);
+  background: white; border: 1px solid var(--ink-300); border-radius: var(--radius-sm); width: 100%;
+}
+.form-input:focus-visible { outline: 3px solid rgba(165,45,85,.28); outline-offset: 1px; border-color: var(--wine-500); }
+.form-input[readonly] { background: var(--cream-50); color: var(--ink-600); }
+
+.section-label {
+  margin: var(--section-gap) 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  color: var(--ink-500); display: flex; align-items: center; gap: 8px;
+}
+.section-label::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }
+
+/* 时间线：一条脊线，每条记录用一段圆角连出来 */
+.timeline { position: relative; padding-left: 18px; }
+.timeline::before {
+  content: ''; position: absolute; left: 3px; top: 4px; bottom: 4px; width: 1px;
+  background: linear-gradient(180deg, var(--wine-200), var(--hairline));
+}
+.entry { position: relative; padding: 5px 0; font-size: 12px; color: var(--ink-700); line-height: 1.45; }
+.entry::before {
+  content: ''; position: absolute; left: -15px; top: 12px; width: 12px; height: 10px;
+  border-left: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+  border-bottom-left-radius: 8px;
+}
+.entry b { color: var(--ink-900); font-weight: 600; font-variant-numeric: tabular-nums; }
+.entry .who { color: var(--ink-400); }
+.entry .text { display: block; color: var(--ink-600); white-space: pre-wrap; }
+
+.detail-foot {
+  display: flex; align-items: center; gap: 10px; padding: 9px 16px;
+  border-top: 1px solid var(--hairline); background: var(--cream-50);
+}
+.save-state { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.save-state[data-state="dirty"] { color: var(--warning); }
+.save-state[data-state="saving"] { color: var(--ink-500); }
+.save-state[data-state="failed"] { color: var(--danger); }
+.save-state[data-state="saved"] { color: var(--success); }
+.save-state .dot { width: 6px; height: 6px; }
+.save-state[data-state="dirty"] .dot { background: var(--warning); }
+.save-state[data-state="saving"] .dot { background: var(--ink-400); }
+.save-state[data-state="failed"] .dot { background: var(--danger); }
+.save-state[data-state="saved"] .dot { background: var(--success); }
+.detail-foot .btn { margin-left: auto; }
+.detail-foot .btn + .btn { margin-left: 0; }
+.panel-error {
+  margin: 0 16px 10px; padding: 8px 10px; font-size: 12px; color: var(--danger);
+  background: #FEF2F2; border: 1px solid #FECACA; border-radius: var(--radius-sm);
+}
+.frozen { opacity: .55; pointer-events: none; }
+
+/* ===== 表格视图：同一批商机的另一种看法 ===== */
+.table-panel {
+  background: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 #fff, var(--shadow-sm); overflow: hidden;
+}
+.table-panel { position: relative; }
+.table-scroll { max-height: calc(var(--work-height) - 37px); overflow: auto; }
+/* 右缘淡出：说明"这里还有列，往右滚"，比硬切一刀讲得清楚。 */
+.table-panel::after {
+  content: ''; position: absolute; top: 1px; right: 1px; width: 28px; bottom: 38px;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.92));
+}
+.table-panel table { min-width: 900px; }
+/* 表格跟着密度走：紧凑档行高与列表一致。 */
+.table-panel th, .table-panel td { padding: var(--row-pad-y) 12px; }
+.table-panel tbody tr { cursor: pointer; }
+.table-panel tbody tr:hover { background: var(--cream-50); }
+.table-panel tbody tr.active { background: var(--wine-100); }
+.table-panel td.muted, .table-panel .muted { color: var(--ink-400); }
+.table-panel thead th { position: sticky; top: 0; z-index: 1; }
+
+/* ===== 状态样例 ===== */
+.state-note {
+  margin: 22px 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  color: var(--ink-500); display: flex; align-items: center; gap: 8px;
+}
+.state-note::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }
+.empty-state {
+  background: white; border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  padding: 22px; text-align: center; display: grid; gap: 6px; justify-items: center;
+}
+.empty-state strong { color: var(--ink-800); }
+.empty-state span { font-size: 13px; color: var(--ink-500); max-width: 52ch; }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 13px; }
+th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+th { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--ink-500); background: var(--cream-50); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: none; }
+.note { margin-top: 10px; font-size: 12px; color: var(--ink-500); }
+</style>
+</head>
+<body>
+<div class="sheet">
+<header>
+  <h1>跟进工作台样板 · U0 · r2</h1>
+  <p>只用 <code>frontend/css/style.css</code> 里已有的酒红与暖白变量，没有第二套配色，也没有外部字体、持续动画或大面积模糊。这一版按 2026-09-08 的反馈修订。</p>
+  <div class="revision">
+    <b>这一版（r5）：选中真的驱动详情，密度按实测说话</b>
+    <ul>
+      <li><b>一份数据，三处显示</b>。列表、表格与右侧详情都从同一份商机数据渲染，选中的是<b>同一个商机号</b>：换客户，详情的公司、编号、负责人、字段与跟进历史全部跟着换；切到表格，选中的仍是同一条；键盘 Enter/空格与上下键在两个视图里等价。原来"选中只改高亮、详情写死"证明不了选择与详情的关系。</li>
+      <li><b>选中标记只按当前显示的视图算</b>。原来取文档里第一个 <code>.active</code>，进入表格后会对齐到隐藏列表里的那一行。</li>
+      <li><b>窄详情真的会切成单列</b>。原来把查询容器声明在要调整的元素自己身上，查询不到；容器边界移到详情面板本身之后：列表模式 924px 两栏并排，表格模式 420px 单列。</li>
+      <li><b>密度按实测写，不再当作硬指标</b>。10 条真实长度的数据（含长公司名、同名客户的两条不同商机、两条未设下次日期）下：舒适 70px/一屏 5 行，紧凑 27px/一屏 10 行——<b>行数已扣除分组标题</b>。长名称在紧凑档会截断，选中后详情里是完整的，键盘也能到；列表模式的详情这些记录都不用滚，表格模式的窄详情长内容会滚——短记录一屏、长记录允许滚动，比截断重要内容可靠。</li>
+    </ul>
+    <b>上一版（r4）改的主次比例</b>
+    <ul>
+      <li><b>左边是"挑哪一条"，右边是"在这一条上做事"</b>。左侧列表由占满大半宽度收到 <b>380px</b>（1366 下 340px），右侧详情拿到 <b>924px</b>——主次反过来了。列表只保留认得出这一条所需的：客户、到期与下一步、金额；联系人、城市、最近跟进都到右侧详情里，不在两处重复。</li>
+      <li><b>详情不必再逐张卡片滚动</b>：宽度够了就把字段排成三列，跟进历史挪到右侧并排一栏。实测 1440 与 1366 两种窗口下，详情内容<b>都是 0px 超出</b>——一屏看完。两块面板同高（540px，按笔记本可用高度估算）。</li>
+      <li>表格视图仍然是"看全部"，那时它占主宽度，详情退到右侧 420px。</li>
+    </ul>
+    <b>上一版（r3）改的四件事</b>
+    <ul>
+      <li><b>层次</b>：卡片堆改成一块白面板里的分组列表——分组标题、当前对象、次要信息各有明确的字号与灰度层级；一个视图里只有一处酒红实色（当前对象），状态改用小圆点加文字，不再靠一排彩色标签抢注意力。</li>
+      <li><b>线条</b>：页头一条从酒红起笔、向右淡出的贯通细线；列表左侧一条从上到下的脊线，每行的节点长在脊线上；详情里的时间线同样由一条脊线分出圆角支线。<b>两块之间不再画曲线</b>——中间只留一条通高的发丝线，选中行的高度上，线与面板左缘各有一小段酒红，三者横向对齐，关系靠对齐说清楚。选中别的行，标记跟着走。</li>
+      <li><b>不让你确认两遍</b>：原来页面下方还有一张同样几条商机的表格——同一批内容出现两次。现在列表与表格是<b>同一区域的两种看法</b>，工具条上切换，一次只显示一个；表格视图多出"最近跟进 / 到期 / 负责人"等列，在自己的容器里横向滚动，整页不溢出。页面下方只留状态样例，并已标明"不是页面的一部分"。</li>
+      <li><b>边缘不再是切一刀</b>：固定高度的列表必然在某一行中间截断，现在底部一段柔和渐隐；表格右缘同样渐隐，表示"还有列，往右滚"。表格的行高也跟着密度走。</li>
+      <li><b>紧凑</b>：右上角"密度"三档。紧凑档一行装完一条商机（窄列表里是客户、进展、到期、金额；宽列表里再加最近跟进与下一步），行高 27px；<b>自动</b>档跟随窗口高度：1366×768 这类矮屏自动用紧凑，高屏用舒适。实测行数见上一条。</li>
+    </ul>
+  </div>
+</header>
+
+<div class="controls">
+  <strong>视口</strong>
+  <button type="button" data-w="1440" aria-pressed="true">1440×900</button>
+  <button type="button" data-w="1366" aria-pressed="false">1366×768</button>
+  <button type="button" data-w="1024" aria-pressed="false">1024×768</button>
+  <span class="spacer"></span>
+  <strong>密度</strong>
+  <button type="button" data-d="comfortable" aria-pressed="true">舒适</button>
+  <button type="button" data-d="compact" aria-pressed="false">紧凑</button>
+  <button type="button" data-d="auto" aria-pressed="false">自动</button>
+  <span class="spacer"></span>
+  <strong>语言</strong>
+  <button type="button" data-lang="zh" aria-pressed="true">中文</button>
+  <button type="button" data-lang="en" aria-pressed="false">English</button>
+  <span class="rowcount">同高度可见 <b id="visible-rows">–</b> 行</span>
+</div>
+
+<div class="frame" data-width="1440" data-density="comfortable" data-view="list" id="frame">
+  <div class="workspace-head">
+    <span class="module-step">Step 03</span>
+    <h1 class="module-title" data-zh="跟进管理" data-en="Follow-up Tracker">跟进管理</h1>
+    <span class="workspace-count" data-zh="12 / 34 个进行中商机" data-en="12 of 34 active leads">12 / 34 个进行中商机</span>
+    <div class="workspace-actions">
+      <button type="button" class="btn btn-secondary" data-zh="导出" data-en="Export">导出</button>
+      <button type="button" class="btn btn-primary" data-zh="+ 记录跟进" data-en="+ Log follow-up">+ 记录跟进</button>
+    </div>
+  </div>
+  <div class="head-rule"></div>
+
+  <div class="filters-bar">
+    <div class="filter-tabs">
+      <button type="button" class="filter-tab active" data-zh="全部进行中" data-en="All active">全部进行中</button>
+      <button type="button" class="filter-tab" data-zh="已逾期" data-en="Overdue">已逾期</button>
+      <button type="button" class="filter-tab" data-zh="今日到期" data-en="Due today">今日到期</button>
+      <button type="button" class="filter-tab" data-zh="未来 7 天" data-en="Next 7 days">未来 7 天</button>
+    </div>
+    <label class="search"><input type="search" placeholder="客户 / 商机号 / 联系人" data-zh-ph="客户 / 商机号 / 联系人" data-en-ph="Customer / lead no. / contact"></label>
+    <select class="filter-select"><option data-zh="全部负责人" data-en="All owners">全部负责人</option></select>
+    <div class="view-switch" role="group" aria-label="视图">
+      <button type="button" class="filter-tab active" data-view="list" data-zh="列表" data-en="List">列表</button>
+      <button type="button" class="filter-tab" data-view="table" data-zh="表格" data-en="Table">表格</button>
+    </div>
+    <span class="result-count" data-zh="12 条 · 已按下次跟进排序" data-en="12 rows · sorted by next follow-up">12 条 · 已按下次跟进排序</span>
+  </div>
+
+  <div class="workbench">
+    <div class="list-panel">
+      <div class="list-scroll" id="list-scroll"></div>
+
+      <div class="list-foot">
+        <span data-zh="仅显示前 12 条（共 34 条）" data-en="Showing the first 12 of 34">仅显示前 12 条（共 34 条）</span>
+        <button type="button" class="btn-text" data-zh="加载更多" data-en="Load more">加载更多</button>
+      </div>
+    </div>
+
+    <div class="table-panel">
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th data-zh="客户" data-en="Customer">客户</th><th data-zh="商机" data-en="Lead">商机</th>
+            <th data-zh="进展" data-en="Stage">进展</th><th data-zh="最近跟进" data-en="Last">最近跟进</th>
+            <th data-zh="下一步" data-en="Next step">下一步</th><th data-zh="到期" data-en="Due">到期</th>
+            <th class="num" data-zh="金额" data-en="Amount">金额</th><th data-zh="负责人" data-en="Owner">负责人</th>
+          </tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="list-foot">
+        <span data-zh="仅显示前 12 条（共 34 条）· 表格在自己的容器里横向滚动，整页不横向溢出" data-en="First 12 of 34 · the table scrolls inside its own container">仅显示前 12 条（共 34 条）· 表格在自己的容器里横向滚动，整页不横向溢出</span>
+        <button type="button" class="btn-text" data-zh="加载更多" data-en="Load more">加载更多</button>
+      </div>
+    </div>
+
+    <div class="connector" aria-hidden="true"></div>
+
+    <aside class="detail" id="detail">
+      <div class="detail-head">
+        <div class="detail-eyebrow"><span data-zh="当前对象" data-en="Current lead">当前对象</span></div>
+        <div class="detail-object" id="detail-object"></div>
+        <div class="detail-sub" id="detail-sub"></div>
+      </div>
+      <div class="detail-tabs">
+        <button type="button" class="detail-tab active" data-zh="跟进" data-en="Follow-up">跟进</button>
+        <button type="button" class="detail-tab" data-zh="基本信息" data-en="Basics">基本信息</button>
+        <button type="button" class="detail-tab" data-zh="售前 / 样品" data-en="Pre-sales">售前 / 样品</button>
+        <button type="button" class="detail-tab" data-zh="成交" data-en="Deal">成交</button>
+        <button type="button" class="detail-tab" data-zh="附件" data-en="Files">附件</button>
+      </div>
+      <div class="panel-error" id="demo-error" hidden data-zh="未保存：连接不上 JPT Sales Toolkit，请确认程序正在运行后重试。输入内容仍在。" data-en="Not saved: cannot reach JPT Sales Toolkit. Check that it is running, then retry. Your text is still here.">未保存：连接不上 JPT Sales Toolkit，请确认程序正在运行后重试。输入内容仍在。</div>
+      <div class="detail-body" id="detail-body">
+        <div class="detail-fields" id="detail-fields"></div>
+        <div class="detail-history" id="detail-history"></div>
+      </div>
+      <div class="detail-foot">
+        <span class="save-state" id="demo-state"></span>
+        <button type="button" class="btn btn-secondary" data-zh="取消" data-en="Cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="demo-save" data-zh="保存" data-en="Save">保存</button>
+      </div>
+    </aside>
+  </div>
+
+  <p class="state-note"><span data-zh="以下是状态样例，不是页面的一部分" data-en="Below: state samples, not part of the page">以下是状态样例，不是页面的一部分</span></p>
+  <div class="empty-state">
+    <strong data-zh="当前筛选下没有商机" data-en="No lead matches the current filters">当前筛选下没有商机</strong>
+    <span data-zh="所选计划日期范围内没有到期商机；另有 4 个商机未设置下次跟进日期。" data-en="No active lead is due in this period; 4 more have no next follow-up date.">所选计划日期范围内没有到期商机；另有 4 个商机未设置下次跟进日期。</span>
+    <div><button type="button" class="btn btn-secondary" data-zh="清除筛选" data-en="Clear filters">清除筛选</button></div>
+  </div>
+  <p class="note" data-zh="金额按币种显示，不做跨币种合计；未填币种单独说明，不当成零。列表与表格是同一批商机的两种看法，一次只显示一个，不让你把同一条确认两遍。" data-en="Amounts are per currency and never added across them; a missing currency is said so, not treated as zero. The list and the table are two views of the same leads - one at a time.">金额按币种显示，不做跨币种合计；未填币种单独说明，不当成零。列表与表格是同一批商机的两种看法，一次只显示一个，不让你把同一条确认两遍。</p>
+</div>
+
+<p class="note">
+  <span data-zh="请判断四件事：品牌是否一致、是否精致耐看、每屏信息是否足够、当前对象与主要动作是否清楚。确认后我才把这套做进真实的跟进页面。" data-en="Four questions: is the brand consistent, does it look considered, is there enough on screen, and are the current object and its main actions obvious?">请判断四件事：品牌是否一致、是否精致耐看、每屏信息是否足够、当前对象与主要动作是否清楚。确认后我才把这套做进真实的跟进页面。</span>
+</p>
+</div>
+
+<script>
+const frame = document.getElementById('frame');
+const controls = document.querySelector('.controls');
+
+/* ===== 一份数据，三处显示 =====
+   列表、表格与详情都从这里渲染，选中的是同一个 selectedLeadId。样板里这样做
+   不是为了好看，而是因为"选中行只改高亮、详情写死"根本证明不了选择与详情的
+   关系。生产集成时把 LEADS 换成真实读取，其余结构照搬。 */
+const LEADS = [
+  { id: 'JPT-2609-0008', company: 'Lumière Industrie SARL', grade: 'A', review: 3,
+    bucket: 'overdue', stage: 'following', owner: 'Milena',
+    contact: 'Marie Laurent', place: { zh: '法国 · 里昂', en: 'France · Lyon' },
+    last: { date: '08-30', text: { zh: '客户要求 3kW 样机报价', en: 'Asked for a 3kW sample quote' } },
+    next: { date: '09-09', text: { zh: '发送修订报价并确认交期', en: 'Send revised quote, confirm lead time' } },
+    amount: 'EUR 42,000', method: 'Email',
+    note: { zh: '客户要求 3kW 样机报价，比较风冷与水冷方案', en: 'Wants a 3kW head quoted; air vs water cooling' },
+    history: [
+      { date: '08-30', who: 'Milena · Email', text: { zh: '客户要求 3kW 样机报价，比较风冷与水冷方案。\n对方希望两周内拿到样机参数表。', en: 'Wants a 3kW head quoted, air vs water cooling.\nAsked for the spec sheet within two weeks.' } },
+      { date: '08-22', who: { zh: 'Milena · 电话', en: 'Milena · phone' }, text: { zh: '确认联系人换成 Marie；原联系人已离职。', en: 'Contact changed to Marie; the previous one left.' } },
+      { date: '08-14', who: { zh: '系统 · 询盘导入', en: 'System · imported' }, text: { zh: '来自展会名单，含 3 项待复核字段。', en: 'From a trade-fair list, 3 fields to review.' } },
+    ] },
+  { id: 'JPT-2609-0014', company: 'Aurora Fotonica S.p.A.', bucket: 'overdue',
+    stage: 'following', owner: 'Milena', contact: 'Giulia Ferrari',
+    place: { zh: '意大利 · 都灵', en: 'Italy · Turin' },
+    last: { date: '08-19', text: { zh: '等待对方确认样品参数', en: 'Waiting on sample specs' } },
+    next: { date: '09-02', text: { zh: '已逾期 6 天', en: '6 days overdue' } },
+    amount: { zh: '未填币种 7,000', en: 'no currency 7,000' }, muted: true, method: 'Email',
+    note: { zh: '', en: '' },
+    history: [{ date: '08-19', who: 'Giulia · Email', text: { zh: '样品参数还在内部确认。', en: 'Sample specs still under internal review.' } }] },
+  { id: 'JPT-2609-0011', company: 'Nordwerk Optik GmbH', bucket: 'today',
+    stage: 'quoted', owner: 'William', contact: 'Jonas Weber',
+    place: { zh: '德国 · 汉堡', en: 'Germany · Hamburg' },
+    last: { date: '—', text: { zh: '尚无正式跟进', en: 'No formal follow-up' } },
+    next: { date: { zh: '今天', en: 'today' }, text: { zh: '确认是否进入打样', en: 'Confirm whether sampling starts' } },
+    amount: 'USD 18,500', method: { zh: '电话', en: 'Phone' },
+    note: { zh: '', en: '' },
+    history: [{ date: '08-25', who: { zh: '系统 · 询盘导入', en: 'System · imported' }, text: { zh: '展会名单导入，询盘至今 17 天无正式跟进。', en: 'Imported from a fair list; 17 days without a formal follow-up.' } }] },
+  { id: 'JPT-2609-0016', company: 'Beam Nordic AB', grade: 'A', bucket: 'week',
+    stage: 'following', owner: 'Erik', contact: 'Erik Lind',
+    place: { zh: '瑞典 · 哥德堡', en: 'Sweden · Gothenburg' },
+    last: { date: '09-01', text: { zh: '对方安排产线试用时间', en: 'Scheduling a line trial' } },
+    next: { date: '09-11', text: { zh: '试用现场支持', en: 'On-site trial support' } },
+    amount: 'SEK 210,000', method: 'Email', note: { zh: '', en: '' },
+    history: [{ date: '09-01', who: 'Erik · Email', text: { zh: '产线试用排在 9 月中，需要一名工艺工程师到场。', en: 'Line trial mid-September; needs a process engineer on site.' } }] },
+  { id: 'JPT-2609-0019', company: 'Photon Works Ltd', bucket: 'week',
+    stage: 'quoted', owner: 'William', contact: 'Alan Pryce', service: true,
+    place: { zh: '英国 · 曼彻斯特', en: 'UK · Manchester' },
+    last: { date: '09-03', text: { zh: '询问旧机以旧换新', en: 'Asked about trade-in' } },
+    next: { date: '09-12', text: { zh: '给出置换方案', en: 'Send trade-in options' } },
+    amount: 'GBP 26,400', method: 'Email', note: { zh: '', en: '' },
+    history: [{ date: '09-03', who: 'Alan · Email', text: { zh: '两台旧机想折价换新，问残值怎么算。', en: 'Two old units to trade in; asked how residual value is set.' } }] },
+  { id: 'JPT-2609-0021', company: 'Optique Vallée SAS', bucket: 'week',
+    stage: 'following', owner: 'Milena', contact: 'Camille Roux',
+    place: { zh: '法国 · 格勒诺布尔', en: 'France · Grenoble' },
+    last: { date: '09-04', text: { zh: '索取焊接工艺参数', en: 'Asked for welding parameters' } },
+    next: { date: '09-13', text: { zh: '工艺工程师回复', en: 'Process engineer to reply' } },
+    amount: { zh: '未报价', en: 'not quoted' }, muted: true, method: 'Email',
+    note: { zh: '', en: '' },
+    history: [{ date: '09-04', who: 'Camille · Email', text: { zh: '要 6mm 不锈钢焊接的推荐参数。', en: 'Wants recommended parameters for 6mm stainless.' } }] },
+  /* 长名称、同名不同商机、没有下次日期——密度与辨识度要在这些上面成立。 */
+  { id: 'JPT-2609-0024', company: 'Zhejiang Precision Photonics Manufacturing Co., Ltd.',
+    bucket: 'week', stage: 'following', owner: 'Milena', contact: '陈工',
+    place: { zh: '中国 · 杭州', en: 'China · Hangzhou' },
+    last: { date: '09-05', text: { zh: '需要整线方案与节拍测算', en: 'Wants a full-line proposal with cycle times' } },
+    next: { date: '09-14', text: { zh: '提交整线方案初稿与节拍测算表', en: 'Send the draft line proposal and cycle-time sheet' } },
+    amount: 'CNY 1,860,000', method: { zh: '会面', en: 'Meeting' }, note: { zh: '', en: '' },
+    history: [{ date: '09-05', who: { zh: '陈工 · 会面', en: 'Chen · meeting' }, text: { zh: '工厂现场看过两条线，关心换型时间。', en: 'Walked two lines on site; concerned about changeover time.' } }] },
+  { id: 'JPT-2609-0025', company: 'Optique Vallée SAS', bucket: 'week',
+    stage: 'quoted', owner: 'Erik', contact: 'Camille Roux',
+    place: { zh: '法国 · 格勒诺布尔', en: 'France · Grenoble' },
+    last: { date: '09-06', text: { zh: '第二条产线的独立询盘', en: 'A separate enquiry for their second line' } },
+    next: { date: '09-15', text: { zh: '报价第二条线的切割头', en: 'Quote the head for the second line' } },
+    amount: 'EUR 51,500', method: 'Email', note: { zh: '', en: '' },
+    history: [{ date: '09-06', who: 'Camille · Email', text: { zh: '与 0021 是同一家、不同产线，请勿合并。', en: 'Same company as 0021 but a different line - do not merge.' } }] },
+  { id: 'JPT-2609-0027', company: 'Baltic Laser OÜ', bucket: 'later',
+    stage: 'following', owner: 'Erik', contact: 'Marten Saar',
+    place: { zh: '爱沙尼亚 · 塔林', en: 'Estonia · Tallinn' },
+    last: { date: '08-28', text: { zh: '等对方预算批复', en: 'Waiting on their budget approval' } },
+    next: { date: { zh: '未设置', en: 'not set' }, text: { zh: '需要定下次跟进日期', en: 'Needs a next follow-up date' }, missing: true },
+    amount: 'EUR 9,800', method: 'Email', note: { zh: '', en: '' },
+    history: [{ date: '08-28', who: 'Marten · Email', text: { zh: '预算要等下一季度批。', en: 'Budget waits for the next quarter.' } }] },
+  { id: 'JPT-2609-0030', company: 'Iberia Fotónica S.L.', bucket: 'later',
+    stage: 'quoted', owner: 'William', contact: 'Lucía Márquez',
+    place: { zh: '西班牙 · 巴伦西亚', en: 'Spain · Valencia' },
+    last: { date: '09-02', text: { zh: '比价中', en: 'Comparing quotes' } },
+    next: { date: { zh: '未设置', en: 'not set' }, text: { zh: '需要定下次跟进日期', en: 'Needs a next follow-up date' }, missing: true },
+    amount: 'EUR 33,200', method: { zh: '电话', en: 'Phone' }, note: { zh: '', en: '' },
+    history: [{ date: '09-02', who: 'Lucía · Email', text: { zh: '同时在看另一家的方案。', en: 'Also looking at a competitor proposal.' } }] },
+];
+const BUCKETS = [
+  { key: 'overdue', zh: '已逾期', en: 'Overdue' },
+  { key: 'today', zh: '今日到期', en: 'Due today' },
+  { key: 'week', zh: '未来 7 天', en: 'Next 7 days' },
+  { key: 'later', zh: '未定日期', en: 'No date set' },
+];
+const STAGES = {
+  following: { zh: '跟进中', en: 'Following' },
+  quoted: { zh: '已报价', en: 'Quoted' },
+};
+
+let lang = 'zh';
+let selectedLeadId = LEADS[0].id;
+const say = value => (value && typeof value === 'object' ? value[lang] : value) ?? '';
+const escape = value => String(value)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const leadById = id => LEADS.find(item => item.id === id) || LEADS[0];
+
+
+function press(group, value, attribute) {
+  controls.querySelectorAll(`button[${attribute}]`).forEach(button => {
+    button.setAttribute('aria-pressed', String(button.getAttribute(attribute) === value));
+  });
+}
+
+controls.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.dataset.w) {
+    frame.dataset.width = button.dataset.w;
+    press('w', button.dataset.w, 'data-w');
+  }
+  if (button.dataset.d) {
+    frame.dataset.density = button.dataset.d;
+    press('d', button.dataset.d, 'data-d');
+    applyAuto();
+  }
+  if (button.dataset.lang) {
+    lang = button.dataset.lang;
+    press('lang', lang, 'data-lang');
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.querySelectorAll('[data-zh]').forEach(node => {
+      node.textContent = lang === 'zh' ? node.dataset.zh : node.dataset.en;
+    });
+    document.querySelectorAll('[data-zh-ph]').forEach(node => {
+      node.placeholder = lang === 'zh' ? node.dataset.zhPh : node.dataset.enPh;
+    });
+    renderAll();
+  }
+  countVisibleRows();
+});
+
+// 同样一块 452px 高的列表里能装几行——这就是"紧凑"要回答的问题。
+// 用固定高度算，而不是用当前盒子的高度：内容少时盒子会自己收缩，那样算出来
+// 的数字会把"列表短"说成"能装得少"。
+const LIST_HEIGHT = parseFloat(
+  getComputedStyle(document.getElementById('list-scroll')).maxHeight) || 452;
+function countVisibleRows() {
+  const scroll = document.getElementById('list-scroll');
+  const items = [...scroll.children];
+  if (!items.length) return;
+  // 数的是"从头往下，这块高度里能完整放进几行商机"——分组标题也占地方，
+  // 用首行高度除总高会把它们算漏。
+  let used = 0;
+  let rows = 0;
+  for (const item of items) {
+    const height = item.getBoundingClientRect().height;
+    if (used + height > LIST_HEIGHT) break;
+    used += height;
+    if (item.classList.contains('row')) rows += 1;
+  }
+  document.getElementById('visible-rows').textContent = String(rows);
+}
+new ResizeObserver(countVisibleRows).observe(document.getElementById('list-scroll'));
+
+
+function renderList() {
+  const scroll = document.getElementById('list-scroll');
+  const parts = [];
+  for (const bucket of BUCKETS) {
+    const rows = LEADS.filter(lead => lead.bucket === bucket.key);
+    if (!rows.length) continue;
+    parts.push(`<div class="group-head"><span>${escape(say(bucket))}</span><em>${rows.length}</em></div>`);
+    for (const lead of rows) {
+      const flags = [
+        lead.review ? `<span class="chip chip-review">${escape(lang === 'zh' ? lead.review + ' 项待复核' : lead.review + ' to review')}</span>` : '',
+        lead.service ? `<span class="chip">${escape(lang === 'zh' ? '含售后' : 'Service')}</span>` : '',
+        lead.grade
+          ? `<span class="grade grade-a" title="${escape(lang === 'zh' ? '质量等级 ' + lead.grade : 'Quality grade ' + lead.grade)}">${escape(lead.grade)}</span>`
+          : `<span class="grade grade-none" title="${escape(lang === 'zh' ? '尚未评级' : 'Not graded yet')}">–</span>`,
+      ].join('');
+      const stage = STAGES[lead.stage];
+      parts.push(`<article class="row${lead.id === selectedLeadId ? ' active' : ''}" tabindex="0"
+        data-lead="${escape(lead.id)}" aria-selected="${lead.id === selectedLeadId}">
+        <div class="row-main">
+          <span class="row-company">${escape(lead.company)}</span>
+          <span class="row-id">${escape(lead.id)}</span>
+          <span class="row-flags">${flags}</span>
+        </div>
+        <div class="row-meta"><span>${escape(lead.contact)}</span><span>${escape(say(lead.place))}</span>
+          <span><i class="dot dot-${lead.stage}"></i> <span class="stage-text">${escape(say(stage))}</span></span></div>
+        <div class="row-stage"><i class="dot dot-${lead.stage}"></i><span class="stage-text">${escape(say(stage))}</span></div>
+        <div class="row-last"><span class="row-lead">${escape(lang === 'zh' ? '最近跟进 ' : 'Last ')}</span><b>${escape(say(lead.last.date))}</b> <span class="text">${escape(say(lead.last.text))}</span></div>
+        <div class="row-next"><span class="row-lead">${escape(lang === 'zh' ? '下一步 ' : 'Next ')}</span><b${lead.next.missing ? ' class="muted"' : ''}>${escape(say(lead.next.date))}</b> <span class="text">${escape(say(lead.next.text))}</span></div>
+        <div class="row-amount"><b${lead.muted ? ' class="muted"' : ''}>${escape(say(lead.amount))}</b></div>
+      </article>`);
+    }
+  }
+  scroll.innerHTML = parts.join('');
+}
+
+function renderTable() {
+  document.getElementById('table-body').innerHTML = LEADS.map(lead => `
+    <tr${lead.id === selectedLeadId ? ' class="active"' : ''} tabindex="0"
+        data-lead="${escape(lead.id)}" aria-selected="${lead.id === selectedLeadId}">
+      <td>${escape(lead.company)}</td><td>${escape(lead.id)}</td>
+      <td>${escape(say(STAGES[lead.stage]))}</td><td>${escape(say(lead.last.date))}</td>
+      <td>${escape(say(lead.next.text))}</td><td${lead.next.missing ? ' class="muted"' : ''}>${escape(say(lead.next.date))}</td>
+      <td class="num${lead.muted ? ' muted' : ''}">${escape(say(lead.amount))}</td><td>${escape(lead.owner)}</td>
+    </tr>`).join('');
+}
+
+function field(label, value, { input = true, wide = false, readonly = false, rows = 0 } = {}) {
+  const control = rows
+    ? `<textarea class="form-input" rows="${rows}">${escape(value)}</textarea>`
+    : `<input class="form-input" value="${escape(value)}"${readonly ? ' readonly' : ''}>`;
+  return `<div class="field${wide ? ' wide' : ''}"><label>${escape(label)}</label>
+    ${input ? control : `<span class="value">${escape(value)}</span>`}</div>`;
+}
+
+function renderDetail() {
+  const lead = leadById(selectedLeadId);
+  const t = (zh, en) => (lang === 'zh' ? zh : en);
+  document.getElementById('detail-object').innerHTML =
+    `<h2>${escape(lead.company)}</h2><span>${escape(lead.id)}</span>`;
+  document.getElementById('detail-sub').innerHTML = `
+    <span><i class="dot dot-${lead.stage}"></i> ${escape(say(STAGES[lead.stage]))}</span>
+    <span>${escape(t('负责人 ', 'Owner ') + lead.owner)}</span>
+    <span>${escape(say(lead.place))}</span>
+    <span>${escape(lead.contact)}</span>`;
+  document.getElementById('detail-fields').innerHTML = `<div class="field-grid">
+    ${field(t('下一步', 'Next step'), say(lead.next.text), { wide: true })}
+    ${field(t('下次跟进日期', 'Next follow-up'), say(lead.next.date))}
+    ${field(t('方式', 'Method'), say(lead.method))}
+    ${field(t('预估金额', 'Estimated amount'), say(lead.amount), { readonly: true })}
+    ${field(t('质量等级', 'Quality grade'), lead.grade || t('尚未评级', 'not graded'), { readonly: true })}
+    ${field(t('本次记录', 'This follow-up'), say(lead.note), { wide: true, rows: 2 })}
+    ${field(t('联系人', 'Contact'), lead.contact, { readonly: true })}
+    ${field(t('地点', 'Location'), say(lead.place), { readonly: true })}
+    ${field(t('最近跟进', 'Last follow-up'), `${say(lead.last.date)} · ${say(lead.last.text)}`, { readonly: true })}
+  </div>`;
+  document.getElementById('detail-history').innerHTML = `
+    <div class="section-label"><span>${escape(t('跟进历史', 'History'))}</span></div>
+    <div class="timeline">${lead.history.map(entry => `
+      <div class="entry"><b>${escape(say(entry.date))}</b> <span class="who">${escape(say(entry.who))}</span>
+        <span class="text">${escape(say(entry.text))}</span></div>`).join('')}</div>`;
+  show('');
+}
+
+function renderAll() {
+  renderList();
+  renderTable();
+  renderDetail();
+  countVisibleRows();
+  requestAnimationFrame(markSelection);
+}
+
+// 自动档：窗口高度不足时用紧凑。阈值取 860px——1366×768 的笔记本落在紧凑侧。
+const shortScreen = window.matchMedia('(max-height: 860px)');
+function applyAuto() {
+  frame.dataset.auto = shortScreen.matches ? 'compact' : 'comfortable';
+  countVisibleRows();
+}
+shortScreen.addEventListener('change', applyAuto);
+applyAuto();
+
+// 保存的四种状态：未保存 → 保存中 → 已保存 / 失败。
+const state = document.getElementById('demo-state');
+const body = document.getElementById('detail-body');
+const error = document.getElementById('demo-error');
+const label = {
+  dirty: { zh: '未保存', en: 'Not saved' },
+  saving: { zh: '保存中…', en: 'Saving…' },
+  saved: { zh: '已保存', en: 'Saved' },
+  failed: { zh: '保存失败', en: 'Save failed' },
+};
+function show(kind) {
+  if (!state) return;
+  const language = document.documentElement.lang.startsWith('zh') ? 'zh' : 'en';
+  state.dataset.state = kind;
+  state.innerHTML = kind ? `<i class="dot"></i>${label[kind][language]}` : '';
+}
+body.addEventListener('input', () => { show('dirty'); error.hidden = true; });
+let failNext = false;
+document.getElementById('demo-save').addEventListener('click', () => {
+  show('saving');
+  body.classList.add('frozen');
+  setTimeout(() => {
+    body.classList.remove('frozen');
+    if (failNext) { show('failed'); error.hidden = false; } else { show('saved'); }
+    failNext = !failNext;
+  }, 700);
+});
+// 选中标记：中间那条线与面板左缘的酒红小段，都对齐到当前选中的那一行。
+const workbench = document.querySelector('.workbench');
+function markSelection() {
+  // 只看当前显示的那个视图。取文档里第一个 .active 会在表格模式下拿到隐藏
+  // 列表里的行，标记就对齐到一个看不见的位置上。
+  const scope = frame.dataset.view === 'table' ? '.table-panel' : '.list-panel';
+  const active = document.querySelector(`${scope} .row.active, ${scope} tbody tr.active`);
+  if (!active || !active.offsetParent) return;
+  const box = active.getBoundingClientRect();
+  const base = workbench.getBoundingClientRect();
+  const top = Math.max(18, Math.min(base.height - 18, box.top - base.top + box.height / 2));
+  workbench.style.setProperty('--mark-top', Math.round(top) + 'px');
+}
+
+// 选中一条商机：列表、表格与详情都跟着这一个 id 走。
+function select(id) {
+  if (!id) return;
+  selectedLeadId = id;
+  document.querySelectorAll('[data-lead]').forEach(node => {
+    const chosen = node.dataset.lead === id;
+    node.classList.toggle('active', chosen);
+    node.setAttribute('aria-selected', String(chosen));
+  });
+  renderDetail();
+  const scope = frame.dataset.view === 'table' ? '.table-panel' : '.list-panel';
+  const active = document.querySelector(`${scope} [data-lead="${id}"]`);
+  // 带进可见范围，否则右边的标记会停在面板边缘，读者看不出它指的是哪一行。
+  active?.scrollIntoView({ block: 'nearest' });
+  requestAnimationFrame(markSelection);
+}
+
+// 鼠标与键盘在两个视图里等价：换视图不该丢掉操作方式。
+for (const container of [document.getElementById('list-scroll'),
+                         document.getElementById('table-body')]) {
+  container.addEventListener('click', event => {
+    select(event.target.closest('[data-lead]')?.dataset.lead);
+  });
+  container.addEventListener('keydown', event => {
+    const row = event.target.closest('[data-lead]');
+    if (!row) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      select(row.dataset.lead);
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const rows = [...container.querySelectorAll('[data-lead]')];
+    const next = rows[rows.indexOf(row) + (event.key === 'ArrowDown' ? 1 : -1)];
+    if (next) { next.focus(); select(next.dataset.lead); }
+  });
+}
+document.querySelector('.view-switch').addEventListener('click', event => {
+  const button = event.target.closest('button[data-view]');
+  if (!button) return;
+  frame.dataset.view = button.dataset.view;
+  document.querySelectorAll('.view-switch button').forEach(item => {
+    item.classList.toggle('active', item === button);
+  });
+  markSelection();
+});
+new ResizeObserver(markSelection).observe(workbench);
+// 列表滚动时标记跟着走，到边缘就停在边缘。
+document.getElementById('list-scroll').addEventListener('scroll', markSelection, { passive: true });
+document.querySelector('.table-scroll').addEventListener('scroll', markSelection, { passive: true });
+markSelection();
+
+// 第一次渲染放在最后：它会用到上面所有声明——包括保存状态那一组常量。
+renderAll();
+</script>
+</body>
+</html>

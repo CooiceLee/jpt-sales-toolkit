@@ -867,6 +867,15 @@ def _build_preflight_report(import_data: dict, user: dict) -> dict:
                     entity,
                     f"Source owner_id {owner_error}; the existing local owner will be retained",
                 ))
+            cleared = _fields_the_file_would_clear(lead, existing_lead, role)
+            if cleared:
+                issues.append(_issue(
+                    "warning",
+                    "field_will_be_cleared",
+                    entity,
+                    "Empty in this file and filled in locally, so importing "
+                    "clears: " + ", ".join(cleared),
+                ))
         else:
             _, owner_error = _resolve_active_user(
                 user_repo,
@@ -1050,6 +1059,29 @@ def _export_lead_payload(lead: dict) -> dict:
     for field in LEAD_JSON_EXTRA_FIELDS:
         payload[field] = extra_json.get(field)
     return payload
+
+
+def _blank(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _fields_the_file_would_clear(
+    lead_data: dict, existing_lead: dict, actor_role: str
+) -> list[str]:
+    """Which local values this file would empty.
+
+    An empty value in a returning package is an instruction: the sender
+    cleared that field and it clears here too. The package cannot say whether
+    it was cleared on purpose or was simply empty when it was exported, and
+    anything typed locally since then goes with it. The reader can only weigh
+    that if the preflight names the fields first.
+    """
+    updates = _lead_import_update_fields(lead_data, actor_role)
+    local = _export_lead_payload(existing_lead)
+    return sorted(
+        field for field, value in updates.items()
+        if _blank(value) and not _blank(local.get(field))
+    )
 
 
 def _lead_import_update_fields(lead_data: dict, actor_role: str) -> dict:

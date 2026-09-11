@@ -39,6 +39,9 @@
         document.querySelectorAll('[data-task-manager]').forEach(item => {
             item.classList.toggle('hidden', !window.RoleCapabilities.canManageTaskRequests());
         });
+        document.querySelectorAll('[data-lead-creator]').forEach(item => {
+            item.classList.toggle('hidden', !window.RoleCapabilities.canCreateLeads());
+        });
         window.DataTransferWorkspace?.ensureAccessible?.();
     }
 
@@ -48,6 +51,10 @@
         canImportSpreadsheet: () => State.user?.role === 'leader',
         initialModule,
         applyNavigation,
-        canManageTaskRequests: () => !isTech()
+        canManageTaskRequests: () => !isTech(),
+        // The backend already refuses a lead from a technical account. Saying
+        // so on the page as well keeps a button off the screen that could only
+        // ever end in a refusal.
+        canCreateLeads: () => ['leader', 'sales'].includes(State.user?.role)
     };
 })();

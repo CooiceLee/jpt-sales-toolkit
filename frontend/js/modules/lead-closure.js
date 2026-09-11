@@ -36,18 +36,32 @@ window.closeCurrentLead = async function() {
         return;
     }
 
+    const action = InquiryPanelAction.begin();
+    let written = false;
     try {
         await ApiClient.updateLead(lead.id, {
             sales_stage: 'Lost',
             lost_reason_code: reasonCode,
             lost_reason_text: reasonText
         }, lead.row_version);
-        await refreshCurrentInquiryData(lead.id);
+        written = true;
+        if (!await refreshCurrentInquiryData(lead.id, action)) {
+            // Closed. The reader has opened somebody else, and that panel is
+            // not this action's to rewrite.
+            await refreshNavigationCounts();
+            return;
+        }
         State.currentInquiry.stage = 'Lost';
         notify(I18n.t('Lead closed and grouped under Deal / Lost'));
         renderPanelTabs('deal');
         await refreshAllCounts();
     } catch (err) {
+        // The lead is closed on the server; a failed redraw must not read as
+        // "still open" and invite closing it again.
+        if (written) return InquiryPanelAction.savedButNotRefreshed(err);
+        if (!InquiryPanelAction.isCurrent(action)) {
+            return InquiryPanelAction.failedAfterMovingOn(err);
+        }
         console.error('Close lead error:', err);
         if (err.name === 'ConflictError') {
             alert(I18n.t('This lead was updated by another user. Refresh and try again.'));

@@ -53,7 +53,7 @@ function renderPanelContent(tabId) {
 
         return `
             <div class="form-group">
-                <label class="form-label">${def.label}</label>
+                <label class="form-label">${escapeHtml(def.label)}</label>
                 ${editable ? renderFormField(name, def, value) : `<div class="form-static">${escapeHtml(value || '-')}</div>`}
                 ${helpText}
                 <div class="form-error" id="error-${name}" style="display:none;"></div>

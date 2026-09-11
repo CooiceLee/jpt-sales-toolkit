@@ -2,3 +2,8 @@
 # this repo's LF default and still hold CRLF; normalising them would turn a
 # small edit into a whole-file diff that nobody can review.
 * -text
+
+# The CR that ends a line in those files is the line ending, not stray
+# whitespace. Without this, every added line in a CRLF file trips
+# `git diff --check`, and a real trailing space hides among the false alarms.
+* whitespace=cr-at-eol

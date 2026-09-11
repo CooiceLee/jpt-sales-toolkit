@@ -63,7 +63,10 @@ class CustomerMatch(BaseModel):
 
 
 class CustomerContactCreate(BaseModel):
-    name: str
+    # A name or an email address is enough - that is the rule the service
+    # applies, and an address on its own is what an enquiry usually arrives
+    # with. Requiring a name here refused a contact the service would accept.
+    name: Optional[str] = None
     position: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -220,11 +223,19 @@ async def create_customer_contact(
 ):
     """Create customer contact."""
     ensure_customer_access(customer_id, user, write=True)
-    contact_id = service.add_contact(
-        customer_id,
-        request.model_dump(exclude_none=True),
-        user["id"],
-    )
+    # A contact with neither a name nor an address, or with an address that is
+    # not one, is the caller's mistake and is answerable as such. It used to
+    # leave the request as a server error, which says nothing about what to fix.
+    try:
+        contact_id = service.add_contact(
+            customer_id,
+            request.model_dump(exclude_none=True),
+            user["id"],
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        )
     customer = service.get(customer_id)
     contact = next((item for item in (customer or {}).get("contacts", []) if item["id"] == contact_id), None)
     return contact or {"contact_id": contact_id}
@@ -247,11 +258,16 @@ async def update_customer_contact(
             detail="Contact not found",
         )
 
-    return service.update_contact(
-        contact_id,
-        request.model_dump(exclude_none=True),
-        user["id"],
-    )
+    try:
+        return service.update_contact(
+            contact_id,
+            request.model_dump(exclude_none=True),
+            user["id"],
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
+        )
 
 
 @router.post("/{customer_id}/contacts/{contact_id}/archive")

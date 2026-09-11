@@ -242,8 +242,11 @@ def check_saving_a_visit_refreshes_even_while_another_editor_is_open() -> None:
         "a full reload is stopped by any other unsaved editor, and reports "
         "nothing when it is"
     )
-    assert "TripPlanRefresh.reread(planId)" in source, (
-        "the plan has to be read back on its own after a visit is saved"
+    # And it reads back under the number the screen already had: taking a new
+    # one let a late save answer in place of the plan the reader had moved to.
+    assert "TripPlanRefresh.reread(planId, { token: session.token })" in source, (
+        "the plan has to be read back on its own after a visit is saved, "
+        "under the identity that save belongs to"
     )
 
     data = run("""
@@ -270,6 +273,300 @@ console.log(JSON.stringify({ done, drew, items:
     assert data["items"] == 1, "the redrawn plan is the one just read back"
 
 
+def check_a_save_holds_the_form_it_took_its_values_from() -> None:
+    """Typing while a save is in flight was neither sent nor kept.
+
+    The request carries the values as they were when the button was pressed.
+    The fields stayed editable, and the success path cleared the draft and
+    closed the editor - so whatever was typed in between went with it, with
+    nothing on screen saying so.
+    """
+    data = run("""
+const fields = [];
+function field(id) {
+  const node = { id, value: '', disabled: false, attributes: {},
+    setAttribute(name) { this.attributes[name] = ''; },
+    hasAttribute(name) { return name in this.attributes; },
+    removeAttribute(name) { delete this.attributes[name]; } };
+  fields.push(node);
+  return node;
+}
+const content = field('content');
+const addRow = field('add-row');
+const editor = {
+  hidden: false, innerHTML: '', attributes: {},
+  querySelectorAll: () => [content, addRow],
+  closest: () => ({ classList: { toggle() {} } }),
+  setAttribute() {}, scrollIntoView() {},
+};
+const byId = { 'trip-briefing-editor': editor };
+globalThis.document = {
+  getElementById: id => byId[id] || null,
+  querySelector: () => null, querySelectorAll: () => [],
+  addEventListener() {},
+};
+globalThis.State = { currentTripPlan: { id: 'plan-a', planning_mode: 'team',
+  members: [], stops: [{ id: 'stop-1' }] } };
+globalThis.TripZones = { planChanged() {}, renderHeader() {}, current: () => 'briefing' };
+globalThis.TripScheduleView = { renderPlan() {} };
+globalThis.TripPlannerModule = { renderVisitExecution() {} };
+globalThis.TripVisitDraft = { isDirty: () => false };
+globalThis.TripBriefingForm = { populate() {}, payload: () => ({ participants: [] }) };
+globalThis.TripBriefingPicker = { render() {}, markSelection() {} };
+
+let release;
+globalThis.ApiClient = {
+  putTripBriefing: () => new Promise(resolve => { release = resolve; }),
+  getTripPlan: async () => State.currentTripPlan,
+};
+TripBriefingDraft.load('stop-1', { participants: [] });
+const saving = TripBriefingActions.save();
+const duringSave = { editable: !content.disabled, canAddRow: !addRow.disabled };
+content.value = 'typed while the request was out';
+release({ participants: [] });
+await saving;
+console.log(JSON.stringify({ duringSave, kept: content.value }));
+""", ("inquiry-edit-freeze.js", "trip-plan-identity.js", "trip-plan-refresh.js",
+      "trip-briefing-reveal.js", "trip-briefing-draft.js",
+      "trip-briefing-session.js", "trip-briefing-actions.js"))
+    assert data["duringSave"]["editable"] is False, (
+        "the form stayed editable while the save was in flight, so anything "
+        "typed next was neither sent nor kept"
+    )
+    assert data["duringSave"]["canAddRow"] is False, (
+        "rows could still be added and removed while the save was in flight"
+    )
+
+
+def check_an_older_save_does_not_close_the_editor_the_reader_opened() -> None:
+    """A save that lands after the reader moved on keeps its hands off.
+
+    Close this visit, choose another plan, start writing there - and the older
+    answer closed *that* editor and pulled the screen back to the plan the
+    reader had left. The write itself is real, so it is reported rather than
+    hidden.
+    """
+    data = run("""
+const editor = { hidden: false, innerHTML: '', querySelectorAll: () => [],
+  closest: () => ({ classList: { toggle() {} } }), setAttribute() {},
+  scrollIntoView() {} };
+globalThis.document = {
+  getElementById: id => (id === 'trip-briefing-editor' ? editor : null),
+  querySelector: () => null, querySelectorAll: () => [], addEventListener() {},
+};
+const planA = { id: 'plan-a', planning_mode: 'team', members: [], stops: [{ id: 'stop-1' }] };
+const planB = { id: 'plan-b', planning_mode: 'team', members: [], stops: [{ id: 'stop-2' }] };
+globalThis.State = { currentTripPlan: planA };
+globalThis.TripZones = { planChanged() {}, renderHeader() {}, current: () => 'briefing' };
+globalThis.TripScheduleView = { renderPlan() {} };
+globalThis.TripPlannerModule = { renderVisitExecution() {} };
+globalThis.TripVisitDraft = { isDirty: () => false };
+globalThis.TripBriefingForm = { populate() {}, payload: () => ({ participants: [] }) };
+globalThis.TripBriefingPicker = { render() {}, markSelection() {} };
+const reads = [];
+let release;
+globalThis.ApiClient = {
+  putTripBriefing: () => new Promise(resolve => { release = resolve; }),
+  getTripBriefing: async () => ({ participants: [] }),
+  getTripPlan: async id => { reads.push(id); return id === 'plan-b' ? planB : planA; },
+};
+
+TripBriefingDraft.load('stop-1', { participants: [] });
+const saving = TripBriefingActions.save();
+// The reader closes this visit, moves to plan B and starts writing there.
+TripBriefingActions.close({ force: true });
+State.currentTripPlan = planB;
+await TripBriefingActions.open('stop-2');
+TripBriefingDraft.markDirty();
+release({ participants: [] });
+await saving;
+console.log(JSON.stringify({
+  plan: State.currentTripPlan.id,
+  openStop: TripBriefingDraft.getStopId(),
+  stillDirty: TripBriefingDraft.isDirty(),
+  editorClosed: editor.hidden,
+  reads, notes,
+}));
+""", ("inquiry-edit-freeze.js", "trip-plan-identity.js", "trip-plan-refresh.js",
+      "trip-briefing-reveal.js", "trip-briefing-draft.js",
+      "trip-briefing-session.js", "trip-briefing-actions.js"))
+    assert data["plan"] == "plan-b", (
+        f"the older save pulled the screen back to the plan the reader left: {data['plan']}"
+    )
+    assert data["openStop"] == "stop-2", (
+        f"the older save cleared the draft the reader is writing: {data['openStop']}"
+    )
+    assert data["stillDirty"] is True, "the reader's unsaved work was marked clean"
+    assert data["editorClosed"] is False, "the older save closed the new editor"
+    assert "plan-a" not in data["reads"], (
+        "the older save read its own plan back over the one on screen"
+    )
+    assert any("saved" in note.lower() for note in data["notes"]), (
+        "the write happened and nobody was told, which reads as lost work"
+    )
+
+    # The reader can also leave by changing plans without touching this editor.
+    moved = run("""
+const editor = { hidden: false, innerHTML: '', querySelectorAll: () => [],
+  closest: () => ({ classList: { toggle() {} } }), setAttribute() {},
+  scrollIntoView() {} };
+globalThis.document = {
+  getElementById: id => (id === 'trip-briefing-editor' ? editor : null),
+  querySelector: () => null, querySelectorAll: () => [], addEventListener() {},
+};
+const planA = { id: 'plan-a', planning_mode: 'team', members: [], stops: [{ id: 'stop-1' }] };
+const planB = { id: 'plan-b', planning_mode: 'team', members: [], stops: [{ id: 'stop-1' }] };
+globalThis.State = { currentTripPlan: planA };
+globalThis.TripZones = { planChanged() {}, renderHeader() {}, current: () => 'briefing' };
+globalThis.TripScheduleView = { renderPlan() {} };
+globalThis.TripPlannerModule = { renderVisitExecution() {} };
+globalThis.TripVisitDraft = { isDirty: () => false };
+globalThis.TripBriefingForm = { populate() {}, payload: () => ({ participants: [] }) };
+globalThis.TripBriefingPicker = { render() {}, markSelection() {} };
+const reads = [];
+let release;
+globalThis.ApiClient = {
+  putTripBriefing: () => new Promise(resolve => { release = resolve; }),
+  getTripPlan: async id => { reads.push(id); return id === 'plan-b' ? planB : planA; },
+};
+TripBriefingDraft.load('stop-1', { participants: [] });
+const saving = TripBriefingActions.save();
+// Same stop id on both plans: only the plan tells them apart.
+State.currentTripPlan = planB;
+release({ participants: [] });
+await saving;
+console.log(JSON.stringify({ plan: State.currentTripPlan.id, reads }));
+""", ("inquiry-edit-freeze.js", "trip-plan-identity.js", "trip-plan-refresh.js",
+      "trip-briefing-reveal.js", "trip-briefing-draft.js",
+      "trip-briefing-session.js", "trip-briefing-actions.js"))
+    assert moved["plan"] == "plan-b" and "plan-a" not in moved["reads"], (
+        "changing plans while a save was in flight let the older answer read "
+        f"its own plan back over the one on screen: {moved}"
+    )
+
+
+def check_an_address_search_cannot_thaw_a_form_being_saved() -> None:
+    """A search started before the save answers after the freeze.
+
+    Its results are buttons that were not there to be held, and choosing one
+    rebuilds the form - unfrozen - over the values the save already took. The
+    new address was then neither sent nor kept.
+    """
+    data = run("""
+const fields = [];
+function field(id, value = '') {
+  const node = { id, value, disabled: false, attributes: {},
+    setAttribute(name) { this.attributes[name] = ''; },
+    hasAttribute(name) { return name in this.attributes; },
+    removeAttribute(name) { delete this.attributes[name]; },
+    dataset: { locationField: id.replace('trip-briefing-location-', '') } };
+  fields.push(node);
+  return node;
+}
+const address = field('trip-briefing-location-address', 'Berlin');
+const candidates = { id: 'trip-briefing-location-candidates', innerHTML: '' };
+const status = { id: 'trip-briefing-location-status', textContent: '' };
+const editor = { hidden: false, innerHTML: '', querySelectorAll: () => fields,
+  closest: () => ({ classList: { toggle() {} } }), setAttribute() {},
+  scrollIntoView() {} };
+const byId = { 'trip-briefing-editor': editor,
+  'trip-briefing-location-candidates': candidates,
+  'trip-briefing-location-status': status };
+globalThis.document = {
+  getElementById: id => byId[id] || null,
+  querySelector: () => null,
+  querySelectorAll: selector => (selector.includes('data-location-field') ? [address] : []),
+  addEventListener() {},
+};
+globalThis.State = { currentTripPlan: { id: 'plan-a', planning_mode: 'team',
+  members: [], stops: [{ id: 'stop-1' }] } };
+globalThis.TripZones = { planChanged() {}, renderHeader() {}, current: () => 'briefing' };
+globalThis.TripScheduleView = { renderPlan() {} };
+globalThis.TripPlannerModule = { renderVisitExecution() {} };
+globalThis.TripVisitDraft = { isDirty: () => false };
+let located = null;
+globalThis.TripBriefingForm = { populate() {}, payload: () => ({ participants: [] }),
+  setLocation: value => { located = value; } };
+globalThis.TripBriefingPicker = { render() {}, markSelection() {} };
+let releaseSearch, releaseSave;
+globalThis.ApiClient = {
+  searchGeocode: () => new Promise(resolve => { releaseSearch = resolve; }),
+  putTripBriefing: () => new Promise(resolve => { releaseSave = resolve; }),
+  getTripPlan: async () => State.currentTripPlan,
+};
+TripBriefingDraft.load('stop-1', { participants: [] });
+const searching = TripBriefingGeocode.searchLocation();
+const saving = TripBriefingActions.save();
+const frozen = address.disabled;
+releaseSearch({ candidates: [{ lat: 1, lng: 2, normalized_address: 'new address' }] });
+await searching;
+const afterSearch = { buttons: candidates.innerHTML.length, editable: !address.disabled };
+releaseSave({ participants: [] });
+await saving;
+console.log(JSON.stringify({ frozen, afterSearch, located }));
+""", ("inquiry-edit-freeze.js", "trip-plan-identity.js", "trip-plan-refresh.js",
+      "trip-briefing-reveal.js", "trip-briefing-draft.js",
+      "trip-briefing-session.js", "trip-briefing-actions.js",
+      "trip-briefing-geocode.js"))
+    assert data["frozen"] is True, "the form was not held while the save was in flight"
+    assert data["afterSearch"]["buttons"] == 0, (
+        "a late address search drew候选 buttons over a form being saved, and "
+        "they were not held because they did not exist when the freeze happened"
+    )
+    assert data["afterSearch"]["editable"] is False, (
+        "the form was editable again while its save was still in flight"
+    )
+    assert data["located"] is None, "a location was applied over a save in flight"
+
+
+def check_a_failed_refresh_after_a_good_write_is_reported() -> None:
+    """Written, then the screen could not be brought up to date.
+
+    Both halves have to be said. Silence left the reader looking at the old
+    summary with no idea whether the work was saved - and saying "failed"
+    would send them to save it a second time.
+    """
+    data = run("""
+const editor = { hidden: false, innerHTML: '', querySelectorAll: () => [],
+  closest: () => ({ classList: { toggle() {} } }), setAttribute() {},
+  scrollIntoView() {} };
+globalThis.document = {
+  getElementById: id => (id === 'trip-briefing-editor' ? editor : null),
+  querySelector: () => null, querySelectorAll: () => [], addEventListener() {},
+};
+globalThis.State = { currentTripPlan: { id: 'plan-a', planning_mode: 'team',
+  members: [], stops: [{ id: 'stop-1' }] } };
+globalThis.TripZones = { planChanged() {}, renderHeader() {}, current: () => 'briefing' };
+globalThis.TripScheduleView = { renderPlan() {} };
+globalThis.TripPlannerModule = { renderVisitExecution() {} };
+globalThis.TripVisitDraft = { isDirty: () => false };
+globalThis.TripBriefingForm = { populate() {}, payload: () => ({ participants: [] }) };
+globalThis.TripBriefingPicker = { render() {}, markSelection() {} };
+let writes = 0, reads = 0;
+globalThis.ApiClient = {
+  putTripBriefing: async () => { writes += 1; return { participants: [] }; },
+  getTripPlan: async () => { reads += 1; throw new Error('network down'); },
+};
+TripBriefingDraft.load('stop-1', { participants: [] });
+await TripBriefingActions.save();
+console.log(JSON.stringify({ writes, reads, notes, closed: editor.hidden }));
+""", ("inquiry-edit-freeze.js", "trip-plan-identity.js", "trip-plan-refresh.js",
+      "trip-briefing-reveal.js", "trip-briefing-draft.js",
+      "trip-briefing-session.js", "trip-briefing-actions.js"))
+    assert data["writes"] == 1 and data["reads"] == 1, data
+    assert data["notes"], (
+        "the write succeeded, the re-read failed, and the reader was told "
+        "nothing at all"
+    )
+    said = " ".join(data["notes"]).lower()
+    assert "saved" in said and "refresh" in said, (
+        f"the message does not say both halves - saved, not refreshed: {data['notes']}"
+    )
+    assert "do not save again" in said, (
+        "nothing stops the reader saving a second time over a write that landed"
+    )
+
+
 def check_the_whole_team_stays_whoever_is_travelling() -> None:
     """A visit nobody edited still means "whoever is travelling".
 
@@ -291,8 +588,27 @@ const noted = draft.isWholeTeam([
 ]);
 State.currentTripPlan = { planning_mode: 'legacy', members: [] };
 const legacy = draft.isWholeTeam([{ user_id: 'a' }]);
-console.log(JSON.stringify({ shown, untouched, trimmed, noted, legacy }));
-""", ("trip-briefing-draft.js",))
+
+// And the two sources are told apart, not guessed from the current list.
+State.currentTripPlan = { planning_mode: 'team', members: [
+  { user_id: 'a', display_name: 'Ayden' }, { user_id: 'b', display_name: 'Slluu' },
+] };
+const team = draft.normalizeRecord({}).participants;
+draft.load('stop-inherited', { participants: [] });
+const inheritedStays = draft.staysInherited(team);
+draft.load('stop-chosen', { participants: [{ user_id: 'a' }, { user_id: 'b' }] });
+const chosenStays = draft.staysInherited(team);
+draft.load('stop-inherited', { participants: [] });
+// Through the control the reader actually uses, not the flag underneath it.
+globalThis.TripBriefingRows = { syncModel() {}, renderForm() {} };
+globalThis.TripBriefingScroll = { replace() {}, focusRow() {}, keep() {} };
+globalThis.TripBriefingReveal = { editor: () => null, open: () => null, show: () => null };
+TripBriefingForm.populate({ participants: [] });
+TripBriefingForm.arrayAction('participants', 'add');
+const editedStays = draft.staysInherited(team);
+console.log(JSON.stringify({ shown, untouched, trimmed, noted, legacy,
+  inheritedStays, chosenStays, editedStays }));
+""", ("trip-briefing-draft.js", "trip-briefing-form.js"))
     assert data["shown"] == ["a", "b"], (
         f"the card must read as the whole team, not as nobody: {data['shown']}"
     )
@@ -308,8 +624,21 @@ console.log(JSON.stringify({ shown, untouched, trimmed, noted, legacy }));
     )
     assert data["legacy"] is False, "a single-traveller plan has no team to inherit"
 
+    # A chosen list that happens to equal the team is still a chosen list.
+    assert data["inheritedStays"] is True, (
+        "a visit that named nobody stopped meaning whoever is travelling"
+    )
+    assert data["chosenStays"] is False, (
+        "a list the reader chose was turned back into inheritance because it "
+        "happened to match the team - a colleague joining later would be added "
+        "to a visit nobody put them on"
+    )
+    assert data["editedStays"] is False, (
+        "the reader edited the people and the list still went back as inherited"
+    )
+
     saving = (MODULES / "trip-briefing-actions.js").read_text(encoding="utf-8")
-    assert "TripBriefingDraft.isWholeTeam(payload.participants)" in saving, (
+    assert "TripBriefingDraft.staysInherited(payload.participants)" in saving, (
         "the save has to send the inherited list back as inherited"
     )
 
@@ -977,6 +1306,10 @@ def main() -> None:
     check_member_dates_are_saved_one_at_a_time()
     check_a_failed_member_date_stops_claiming_it_saved()
     check_saving_a_visit_refreshes_even_while_another_editor_is_open()
+    check_a_save_holds_the_form_it_took_its_values_from()
+    check_an_older_save_does_not_close_the_editor_the_reader_opened()
+    check_an_address_search_cannot_thaw_a_form_being_saved()
+    check_a_failed_refresh_after_a_good_write_is_reported()
     check_the_whole_team_stays_whoever_is_travelling()
     check_a_half_written_visit_card_survives_a_refresh()
     check_a_late_member_answer_does_not_drag_the_reader_back()

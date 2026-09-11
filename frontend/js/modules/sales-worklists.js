@@ -3,26 +3,6 @@
 
     const tr = (text, params) => window.I18n?.t(text, params) || text;
 
-    async function loadHandler() {
-        const stage = document.getElementById('filter-stage')?.value || 'New';
-        try {
-            const params = getSharedLeadFilters();
-            if (stage) params.sales_stage = stage;
-            const leads = await ApiClient.listLeads(params);
-            const inquiries = WorklistSort.handler(leads.map(lead => ({
-                ...leadToCardItem(lead),
-                product: lead.product_category,
-            })));
-            State.inquiries = inquiries;
-            setText('inquiry-count', `${inquiries.length} leads`);
-            renderCards('handler-cards', inquiries);
-        } catch (err) {
-            console.error('Handler error:', err);
-            setText('inquiry-count', tr('Unable to load'));
-            setPanelError('handler-cards', tr('Unable to load inquiries. Please retry.'));
-        }
-    }
-
     function followupEmptyCopy(base, planned, plannedMode, activity) {
         const copy = { title: 'No records in this view' };
         if (!base.length) {
@@ -55,38 +35,43 @@
     }
 
     async function loadFollowup() {
+        const request = WorklistRequest.begin('followup');
         try {
-            const leads = await ApiClient.listLeads({
-                ...getSharedLeadFilters(),
-                limit: 100000,
-            });
-            const base = FollowupFilterModel.annotate(leads
+            const page = await ApiClient.listAllLeads(getSharedLeadFilters());
+            if (!WorklistRequest.isCurrent(request)) return;
+            const base = FollowupFilterModel.annotate(page.items
                 .filter(lead => ['Assigned', 'Following'].includes(lead.sales_stage))
                 .map(lead => leadToCardItem(lead, {
                     next_followup_date: lead.next_followup_date,
                     follow_ups_count: lead.follow_ups_count || 0,
                     latest_follow_up_at: lead.latest_follow_up_at,
                     latest_follow_up_summary: lead.latest_follow_up_summary,
+                    // Both amounts as the lead carries them: flattened to 0,
+                    // a missing deal printed "SEK 0" over a 210,000 estimate.
+                    deal_amount: lead.deal_amount ?? null,
+                    estimated_value: lead.estimated_value ?? null,
                 })));
             const plannedMode = State.currentFilters.followup || 'all';
             const activity = FollowupFilterControls.read();
             const planned = FollowupFilterModel.filterPlanned(base, plannedMode);
             let inquiries = FollowupFilterModel.filterActivity(planned, activity);
             inquiries = WorklistSort.followup(inquiries, { activityMode: activity.mode });
-            setText('followup-count', tr('{shown} of {total} active', {
+            setText('followup-count', [tr('{shown} of {total} active', {
                 shown: inquiries.length,
                 total: base.length,
-            }));
-            renderCards(
-                'followup-cards',
+            }), PagedFetch.note(page)].filter(Boolean).join(' · '));
+            // Rows beside the panel, not a grid of cards. Same items and
+            // filters; grouped by due date only when the sort is by due date.
+            FollowupWorkbench.render(
                 inquiries,
-                'followup',
-                followupEmptyCopy(base, planned, plannedMode, activity)
+                followupEmptyCopy(base, planned, plannedMode, activity),
+                { groupByDueDate: activity.mode === 'all' }
             );
         } catch (err) {
             console.error('Followup error:', err);
+            if (!WorklistRequest.isCurrent(request)) return;
             setText('followup-count', tr('Unable to load'));
-            renderCards('followup-cards', [], 'followup', {
+            FollowupWorkbench.render([], {
                 title: 'Unable to load follow-ups',
                 text: 'The follow-up list could not be loaded. Please retry.',
             });
@@ -94,29 +79,58 @@
     }
 
     async function loadDeal() {
+        const request = WorklistRequest.begin('deal');
         try {
-            const leads = await ApiClient.listLeads(getSharedLeadFilters());
+            const page = await ApiClient.listAllLeads(getSharedLeadFilters());
+            if (!WorklistRequest.isCurrent(request)) return;
+            const leads = page.items;
             const dealLeads = leads.filter(lead => ['Quoted', 'Won', 'Lost'].includes(lead.sales_stage));
             let inquiries = dealLeads
                 .filter(lead => ['Quoted', 'Lost'].includes(lead.sales_stage))
-                .map(lead => leadToCardItem(lead));
+                // Flattened to 0, a deal nobody priced reads as agreed at zero.
+                .map(lead => ({ ...leadToCardItem(lead),
+                    deal_amount: lead.deal_amount ?? null,
+                    estimated_value: lead.estimated_value ?? null }));
             const won = dealLeads.filter(lead => lead.sales_stage === 'Won');
-            const wonValue = won.reduce((sum, lead) => sum + (parseFloat(lead.deal_amount) || 0), 0);
+            // Per currency: deals of 10,000 EUR and 10,000 USD are not 20,000
+            // of anything, and this figure used to be printed in dollars.
+            const wonByCurrency = {};
+            let wonWithoutAmount = 0;
+            won.forEach(lead => {
+                const amount = parseFloat(lead.deal_amount);
+                if (!Number.isFinite(amount)) { wonWithoutAmount += 1; return; }
+                const code = String(lead.currency || '').trim().toUpperCase() || 'UNSPECIFIED';
+                wonByCurrency[code] = (wonByCurrency[code] || 0) + amount;
+            });
             setText('deal-quoting', dealLeads.filter(lead => lead.sales_stage === 'Quoted').length);
             setText('deal-won', won.length);
-            setText('deal-value', Math.round(wonValue / 1000).toLocaleString());
+            setText('deal-value', MoneyTotals.text(wonByCurrency));
+            // Every figure on this card is computed from the list that was
+            // read, so a list that stopped short makes all of them partial.
+            setText('deal-value-note', [MoneyTotals.missingNote(wonWithoutAmount),
+                PagedFetch.note(page)].filter(Boolean).join(' · '));
+            const cycle = DealCycle.measure(dealLeads);
+            setText('deal-cycle', DealCycle.text(cycle));
+            setText('deal-cycle-note', DealCycle.note(cycle));
             const filter = State.currentFilters.deal || 'all';
             if (filter !== 'all') inquiries = inquiries.filter(item => item.stage === filter);
             inquiries = WorklistSort.deal(inquiries);
-            renderCards('deal-cards', inquiries, 'deal');
+            setText('deal-count', [
+                tr('{count} leads', { count: inquiries.length }),
+                PagedFetch.note(page),
+            ].filter(Boolean).join(' · '));
+            DealWorkbench.render(inquiries);
         } catch (err) {
             console.error('Deal error:', err);
-            ['deal-quoting', 'deal-won', 'deal-value'].forEach(id => setText(id, '—'));
-            setPanelError('deal-cards', tr('Unable to load deals. Please retry.'));
+            if (!WorklistRequest.isCurrent(request)) return;
+            ['deal-quoting', 'deal-won', 'deal-value', 'deal-cycle', 'deal-count']
+                .forEach(id => setText(id, '—'));
+            ['deal-value-note', 'deal-cycle-note'].forEach(id => setText(id, ''));
+            DealWorkbench.render([], { title: 'Unable to load',
+                text: 'Unable to load deals. Please retry.' });
         }
     }
 
-    window.loadHandler = loadHandler;
     window.loadFollowup = loadFollowup;
     window.loadDeal = loadDeal;
 })();

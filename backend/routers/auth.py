@@ -39,6 +39,12 @@ async def login(
     result = auth_service.login(request.username, request.password)
 
     if not result:
+        # A machine this program cannot identify has no authorization to match,
+        # and saying "wrong password" sends somebody to reset a password that
+        # was never the problem.
+        reason = auth_service.authorization_service.status().get("device_error")
+        if reason:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",

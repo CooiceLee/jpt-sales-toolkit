@@ -21,7 +21,7 @@ function renderStageFilterOptions() {
         if (ownerSelect) {
             ownerSelect.innerHTML = '<option value="">All sales</option>' +
                 State.stageUsers.sales.map(user =>
-                    `<option value="${user.id}">${escapeHtml(user.display_name)}</option>`
+                    `<option value="${user.id}" data-business>${escapeHtml(user.display_name)}</option>`
                 ).join('');
         }
 
@@ -29,7 +29,7 @@ function renderStageFilterOptions() {
         if (techSelect) {
             techSelect.innerHTML = '<option value="">All tech</option>' +
                 State.stageUsers.tech.map(user =>
-                    `<option value="${user.id}">${escapeHtml(user.display_name)}</option>`
+                    `<option value="${user.id}" data-business>${escapeHtml(user.display_name)}</option>`
                 ).join('');
         }
     });

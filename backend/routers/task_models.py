@@ -32,11 +32,18 @@ class PreSalesTaskUpdate(BaseModel):
     row_version: int
 
 
+# The four the form offers and the database accepts. Typed as free text here,
+# an unknown value travelled all the way to the CHECK constraint and came back
+# as a 500 - a server fault for what is a rejected input.
+AfterSalesIssueType = Literal["Technical", "Quality", "Delivery", "Other"]
+AfterSalesStatus = Literal["Open", "In Progress", "Resolved", "Closed"]
+
+
 class AfterSalesTaskCreate(BaseModel):
     assignee_id: Optional[str] = None
-    issue_type: str
+    issue_type: AfterSalesIssueType
     issue_description: str
-    status: Optional[str] = None
+    status: Optional[AfterSalesStatus] = None
     solution: Optional[str] = None
     customer_satisfaction: Optional[str] = None
     lessons_learned: Optional[str] = None
@@ -47,9 +54,9 @@ class AfterSalesTaskCreate(BaseModel):
 
 class AfterSalesTaskUpdate(BaseModel):
     assignee_id: Optional[str] = None
-    issue_type: Optional[str] = None
+    issue_type: Optional[AfterSalesIssueType] = None
     issue_description: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[AfterSalesStatus] = None
     solution: Optional[str] = None
     customer_satisfaction: Optional[str] = None
     lessons_learned: Optional[str] = None

@@ -89,6 +89,27 @@ function applyNavigationCounts(stats) {
 // ===== Initialization =====
 document.addEventListener('DOMContentLoaded', init);
 
+// Sentences this interface builds from values - counts, ranges, dates - are
+// drawn again in the language now chosen, by the view that owns them. Reading
+// them back off the screen to work out which template made them is what
+// rewrote customer names and product text, so it is no longer attempted.
+window.addEventListener('language:changed', () => {
+    if (!State.user) return;
+    const module = document.querySelector('.module.active')?.id?.replace('module-', '');
+    // Nobody asked for a reload by switching language, so a view holding
+    // unsaved work keeps it and stays in the language it was drawn in.
+    if (module) loadModuleData(module, { automatic: true });
+    // The panel is redrawn only when there is nothing in it to lose: not
+    // while something is typed, and not while an editor is open at all -
+    // an edit form filled in from an existing record has been touched by
+    // nobody and would go without a word.
+    const tab = document.querySelector('.panel-tab.active')?.dataset?.tab;
+    const editing = !!document.querySelector('#panel-content [data-panel-form]:not(.hidden)');
+    if (State.currentInquiry && tab && !editing && !PanelDirtyState.isDirty()) {
+        renderPanelContent(tab);
+    }
+});
+
 // Listen for logout events from ApiClient
 window.addEventListener('auth:logout', () => {
     State.user = null;
@@ -262,6 +283,17 @@ function switchModule(module) {
     document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
     document.querySelector(`.nav-item[data-module="${module}"]`)?.classList.add('active');
 
+    // The follow-up module works as a two-pane workbench: the list narrows to
+    // a selector and the lead's own panel becomes the right column instead of
+    // floating over the page. Every other module keeps the overlay panel.
+    // Which worklist is using the list-beside-panel shape. The panel
+    // becomes a column for these, and stays an overlay everywhere else.
+    const app = document.getElementById('app');
+    if (app) {
+        if (['followup', 'handler', 'sampling', 'deal', 'fulfillment', 'aftersales'].includes(module)) app.dataset.workbench = module;
+        else delete app.dataset.workbench;
+    }
+
     // Show module
     document.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
     document.getElementById(`module-${module}`)?.classList.add('active');
@@ -301,7 +333,7 @@ function switchModule(module) {
     return true;
 }
 
-async function loadModuleData(module) {
+async function loadModuleData(module, options = {}) {
     switch (module) {
         case 'dashboard': await loadDashboard(); break;
         case 'handler': await loadHandler(); break;
@@ -311,7 +343,7 @@ async function loadModuleData(module) {
         case 'fulfillment': await loadFulfillment(); break;
         case 'aftersales': await loadAftersales(); break;
         case 'data-review': await loadDataReview(); break;
-        case 'trip-planner': await loadTripPlanner(); break;
+        case 'trip-planner': await loadTripPlanner(options); break;
         case 'coordinate-review': await loadCoordinateReview(); break;
         case 'authorization': await loadAuthorizationCenter(); break;
         case 'export': window.DataTransferWorkspace?.ensureAccessible?.(); break;
@@ -356,11 +388,16 @@ function clearDashboardData() {
     }
 }
 
+// Two loads can be in the air at once - opening the page while a refresh
+// is still out. Without a ticket the older answer draws last: a failure
+// message replaced by stale numbers, or yesterday's counts over today's.
 async function loadDashboard() {
+    const request = WorklistRequest.begin('dashboard');
     setDashboardStatus('Loading dashboard data...');
     clearDashboardData();
     try {
         const stats = await ApiClient.getDashboard();
+        if (!WorklistRequest.isCurrent(request)) return;
 
         // Map backend stages: New, Assigned, Following, Quoted, Won, Lost
         const byStage = stats.stage_counts || {};
@@ -372,20 +409,23 @@ async function loadDashboard() {
         setText('kpi-recent', stats.recent_7_days || 0);
         setText('kpi-following', counts.followup);
         setText('kpi-won', wonCount);
-        setText('kpi-pipeline', Math.round((stats.won_value || 0) / 1000).toLocaleString());
+        setText('kpi-pipeline', MoneyTotals.text(stats.won_value_by_currency));
 
         applyNavigationCounts(stats);
 
         // Update funnel
         renderFunnel(byStage);
+        DashboardLinks.markCards();
         setDashboardStatus();
     } catch (err) {
         console.error('Dashboard error:', err);
+        if (!WorklistRequest.isCurrent(request)) return;
         clearDashboardData();
         setDashboardStatus('Dashboard data unavailable. Please retry.', true);
     }
 
     // Map errors have their own visible state and must not invalidate valid KPIs.
+    if (!WorklistRequest.isCurrent(request)) return;
     if (typeof loadReviewMap === 'function') await loadReviewMap();
 }
 
@@ -410,8 +450,14 @@ function renderFunnel(byStage) {
         const count = byStage[s.key] || 0;
         // 百分比基于总数
         const pct = Math.round((count / total) * 100);
+        // A stage row opens the list that holds exactly these leads, where
+        // there is one. Where there is not, it stays a number.
+        const key = `stage-${s.key}`;
+        const linked = window.DashboardLinks?.target?.(key);
         return `
-            <div class="funnel-row">
+            <div class="funnel-row${linked ? ' is-linked' : ''}"
+                ${linked ? `role="button" tabindex="0" onclick="DashboardLinks.go('${key}')"
+                    onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); DashboardLinks.go('${key}'); }"` : ''}>
                 <div class="funnel-step">${s.step}</div>
                 <div class="funnel-label">${s.label}</div>
                 <div class="funnel-bar">

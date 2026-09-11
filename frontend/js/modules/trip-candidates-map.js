@@ -38,11 +38,11 @@ function renderTripMap() {
                 </div>`;
         marker.bindPopup(`
             <div class="map-popup">
-                <div class="map-popup-title">${escapeHtml(candidate.customer_name)}</div>
+                <div class="map-popup-title" data-business>${escapeHtml(candidate.customer_name)}</div>
                 <div class="map-popup-meta">${escapeHtml([candidate.city, candidate.country].filter(Boolean).join(', '))}</div>
                 <div class="map-popup-stats">
                     <span>${escapeHtml(I18n.t('{count} open', { count: Number(candidate.open_count) || 0 }))}</span>
-                    <span>${escapeHtml(formatMoney(candidate.pipeline_value || 0))}</span>
+                    <span>${escapeHtml(MoneyTotals.text(candidate.pipeline_value_by_currency))}</span>
                 </div>
                 ${candidateAction}
             </div>

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
+from .money_totals import totals_by_currency
+
 class ReviewAnalysisService:
     """Extracted ReviewService component."""
 
@@ -61,17 +63,26 @@ class ReviewAnalysisService:
             if (lead.get("days_since_activity") or 0) >= 30
         ]
 
-        pipeline_value = sum(self.core._num(lead.get("estimated_value")) for lead in open_leads)
-        won_value = sum(self.core._num(lead.get("deal_amount")) for lead in won_leads)
-
+        # Kept per currency: four deals of 10,000 EUR are 40,000 EUR, and the
+        # one number they used to be was printed with a dollar sign.
+        pipeline_totals = totals_by_currency(open_leads, "estimated_value")
+        won_totals = totals_by_currency(won_leads, "deal_amount")
         summary = {
             "total_leads": len(leads),
             "open_leads": len(open_leads),
             "won_leads": len(won_leads),
             "lost_leads": len(lost_leads),
-            "pipeline_value": pipeline_value,
-            "won_value": won_value,
-            "average_won_value": won_value / len(won_leads) if won_leads else 0,
+            "pipeline_value_by_currency": pipeline_totals["by_currency"],
+            "won_value_by_currency": won_totals["by_currency"],
+            "amounts_missing": {
+                "pipeline": pipeline_totals["missing_amount"],
+                "won": won_totals["missing_amount"],
+                "pipeline_currency": pipeline_totals["missing_currency"],
+                "won_currency": won_totals["missing_currency"],
+            },
+            # No average across currencies either: it would be an amount in
+            # none of them. The per-currency subtotals and the deal count are
+            # both here, and they can be read together.
             "quote_rate": len(quoted_or_closed) / len(leads) if leads else 0,
             "win_rate": len(won_leads) / (len(won_leads) + len(lost_leads)) if (won_leads or lost_leads) else 0,
             "overdue_followups": len(overdue_leads),
@@ -128,22 +139,31 @@ class ReviewAnalysisService:
             stage_counts[stage] = count
 
         # Pipeline value (non-Won/Lost)
-        pipeline = conn.execute(
+        pipeline_rows = conn.execute(
             f"""
-            SELECT COALESCE(SUM(estimated_value), 0) FROM leads
+            SELECT estimated_value, currency FROM leads
             WHERE {where_clause} AND sales_stage NOT IN ('Won', 'Lost')
             """,
             params,
-        ).fetchone()[0]
-
-        # Won value
-        won_value = conn.execute(
+        ).fetchall()
+        pipeline_totals = totals_by_currency(
+            [{"estimated_value": row[0], "currency": row[1]} for row in pipeline_rows],
+            "estimated_value",
+        )
+        # Won value, kept per currency. One column of amounts added together
+        # is a number in no currency at all, and the dashboard printed it in
+        # dollars.
+        won_rows = conn.execute(
             f"""
-            SELECT COALESCE(SUM(deal_amount), 0) FROM leads
+            SELECT deal_amount, currency FROM leads
             WHERE {where_clause} AND sales_stage = 'Won'
             """,
             params,
-        ).fetchone()[0]
+        ).fetchall()
+        won_totals = totals_by_currency(
+            [{"deal_amount": row[0], "currency": row[1]} for row in won_rows],
+            "deal_amount",
+        )
 
         # Recent leads (last 7 days)
         recent = conn.execute(
@@ -200,8 +220,14 @@ class ReviewAnalysisService:
         return {
             "total_leads": total,
             "stage_counts": stage_counts,
-            "pipeline_value": float(pipeline),
-            "won_value": float(won_value),
+            "pipeline_value_by_currency": pipeline_totals["by_currency"],
+            "won_value_by_currency": won_totals["by_currency"],
+            "amounts_missing": {
+                "pipeline": pipeline_totals["missing_amount"],
+                "won": won_totals["missing_amount"],
+                "pipeline_currency": pipeline_totals["missing_currency"],
+                "won_currency": won_totals["missing_currency"],
+            },
             "recent_7_days": recent,
             "overdue_followups": overdue,
             "pre_sales_active_lead_count": pre_sales_active_lead_count,

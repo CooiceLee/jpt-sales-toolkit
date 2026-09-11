@@ -13,6 +13,7 @@
   --wine-500: #A52D55;
   --wine-400: #C74B73;
   --wine-100: #F5E6EB;
+  --wine-200: #E9CBD5;
 
   /* Neutrals */
   --cream-50: #FDFBF7;
@@ -758,7 +759,7 @@ html, body {
 
 .inquiry-card:hover {
   box-shadow: var(--shadow-md);
-  border-color: var(--wine-200);
+  border-color: var(--wine-400);
 }
 
 .inquiry-card.active {
@@ -819,6 +820,162 @@ html, body {
 .grade-b { background: var(--grade-b); }
 .grade-c { background: var(--grade-c); }
 .grade-d { background: var(--grade-d); }
+/* Not graded yet: an outline, so it reads as an empty slot rather than as
+   a grade somebody gave. */
+/* ===== Workspace head: one shape for every module =====
+   Title, how many things are in this view, and the one action that starts
+   work here. Each module used to arrange these differently, so the reader had
+   to find the count and the primary button again on every page. */
+.workspace-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.workspace-head .module-title { margin-bottom: 0; }
+.workspace-head .workspace-count {
+  font-size: 13px;
+  color: var(--ink-600);
+}
+.workspace-head .workspace-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* What is happening to the reader's edits, beside the button that causes it. */
+.panel-save-state {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--ink-500);
+  align-self: center;
+}
+.panel-save-state.is-dirty { color: var(--warning); font-weight: 600; }
+.panel-save-state.is-busy { color: var(--ink-600); }
+.panel-save-state.is-done { color: var(--success); }
+.panel-save-state.is-failed { color: var(--danger); font-weight: 600; }
+
+/* ===== The trip page as four pieces of work =====
+   Which plan is open, and what is being done to it, stay at the top whichever
+   zone is showing. Changing zone hides and shows; it never re-renders, so a
+   half-typed briefing is still there on the way back. */
+.trip-zone-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.trip-zone-plan { display: flex; flex-direction: column; min-width: 0; }
+.trip-zone-plan strong {
+  font-size: 15px;
+  color: var(--ink-900);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trip-zone-plan span { font-size: 12px; color: var(--ink-500); }
+.trip-zone-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  background: var(--cream-200);
+  border-radius: var(--radius-md);
+  padding: 3px;
+}
+.trip-zone-tab {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  color: var(--ink-600);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.trip-zone-tab:hover { color: var(--ink-800); }
+.trip-zone-tab.active {
+  background: white;
+  color: var(--wine-700);
+  box-shadow: var(--shadow-sm);
+}
+.trip-zone-tab:focus-visible {
+  outline: 3px solid rgba(165, 45, 85, .28);
+  outline-offset: 2px;
+}
+
+/* Until a zone is chosen the page behaves exactly as it did, so a browser with
+   no script still shows everything rather than nothing. */
+#module-trip-planner[data-active-zone] [data-trip-zone] { display: none; }
+#module-trip-planner[data-active-zone="settings"] [data-trip-zone="settings"],
+#module-trip-planner[data-active-zone="route"] [data-trip-zone="route"],
+#module-trip-planner[data-active-zone="briefing"] [data-trip-zone="briefing"],
+#module-trip-planner[data-active-zone="execution"] [data-trip-zone="execution"] {
+  display: block;
+}
+#module-trip-planner[data-active-zone="settings"] .trip-plan-setup[data-trip-zone="settings"] {
+  display: grid;
+}
+/* A hidden panel that was already hidden for its own reasons stays hidden. */
+#module-trip-planner[data-active-zone] [data-trip-zone][hidden] { display: none; }
+
+/* The plan being edited comes first at every width: its name, its dates and
+   who is travelling used to sit below the map, the schedule, the visit forms
+   and the export panel, so a narrow window put them thousands of pixels down. */
+.trip-plan-setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (min-width: 1200px) {
+  .trip-plan-setup { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+.trip-advanced-coordinates {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 10px;
+  grid-column: 1 / -1;
+}
+.trip-advanced-coordinates > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-600);
+}
+.trip-coordinate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.action-picker-list { list-style: none; margin: 0; padding: 0; }
+.action-picker-list li { margin-bottom: 6px; }
+.action-picker-list .btn { width: 100%; text-align: left; }
+
+/* Manual entry: the customer candidates and the running status of a save. */
+.new-inquiry-matches { list-style: none; margin: 8px 0 0; padding: 0; }
+.new-inquiry-matches li { padding: 4px 0; }
+.new-inquiry-matches label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.new-inquiry-matches-box { margin-bottom: 12px; }
+.form-section-title { font-size: 14px; font-weight: 600; color: var(--ink-700); margin: 16px 0 8px; }
+.new-inquiry-status { min-height: 20px; margin-top: 8px; color: var(--ink-600); }
+.new-inquiry-status.error { color: var(--danger); }
+
+.grade-none {
+  background: transparent;
+  color: var(--ink-500);
+  border: 1px dashed var(--border-color);
+}
 
 .card-company {
   font-size: 16px;
@@ -1216,7 +1373,7 @@ html, body {
 }
 
 .coord-geocode-result.error {
-  color: var(--error);
+  color: var(--danger);
 }
 
 @media (max-width: 720px) {
@@ -1364,6 +1521,285 @@ html, body {
   text-align: right;
 }
 
+
+/* ===== Follow-up workbench =====
+   The list answers "which lead?" in a narrow column; the lead's own panel gets
+   the rest of the width. The panel is the same one every module uses - here it
+   stops floating over the page and becomes the right-hand column instead, so
+   nothing about its content, its drafts or its save path changes.
+   Colours, spacing and the hairline treatment come from the approved U0
+   sample; the only value added there is a divider one step lighter than the
+   panel border, so a panel edge and an inner row line are not the same weight. */
+:root {
+  --hairline: rgba(0,0,0,0.06);
+  --wb-list-width: 380px;
+  --wb-row-pad-y: 12px;
+  --wb-row-title: 15px;
+  --wb-row-meta: 12px;
+}
+.module[data-density="compact"] {
+  --wb-row-pad-y: 5px;
+  --wb-row-title: 13px;
+  --wb-row-meta: 11px;
+}
+
+.app.detail-open[data-workbench] .main { margin-right: 0; }
+.app.detail-open[data-workbench] .detail-panel {
+  border-left: 1px solid var(--border-color);
+  box-shadow: -1px 0 0 rgba(0,0,0,.02);
+}
+.app[data-workbench] .main { flex: 1 1 auto; min-width: 0; }
+/* The head and the filters keep the full width - squeezing them into the
+   selector column stacked every control and left the customer names cut off.
+   Only the list narrows; the panel covers the empty space to its right. */
+.app.detail-open[data-workbench] {
+  /* Viewport units, not per cent: a percentage in a variable resolves against
+     whichever property uses it, so the same value came out 704px on the fixed
+     panel and 340px on the head - and the head then ran under the panel. */
+  --wb-panel-width: calc(100vw - var(--rail-width) - var(--sidebar-width) - var(--wb-list-width) - 40px);
+}
+.app.detail-open[data-workbench] .module.active:not([data-view="table"]) .wb-list-panel {
+  max-width: var(--wb-list-width);
+}
+.app.detail-open[data-workbench]:has(.module.active[data-view="table"]) {
+  --wb-panel-width: 420px;
+}
+.app.detail-open[data-workbench] .module.active[data-view="table"] .wb-table-panel {
+  margin-right: calc(var(--wb-panel-width) + 16px);
+}
+.app.detail-open[data-workbench] .detail-panel { width: var(--wb-panel-width); }
+/* The panel starts where the list starts, not at the top of the window, so
+   the head, the tabs and the filters keep the full width above both panes.
+   --wb-panel-top is measured by the workbench and kept in step with layout. */
+.app.detail-open[data-workbench] .detail-panel {
+  top: var(--wb-panel-top, 0px);
+  height: calc(100vh - var(--wb-panel-top, 0px));
+  border-top-left-radius: var(--radius-lg);
+  border-top: 1px solid var(--border-color);
+}
+
+.wb-switch { display: flex; gap: 2px; background: var(--cream-200); border-radius: var(--radius-md); padding: 3px; }
+.wb-switch .filter-tab { padding: 5px 12px; }
+
+.wb-layout { min-height: 0; }
+.module[data-view="table"] .wb-list-panel,
+.module:not([data-view="table"]) .wb-table-panel { display: none; }
+
+.wb-list-panel, .wb-table-panel {
+  position: relative;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 #fff, var(--shadow-sm);
+  overflow: hidden;
+}
+.wb-list { position: relative; }
+/* A spine down the left edge; each row's node sits on it. */
+.wb-list::before {
+  content: '';
+  position: absolute;
+  left: 21px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, var(--wine-200), var(--hairline) 22%, var(--hairline));
+}
+.wb-group {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 38px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--ink-500);
+  background: rgba(255,255,255,.94);
+  border-bottom: 1px solid var(--hairline);
+}
+.wb-group em { font-style: normal; color: var(--ink-400); letter-spacing: 0; }
+.wb-group::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }
+
+.wb-row {
+  position: relative;
+  display: grid;
+  gap: 2px 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "main   amount"
+    "next   next"
+    "last   last";
+  align-items: baseline;
+  padding: var(--wb-row-pad-y) 14px var(--wb-row-pad-y) 38px;
+  border-bottom: 1px solid var(--hairline);
+  background: white;
+  cursor: pointer;
+}
+.wb-row:last-child { border-bottom: none; }
+.wb-row::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: calc(var(--wb-row-pad-y) + 6px);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: white;
+  border: 1.5px solid var(--ink-300);
+}
+.wb-row:hover { background: var(--cream-50); }
+.wb-row.active { background: var(--wine-100); }
+.wb-row.active::before { background: var(--wine-600); border-color: var(--wine-600); }
+.wb-row.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--wine-600);
+}
+.wb-row:focus-visible {
+  outline: none;
+  background: var(--cream-50);
+  box-shadow: inset 0 0 0 2px var(--wine-400);
+}
+.wb-main { grid-area: main; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wb-company {
+  font-size: var(--wb-row-title);
+  font-weight: 600;
+  color: var(--ink-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-id { font-size: 10.5px; color: var(--ink-400); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
+.wb-flags { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.wb-meta, .wb-stage { display: none; }
+.wb-last {
+  grid-area: last;
+  font-size: var(--wb-row-meta);
+  color: var(--ink-500);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wb-next, .wb-amount { font-size: var(--wb-row-meta); color: var(--ink-600); min-width: 0; }
+.wb-next { grid-area: next; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-amount { grid-area: amount; text-align: right; white-space: nowrap;
+  flex: none; margin-left: auto; }
+.wb-next b, .wb-amount b { color: var(--ink-800); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wb-muted { color: var(--ink-400); }
+.wb-lead { color: var(--ink-400); }
+.wb-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; background: var(--ink-400); }
+.wb-dot-following { background: var(--stage-following); }
+.wb-dot-quoted { background: var(--stage-quoting); }
+
+/* Compact: one line per lead - customer, progress, due, amount. */
+.module[data-density="compact"] .wb-row {
+  grid-template-columns: minmax(0, 1fr) 14px 76px auto;
+  grid-template-areas: "main stage next amount";
+  column-gap: 8px;
+  line-height: 1.3;
+}
+.module[data-density="compact"] .wb-stage { grid-area: stage; display: flex; }
+/* The column is a dot wide: the word would fold one character per line. The
+   stage in words is in the panel, and in the table view. */
+.module[data-density="compact"] .wb-stage span { display: none; }
+.module[data-density="compact"] .wb-last,
+.module[data-density="compact"] .wb-next .wb-text,
+.module[data-density="compact"] .wb-next .wb-lead { display: none; }
+.module[data-density="compact"] .wb-row::before {
+  top: calc(var(--wb-row-pad-y) + 3px);
+  width: 7px;
+  height: 7px;
+}
+.module[data-density="compact"] .wb-main > * { align-self: center; line-height: 1.25; }
+.module[data-density="compact"] .grade-badge { width: 15px; height: 15px; font-size: 9px; }
+.module[data-density="compact"] .quality-badge { display: none; }
+
+.wb-table-scroll { overflow: auto; }
+.wb-table-panel table { min-width: 900px; }
+.wb-table-panel tbody tr { cursor: pointer; }
+.wb-table-panel tbody tr:hover { background: var(--cream-50); }
+.wb-table-panel tbody tr.active { background: var(--wine-100); }
+.wb-table-panel tbody tr:focus-visible { outline: 2px solid var(--wine-400); outline-offset: -2px; }
+
+/* The follow-up tab inside the panel: the form to write in, the history to
+   read from, side by side when the panel is wide enough for both. */
+.followup-panel-grid { display: grid; gap: 16px 24px; align-items: start; }
+.followup-panel-history { min-width: 0; }
+/* Side by side or stacked is decided by the panel's own width, not the
+   window's: in table view the panel is about 420px wide even on a big screen,
+   and the form half of a two-column grid there is unusable. */
+.detail-panel .panel-content { container-type: inline-size; container-name: panel; }
+@container panel (min-width: 600px) {
+  .followup-panel-grid.has-open-form {
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr);
+  }
+}
+
+.wb-state { margin-bottom: 16px; }
+/* A metric that opens a list looks like it does; one that does not is
+   left plain, which is how the reader tells them apart. */
+.kpi-card.is-linked, .funnel-row.is-linked { cursor: pointer; }
+/* A money figure is several figures - one per currency - so it is set at
+   reading size rather than headline size, where two currencies pushed the
+   card to three lines and made the amount the loudest thing on the page. */
+#kpi-pipeline, #deal-value, #review-won-value {
+  display: inline-block;
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.kpi-card.is-linked:hover, .funnel-row.is-linked:hover { background: var(--cream-50); }
+.kpi-card.is-linked:focus-visible, .funnel-row.is-linked:focus-visible {
+  outline: 2px solid var(--wine-400); outline-offset: 2px;
+}
+
+
+/* Fixed-meaning columns keep their width and stay on one line - an id or a
+   stage folded to one character per line is unreadable, and the table already
+   scrolls sideways. Long business text is the part allowed to wrap. */
+.wb-table-panel .wb-cell-id,
+.wb-table-panel .wb-cell-stage,
+.wb-table-panel .wb-cell-date,
+.wb-table-panel .wb-cell-money { white-space: nowrap; }
+.wb-table-panel .wb-cell-id { min-width: 132px; }
+.wb-table-panel .wb-cell-stage { min-width: 88px; }
+.wb-table-panel .wb-cell-date { min-width: 108px; }
+.wb-table-panel .wb-cell-money { min-width: 116px; text-align: right; }
+.wb-table-panel .wb-cell-name { min-width: 180px; }
+.wb-table-panel .wb-cell-note { min-width: 220px; white-space: normal; }
+
+/* Compact means the same thing in both views: one line per lead, so a
+   screenful is a screenful of leads. A customer name four lines tall in
+   the "compact" table made the switch look like it had done nothing. */
+.module[data-density="compact"] .wb-table-panel :is(td, th) {
+  padding-top: 6px; padding-bottom: 6px;
+}
+.module[data-density="compact"] .wb-table-panel :is(.wb-cell-name, .wb-cell-note) {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+
+/* Below this width there is not enough room for a selector and a working
+   panel side by side - the list was being squeezed to a column too narrow to
+   read a customer name in. The panel goes back to floating over the page,
+   which is what every other module does. */
+@media (max-width: 1180px) {
+  /* Not enough room for a selector and a working panel side by side: the
+     panel goes back to the full overlay every other module uses. */
+  .app.detail-open[data-workbench] { --wb-panel-width: var(--panel-width); }
+  .app.detail-open[data-workbench] .module.active:not([data-view="table"]) .wb-list-panel { max-width: none; }
+  .app.detail-open[data-workbench] .module.active[data-view="table"] .wb-table-panel { margin-right: 0; }
+  .app.detail-open[data-workbench] .detail-panel { box-shadow: var(--shadow-xl); }
+}
+
 /* ===== Detail Panel ===== */
 .detail-panel {
   position: fixed;
@@ -1420,8 +1856,16 @@ html, body {
   padding: 0 20px;
   border-bottom: 1px solid var(--border-color);
   gap: 4px;
-  flex-wrap: wrap;
+  /* Eleven tabs wrapped onto three rows in a short window (or at 125% zoom),
+     and the rows they gained came out of the panel: the footer - Save and
+     Cancel - was pushed below its own edge with nothing able to scroll to it.
+     One scrolling row keeps every tab reachable and the footer on screen. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  flex: 0 0 auto;
 }
+
+.panel-tabs .panel-tab { flex: 0 0 auto; }
 
 .panel-tab {
   padding: 12px 14px;
@@ -1444,6 +1888,9 @@ html, body {
 
 .panel-content {
   flex: 1;
+  /* Without this the content refuses to shrink past its own height and the
+     footer is the part that leaves the panel. */
+  min-height: 0;
   overflow-y: auto;
   padding: 20px;
 }
@@ -1454,6 +1901,7 @@ html, body {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  flex: 0 0 auto;
 }
 
 /* ===== Form Elements ===== */
@@ -1666,6 +2114,13 @@ html, body {
   grid-template-columns: minmax(0, 1fr) clamp(320px, 26vw, 440px);
   gap: 18px;
   align-items: start;
+}
+
+/* The candidate list is route work: it lives in that zone only. In the
+   other three the column it sat in was still reserved, so the preparation
+   editor was squeezed into 420px while 440px of the window stayed blank. */
+#module-trip-planner[data-active-zone]:not([data-active-zone="route"]) .trip-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* The plan window and the customer list drive every date in the itinerary, so
@@ -2365,13 +2820,13 @@ html, body {
 .trip-schedule-periods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .trip-schedule-period { min-height: 120px; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--cream-50); }
 .trip-schedule-period h4 { margin: 0 0 8px; color: var(--ink-500); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-.trip-schedule-item { display: flex; width: 100%; flex-direction: column; align-items: flex-start; gap: 3px; margin-bottom: 7px; padding: 9px; border: 1px solid var(--border-color); border-left: 3px solid var(--burgundy-600); border-radius: var(--radius-md); background: #fff; color: var(--ink-800); text-align: left; cursor: pointer; }
+.trip-schedule-item { display: flex; width: 100%; flex-direction: column; align-items: flex-start; gap: 3px; margin-bottom: 7px; padding: 9px; border: 1px solid var(--border-color); border-left: 3px solid var(--wine-600); border-radius: var(--radius-md); background: #fff; color: var(--ink-800); text-align: left; cursor: pointer; }
 .trip-schedule-item:disabled { cursor: default; opacity: 1; }
 .trip-schedule-item.is-free { border-left-color: #d97706; }
 .trip-schedule-item.is-leg { border-left-color: #2563eb; background: #f8fbff; }
 .trip-schedule-item-type { color: var(--ink-500); font-size: 10px; text-transform: uppercase; }
 .trip-schedule-item small { color: var(--ink-500); font-size: 11px; }
-.trip-schedule-item em { align-self: flex-end; color: var(--burgundy-700); font-size: 10px; font-style: normal; }
+.trip-schedule-item em { align-self: flex-end; color: var(--wine-700); font-size: 10px; font-style: normal; }
 .trip-schedule-empty { padding: 18px 8px; color: var(--ink-400); font-size: 11px; text-align: center; }
 
 .trip-briefing-editor {
@@ -2387,6 +2842,60 @@ html, body {
 }
 
 .trip-briefing-editor[hidden] { display: none; }
+/* Choosing a visit on the left, preparing it on the right. The list is a
+   selector - four facts wide - and the editor is the work surface, so the
+   proportions are the follow-up workbench's, not two equal halves. */
+.trip-briefing-workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 14px;
+}
+.trip-briefing-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(1100px, calc(100vh - 150px));
+  overflow: auto;
+  padding-right: 4px;
+}
+.trip-briefing-pick-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--ink-500);
+  font-size: 11px;
+}
+.trip-briefing-pick {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--wine-600);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--ink-800);
+  text-align: left;
+  cursor: pointer;
+}
+.trip-briefing-pick:hover { background: var(--cream-50); }
+.trip-briefing-pick.active { border-color: var(--wine-400); background: var(--wine-100); }
+.trip-briefing-pick:focus-visible { outline: 2px solid var(--wine-400); outline-offset: -2px; }
+.trip-briefing-pick strong { font-size: 13px; }
+.trip-briefing-pick span { color: var(--ink-500); font-size: 11px; }
+.trip-briefing-pick-people { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-briefing-pick em { justify-self: start; color: var(--wine-700); font-size: 10px; font-style: normal; }
+
+/* Nothing open yet: the list has the width to itself rather than sitting
+   beside an empty rectangle. */
+.trip-briefing-workspace:not(.has-open-briefing) { grid-template-columns: minmax(0, 1fr); }
+.trip-briefing-workspace:not(.has-open-briefing) .trip-briefing-picker { max-height: none; }
+
 .trip-briefing-head { padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
 .trip-briefing-scroll { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; }
 .trip-briefing-summary-grid,
@@ -2763,7 +3272,7 @@ html, body {
 .workbook-picker strong { min-width:0;overflow:hidden;color:var(--ink-700);font-size:12px;text-overflow:ellipsis;white-space:nowrap; }
 .wizard-inline-result { margin-top:10px;padding:9px 10px;border-radius:8px;background:var(--cream-100);color:var(--ink-700);font-size:12px;overflow-wrap:anywhere; }
 .wizard-inline-result.success { background:#edf8f0;color:#166534; }
-.wizard-inline-result.error { background:#fff1f2;color:var(--error); }
+.wizard-inline-result.error { background:#fff1f2;color:var(--danger); }
 .wizard-review-head { display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 18px;border-bottom:1px solid var(--border-color); }
 .wizard-review-head>div { display:flex;align-items:center;gap:10px; }
 .wizard-review-head p { margin-bottom:0; }
@@ -2880,7 +3389,7 @@ html, body {
 }
 
 .import-issue-error strong,
-.import-issue-blocker strong { color: var(--error); }
+.import-issue-blocker strong { color: var(--danger); }
 .import-issue-warning strong { color: var(--warn-dark, #856404); }
 .import-commit-state { margin-left: 10px; }
 
@@ -3318,6 +3827,10 @@ html, body {
   font-size: 13px;
   color: var(--ink-700);
   margin-bottom: 12px;
+  /* What a customer wrote is rendered as text, so the line breaks they typed
+     have to come from here rather than from markup in their words. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .followup-feedback {
@@ -3326,6 +3839,8 @@ html, body {
   border-radius: var(--radius-sm);
   font-size: 13px;
   margin-bottom: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .followup-feedback label {
@@ -3339,6 +3854,8 @@ html, body {
 .followup-next {
   font-size: 13px;
   color: var(--ink-700);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .followup-next strong {
@@ -3536,6 +4053,9 @@ html, body {
 .activation-message {
   padding: 11px 13px;
   margin: 12px 0;
+  /* The startup screen quotes the reason the program was given, on its
+     own line. Without this it runs into the sentence above it. */
+  white-space: pre-line;
   border: 1px solid rgba(139, 30, 63, 0.22);
   border-radius: var(--radius-md);
   background: rgba(139, 30, 63, 0.05);
@@ -3643,6 +4163,8 @@ html, body {
   }
 
   .trip-schedule-workspace { grid-template-columns: 1fr; }
+  .trip-briefing-workspace { grid-template-columns: 1fr; }
+  .trip-briefing-picker { max-height: min(280px, 32vh); }
   .trip-briefing-editor { width: 100%; }
 
   .parser-grid {
@@ -3908,7 +4430,7 @@ html, body {
     border-radius: 10px; background: var(--cream-200); color: var(--ink-600);
     font-size: 11px; }
 
-.trip-free-stop-people { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 6px 0; }
+.trip-free-stop-people { border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; margin: 6px 0; }
 .trip-free-stop-people legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
 #trip-free-stop-people-list { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .trip-free-stop-person { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }

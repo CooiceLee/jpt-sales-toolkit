@@ -18,12 +18,22 @@ function showModal(id) {
     modal.setAttribute('aria-hidden', 'false');
     const app = document.getElementById('app');
     if (app) app.inert = true;
-    requestAnimationFrame(() => {
+    // The dialog was display:none a moment ago, and focusing something that
+    // has no box yet quietly does nothing: the first time a dialog was opened
+    // focus stayed on the page behind it. Try again on the next frame, and
+    // only while focus is still outside - a reader who has already clicked
+    // into a field keeps it.
+    const focusInside = (attemptsLeft) => {
+        if (modal.contains(document.activeElement)) return;
         const preferred = modal.querySelector(
             '[autofocus], #login-username, #activation-file, #coord-address'
         );
         (preferred || modalFocusableElements(modal)[0])?.focus();
-    });
+        if (attemptsLeft > 0 && !modal.contains(document.activeElement)) {
+            requestAnimationFrame(() => focusInside(attemptsLeft - 1));
+        }
+    };
+    requestAnimationFrame(() => focusInside(2));
 }
 
 function hideModal(id) {
@@ -39,6 +49,21 @@ function hideModal(id) {
     modalFocusOrigins.delete(id);
     if (origin?.isConnected) origin.focus();
 }
+
+// Escape leaves a dialog the way its own Cancel button does - and only where
+// there is one. The sign-in and activation dialogs are the way into the
+// program, not something to dismiss; pressing Escape on those does nothing.
+// Routing through the button keeps whatever that dialog checks before closing:
+// a save in flight stays uninterrupted, and a draft is discarded only where
+// clicking Cancel would have discarded it.
+document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const modal = [...document.querySelectorAll('.modal.show')].at(-1);
+    const dismiss = modal?.querySelector('[data-modal-dismiss]');
+    if (!dismiss || dismiss.disabled) return;
+    event.preventDefault();
+    dismiss.click();
+});
 
 document.addEventListener('keydown', event => {
     if (event.key !== 'Tab') return;
@@ -108,10 +133,15 @@ function toDateInput(date) {
     return `${year}-${month}-${day}`;
 }
 
-function formatMoney(value) {
+function formatMoney(value, currency) {
     const amount = Number(value || 0);
     if (!amount) return '-';
-    return `$${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+    const number = amount.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    const code = String(currency || '').trim().toUpperCase();
+    // A number wearing the wrong currency is worse than a number wearing none.
+    // Nothing here converts, so nothing here may claim a currency it was not
+    // given.
+    return code ? `${code} ${number}` : number;
 }
 
 function formatK(value) {

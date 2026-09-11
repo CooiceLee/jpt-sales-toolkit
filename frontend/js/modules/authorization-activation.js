@@ -55,24 +55,42 @@
         }
     };
 
+    // Nothing on this screen can help, so nothing on it is offered.
+    function blockStartup(title, message, params = {}) {
+        ApiClient.clearAuth();
+        document.getElementById('app').style.display = 'none';
+        hideModal('login-modal');
+        ['activation-bootstrap-section', 'activation-member-section', 'activation-back-to-setup',
+            'activation-leader-recovery'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+        setText('activation-modal-title', I18n.t(title));
+        setActivationMessage(message, true, params);
+        showModal('activation-modal');
+        return false;
+    }
+
     window.initAuthorizationActivation = async function() {
         try {
             AuthorizationActivation.setStatus(await ApiClient.getAuthorizationStatus());
         } catch (err) {
             console.error('Authorization status unavailable; login remains blocked.', err);
             activationStatus = null;
-            ApiClient.clearAuth();
-            document.getElementById('app').style.display = 'none';
-            hideModal('login-modal');
-            ['activation-bootstrap-section', 'activation-member-section', 'activation-back-to-setup',
-                'activation-leader-recovery'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
-            setText('activation-modal-title', I18n.t('Authorization Check Failed'));
-            setActivationMessage(
-                'Unable to verify authorization status. Restart JPT and try again.',
-                true
+            return blockStartup(
+                'Authorization Check Failed',
+                'Unable to verify authorization status. Restart JPT and try again.'
             );
-            showModal('activation-modal');
-            return false;
+        }
+        // The machine itself could not be identified. An activation file would
+        // not change that, and a password box would refuse every password
+        // without saying why, so this is said here instead.
+        if (AuthorizationModel.unidentified(activationStatus)) {
+            setText('activation-device-id', I18n.t('Could not be read'));
+            return blockStartup(
+                'This computer could not be identified',
+                'JPT cannot check this computer\'s authorization until it can identify '
+                + 'the computer itself. A new authorization file will not help. Restart '
+                + 'JPT; if this keeps happening, send the line below to your Leader.\n{reason}',
+                { reason: activationStatus.deviceError }
+            );
         }
         if (!AuthorizationModel.requiresActivation(activationStatus)) return true;
         ApiClient.clearAuth();

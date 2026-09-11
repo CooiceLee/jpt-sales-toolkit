@@ -66,7 +66,17 @@ if errorlevel 1 (
 )
 
 echo.
-echo JPT Sales Toolkit 0.12.0-internal portable test fallback is installed at:
+rem The version belongs to the package, not to this script: a number typed
+rem in here goes stale the moment the next candidate is built.
+set "JPT_VERSION="
+if exist "%JPT_SOURCE%\app\VERSION" (
+  for /f "usebackq delims=" %%V in ("%JPT_SOURCE%\app\VERSION") do if not defined JPT_VERSION set "JPT_VERSION=%%V"
+)
+if defined JPT_VERSION (
+  echo JPT Sales Toolkit %JPT_VERSION% portable test fallback is installed at:
+) else (
+  echo JPT Sales Toolkit portable test fallback is installed at:
+)
 echo   %JPT_TARGET%
 echo Existing data remains at:
 echo   %JPT_DATA_DIR%

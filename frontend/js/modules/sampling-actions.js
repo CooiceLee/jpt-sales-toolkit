@@ -7,27 +7,47 @@
 
     const currentTask = index => SamplingFormController.currentTask(index);
 
-    async function refreshSampling(message) {
-        const leadId = State.currentInquiry?.id;
-        await refreshCurrentInquiryData(leadId);
+    async function refreshSampling(action, message) {
+        // The session this task belongs to, captured before the request went
+        // out. Reading the current one here would reload whoever the reader has
+        // since opened - or the same customer on a later visit - and report our
+        // save as theirs.
+        if (!await refreshCurrentInquiryData(action.leadId, action)) {
+            await refreshNavigationCounts();
+            return;
+        }
         renderPanelContent('sample');
         await loadSampling();
-        await refreshAllCounts();
-        notify(message);
+        const counted = await refreshAllCounts();
+        // Those three waits are long enough for the reader to open somebody
+        // else; the message and the form belong to whoever is there now.
+        if (!InquiryPanelAction.isCurrent(action)) return;
+        notify(counted === false ? InquiryPanelAction.countsNotRefreshed() : message);
     }
 
-    async function mutateAndRefresh(mutation, successMessage, failureMessage) {
+    // The action is handed in when the caller holds a form: it carries the
+    // editor and the button that caller froze, so nothing here has to look up
+    // "the save button that is on screen now" - which is how an older save
+    // came to unlock the one belonging to the customer opened since.
+    async function mutateAndRefresh(mutation, successMessage, failureMessage,
+                                    action = InquiryPanelAction.begin()) {
         let committed = false;
         try {
             await mutation();
             committed = true;
-            await refreshSampling(successMessage);
+            await refreshSampling(action, successMessage);
             return true;
         } catch (error) {
             if (committed) {
-                window.hideSampleTaskForm();
-                alert(`${tr('The change was saved, but the screen could not refresh. Reopen this lead to load the latest data.')} ${error.message || ''}`.trim());
-            } else {
+                // Written, then the panel could not be re-read. Closing the
+                // form is only right if it is still this task's form.
+                if (InquiryPanelAction.isCurrent(action)) window.hideSampleTaskForm();
+                return InquiryPanelAction.savedButNotRefreshed(error), false;
+            }
+            if (!InquiryPanelAction.isCurrent(action)) {
+                return InquiryPanelAction.failedAfterMovingOn(error), false;
+            }
+            {
                 alert(`${failureMessage}: ${error.message || tr('Unknown error')}`);
             }
             return false;
@@ -53,6 +73,10 @@
         const save = document.getElementById('sample-task-save');
         if (save?.disabled) return;
         if (save) save.disabled = true;
+        // Validated, not already saving: now hold this form and this button.
+        const action = InquiryPanelAction.begin({
+            editor: 'sample-task-form', button: 'sample-task-save',
+        });
         try {
             await mutateAndRefresh(async () => {
                 if (task?.id) {
@@ -66,10 +90,11 @@
                     });
                 }
             }, tr(task ? 'Pre-sales task updated' : 'Pre-sales task created'),
-            tr('Error saving pre-sales task'));
+            tr('Error saving pre-sales task'), action);
         } finally {
-            const currentSave = document.getElementById('sample-task-save');
-            if (currentSave) currentSave.disabled = false;
+            // Gives back the fields and the button this action itself locked,
+            // and only while the panel is still the one it started on.
+            InquiryPanelAction.release(action);
         }
     };
 

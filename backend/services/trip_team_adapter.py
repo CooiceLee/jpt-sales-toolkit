@@ -635,6 +635,15 @@ def persist_team_itinerary(service, plan_id: str, summary: dict,
             else "trip_plan_stops"
         )
         fields = list(TEAM_TIME_FIELDS)
+        # A pass-through waypoint - an airport, a transit point - is not a
+        # stay, so the calculation gives it no half days. Writing that zero
+        # into a column that has to be at least one failed the whole save:
+        # one transit stop and the team's route could not be generated at all.
+        # The length the reader entered is left alone; the schedule beside it
+        # already shows the waypoint as something the trip passes through.
+        if not item.get("duration_half_days"):
+            fields = [field for field in fields
+                      if field not in ("duration_half_days", "stay_days")]
         if item.get("sequence_no"):
             fields.append("sequence_no")
         if item.get("confirmation_status"):

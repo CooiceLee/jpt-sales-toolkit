@@ -66,21 +66,26 @@ def main() -> None:
     assert "pre_sales_active_lead_count" in app_js
     assert "SamplingModule.renderTab" in inquiry_form_js
     assert "sales_stage: 'Following'" not in sampling_js
-    assert "...getSharedLeadFilters()" in sampling_js
-    assert "limit: 100000" in sampling_js
-    assert "listPreSalesTasks({ limit: 100000 })" in sampling_js
+    # Both lists are read to the end, and neither asks for an enormous page.
+    assert "ApiClient.listAllLeads(getSharedLeadFilters())" in sampling_js
+    assert "ApiClient.listAllPreSalesTasks()" in sampling_js
+    assert "limit: 100000" not in sampling_js
     assert "WorklistSort.sampling" in sampling_js
     assert "Unable to load pre-sales tasks. Please retry." in sampling_js
     assert "InquiryPanelData.load" in inquiry_panel_js
     assert "InquiryPanelData.load" in followups_form_js
-    assert "listPreSalesTasks({" in inquiry_panel_data_js
+    # Read to the end, and a failure is not swallowed: a panel that quietly
+    # drops its task list shows a lead with no tasks on it.
+    assert "listAllPreSalesTasks({" in inquiry_panel_data_js
     task_call = inquiry_panel_data_js[
-        inquiry_panel_data_js.index("listPreSalesTasks({"):
+        inquiry_panel_data_js.index("listAllPreSalesTasks({"):
         inquiry_panel_data_js.index(
-            "listAfterSalesTasks", inquiry_panel_data_js.index("listPreSalesTasks({")
+            "listAllAfterSalesTasks",
+            inquiry_panel_data_js.index("listAllPreSalesTasks({"),
         )
     ]
     assert ".catch(" not in task_call
+    assert "limit: 100000" not in inquiry_panel_data_js
     assert "SamplingFormData.collect(task)" in actions_js
     for field in (
         *REQUEST_FIELDS, *RESULT_FIELDS,

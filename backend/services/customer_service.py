@@ -288,16 +288,20 @@ class CustomerService:
                             "confidence": "high",
                         })
 
-        # 3. Match by normalized name
+        # 3. Match by normalized name - every company of that name, not the
+        # first one found. Which of two namesakes this enquiry belongs to is
+        # the reader's call, and they can only make it if both are offered.
         if company_name:
             normalized = normalize_name(company_name)
             if normalized:
-                customer_id = self.customer_repo.find_by_normalized_name(normalized)
-                match_type = "name"
-                if not customer_id:
-                    customer_id = self.alias_repo.find_active_customer(normalized)
-                    match_type = "alias"
-                if customer_id and not any(c["id"] == customer_id for c in candidates):
+                named = self.customer_repo.find_ids_by_normalized_name(normalized)
+                matches = [(customer_id, "name") for customer_id in named]
+                if not matches:
+                    alias_owner = self.alias_repo.find_active_customer(normalized)
+                    matches = [(alias_owner, "alias")] if alias_owner else []
+                for customer_id, match_type in matches:
+                    if any(c["id"] == customer_id for c in candidates):
+                        continue
                     customer = self.get(customer_id)
                     if customer:
                         candidates.append({

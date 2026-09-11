@@ -28,25 +28,18 @@ window.saveInquiry = async function() {
         const name = input.name;
         if (!name) return;
         let value = input.value;
-        if (input.type === 'number') {
-            value = value === '' ? null : parseFloat(value);
-        }
+        if (input.type === 'number') value = value === '' ? null : parseFloat(value);
         if (value === 'true') value = true;
         if (value === 'false') value = false;
         if (name === 'primary_contact_id' && value === '') value = null;
-        // Customer fields (mapped to customers table columns)
+        // Which table the field belongs to, and what it is called there.
         const customerFieldNames = [
             'company_name', 'country', 'city', 'postal_code', 'address',
             'region', 'customer_type', 'industry', 'language', 'website',
             'company_description', 'company_size', 'lat', 'lng'
         ];
-        // Separate lead vs customer fields
         if (customerFieldNames.includes(name)) {
-            // Map UI field names to DB column names
-            const customerFieldMap = {
-                'company_name': 'display_name',
-                'company_description': 'company_description'
-            };
+            const customerFieldMap = { 'company_name': 'display_name' };
             customerFields[customerFieldMap[name] || name] = value;
         } else if (['contact_name', 'email', 'phone', 'contact_position'].includes(name)) {
             const contactFieldMap = {
@@ -70,6 +63,10 @@ window.saveInquiry = async function() {
         saveButton.disabled = true;
         saveButton.dataset.inquirySaveEpoch = String(saveRequest.saveEpoch);
     }
+    // Held and reported: anything typed after this point would be neither sent
+    // nor kept, and a form that looks idle while saving invites a second press.
+    const heldFields = window.InquiryEditFreeze?.hold?.(content) || null;
+    window.PanelSaveState?.show?.('saving');
     try {
         const customerId = inquirySnapshot?._customer?.id;
         const customerRowVersion = inquirySnapshot?._customer?.row_version;
@@ -124,28 +121,29 @@ window.saveInquiry = async function() {
         await refreshAllCounts();
         if (!requestIsCurrent()) return;
 
+        window.PanelSaveState?.show?.('saved');
         notify(I18n.t('Changes saved'));
     } catch (err) {
         if (!requestIsCurrent()) {
             console.error('Stale inquiry save error:', err);
             return;
         }
+        window.PanelSaveState?.show?.('failed');
+        const errMsg = err.message || 'Unknown error';
         if (err.name === 'ConflictError') {
-            alert(I18n.t('Conflict: {error}. Please refresh and try again.', {
-                error: I18n.t(err.message || 'Unknown error')
-            }));
+            alert(I18n.t('Conflict: {error}. Please refresh and try again.',
+                { error: I18n.t(errMsg) }));
+        } else if (errMsg.includes('email') || errMsg.includes('contact')
+                   || errMsg.includes('name')) {
+            // A contact problem is shown on the field it belongs to.
+            console.error('Save error:', err);
+            handleContactValidationError(errMsg);
         } else {
             console.error('Save error:', err);
-            const errMsg = err.message || 'Unknown error';
-
-            // Handle contact validation errors with field-specific display
-            if (errMsg.includes('email') || errMsg.includes('contact') || errMsg.includes('name')) {
-                handleContactValidationError(errMsg);
-            } else {
-                alert(I18n.t('Error saving changes: {error}', { error: I18n.t(errMsg) }));
-            }
+            alert(I18n.t('Error saving changes: {error}', { error: I18n.t(errMsg) }));
         }
     } finally {
+        window.InquiryEditFreeze?.release?.(heldFields);
         if (saveButton
             && requestIsCurrent()
             && saveButton.dataset.inquirySaveEpoch === String(saveRequest.saveEpoch)) {

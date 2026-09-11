@@ -6,15 +6,14 @@
     let source = null;
     let model = null;
 
-    function render() {
+    function render() {   // draw the form for whichever visit the draft holds
         const stop = (State.currentTripPlan?.stops || []).find(item => item.id === TripBriefingDraft.getStopId());
         TripBriefingRows.renderForm(model, source, stop);
     }
 
     function populate(data) {
         source = clone(data || {});
-        model = TripBriefingDraft.normalizeRecord(data);
-        render();
+        model = TripBriefingDraft.normalizeRecord(data); render();
     }
 
     function syncFromDom() {
@@ -24,6 +23,7 @@
 
     function arrayAction(kind, action, index = -1) {
         if (!ARRAYS.includes(kind) || !model) return;
+        if (kind === 'participants') TripBriefingDraft.markRosterEdited();  // their choice now
         syncFromDom();
         const items = model[kind];
         if (action === 'add') items.push(TripBriefingDraft.blankRow(kind));
@@ -46,7 +46,7 @@
     }
 
     function chooseParticipant(index, id) {
-        syncFromDom();
+        TripBriefingDraft.markRosterEdited(); syncFromDom();
         const found = (source.available_participants || []).find(item => String(item.id || item.user_id) === String(id));
         model.participants[index] = { ...model.participants[index], ...(found ? {
             user_id: found.id || found.user_id, display_name: found.display_name || found.name || '', role: found.role || '',

@@ -70,11 +70,11 @@
             document.getElementById('import-file-name').textContent = tr('No workbook selected');
             document.getElementById('import-setup-summary').textContent = tr('Import complete');
             SpreadsheetImportProgress.markCommitComplete();
-            await refreshAllCounts().catch(error => {
-                console.error('Post-import count refresh failed:', error);
+            // Failure is a false return, not a throw: catching caught nothing.
+            if (!await refreshAllCounts()) {
                 document.getElementById('import-result').insertAdjacentHTML('beforeend',
                     `<p class="error-state">${escapeHtml(tr('Import completed, but navigation counts could not be refreshed. Reopen JPT to load the latest counts.'))}</p>`);
-            });
+            }
             return report;
         } catch (error) {
             if (ticket && !SpreadsheetImportProgress.isCurrent(ticket)) return SpreadsheetImportProgress.markCommitUnconfirmed();

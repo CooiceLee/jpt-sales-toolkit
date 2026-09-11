@@ -60,7 +60,7 @@
         const selected = State.customerMerge[side]?.id === customer.id ? ' selected' : '';
         const matchLabel = customer.matched_on === 'alias' ? 'Matched alias' : 'Matched name';
         return `<button type="button" class="customer-merge-card${selected}" onclick="selectMergeCustomer('${side}', '${escapeHtml(customer.id)}')">
-            <span class="customer-merge-card-head"><strong>${escapeHtml(customer.display_name || '-')}</strong><b class="score-pill">${customer.score}%</b></span>
+            <span class="customer-merge-card-head"><strong data-business>${escapeHtml(customer.display_name || '-')}</strong><b class="score-pill">${customer.score}%</b></span>
             <span>${escapeHtml([customer.country, customer.city].filter(Boolean).join(', ') || tr('No location'))}</span>
             <span>${escapeHtml(tr(matchLabel))}: ${escapeHtml(customer.matched_value || customer.display_name || '-')}</span>
         </button>`;
@@ -94,7 +94,7 @@
                 return;
             }
             const aliases = (customer.aliases || []).map(item => item.alias_name).filter(Boolean);
-            container.innerHTML = `<div class="customer-merge-card selected"><strong>${escapeHtml(customer.display_name || '-')}</strong>
+            container.innerHTML = `<div class="customer-merge-card selected"><strong data-business>${escapeHtml(customer.display_name || '-')}</strong>
                 <span>${escapeHtml([customer.country, customer.city].filter(Boolean).join(', ') || tr('No location'))}</span>
                 ${aliases.length ? `<span>${escapeHtml(tr('Aliases'))}: ${escapeHtml(aliases.slice(0, 3).join(' · '))}</span>` : ''}
                 <span>${escapeHtml(tr('Contacts'))}: ${(customer.contacts || []).length} · ${escapeHtml(tr('Version'))}: ${customer.row_version || 1}</span></div>`;

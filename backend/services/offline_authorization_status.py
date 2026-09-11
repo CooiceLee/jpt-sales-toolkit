@@ -37,6 +37,32 @@ def build_installation_status(
     }
 
 
+def unidentified_device_status(organization: dict, message: str) -> dict:
+    """What the page shows when this machine cannot be identified.
+
+    Every other field says "nothing is authorized", because nothing can be:
+    without an identity there is no authorization to match. The reason is
+    carried so the page can say it, instead of a blank "not activated" that
+    sends somebody to activate a package that would not help.
+    """
+    trusted = bool(organization.get("signing_public_key"))
+    return {
+        "mode": "unidentified",
+        "activated": False,
+        "device_id": None,
+        "device_error": message,
+        "trust_required": not trusted,
+        "member": None,
+        "authorization": None,
+        "issuer": {
+            "initialized": False,
+            "trusted": trusted,
+            "can_initialize": False,
+            "fingerprint": organization.get("signing_key_id"),
+        },
+    }
+
+
 def authorization_status(active: dict, organization: dict, current_device: str):
     if not active:
         return None

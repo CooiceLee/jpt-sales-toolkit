@@ -14,7 +14,10 @@ MODULES = ROOT / "frontend" / "js" / "modules"
 def main() -> None:
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     sort_source = (MODULES / "worklist-sort.js").read_text(encoding="utf-8")
-    sales = (MODULES / "sales-worklists.js").read_text(encoding="utf-8")
+    # The inquiry queue moved into its own module when the shared one grew
+    # past the size limit; both still have to sort through WorklistSort.
+    sales = ((MODULES / "sales-worklists.js").read_text(encoding="utf-8")
+             + (MODULES / "handler-worklist.js").read_text(encoding="utf-8"))
     sampling = (MODULES / "sampling.js").read_text(encoding="utf-8")
     service = (MODULES / "service-worklists.js").read_text(encoding="utf-8")
     repository = (
@@ -22,6 +25,7 @@ def main() -> None:
     ).read_text(encoding="utf-8")
 
     assert index.index("worklist-sort.js") < index.index("sales-worklists.js")
+    assert index.index("worklist-sort.js") < index.index("handler-worklist.js")
     assert index.index("worklist-sort.js") < index.index("sampling.js")
     assert index.index("worklist-sort.js") < index.index("service-worklists.js")
     for call in ("handler", "followup", "deal"):

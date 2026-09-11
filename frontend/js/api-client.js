@@ -76,10 +76,20 @@ const ApiClient = (function() {
             headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const response = await fetch(API_BASE + endpoint, {
-            ...options,
-            headers
-        });
+        let response;
+        try {
+            response = await fetch(API_BASE + endpoint, { ...options, headers });
+        } catch (error) {
+            // fetch throws for "the program is not there" - a stopped server, a
+            // closed laptop lid, a browser tab left open overnight. The browser
+            // words that as "Failed to fetch", which reads to the person in
+            // front of it as a fault in whatever they were saving.
+            throw new ApiError(
+                'Cannot reach JPT Sales Toolkit. Check that the program is '
+                + 'running, then try again.',
+                0,
+            );
+        }
 
         // Only an authenticated request can expire a session. Login and the
         // offline-activation endpoints must preserve their own error meaning.
@@ -353,12 +363,23 @@ const ApiClient = (function() {
 
     // ===== Lead API =====
     async function listLeads(params = {}) {
-        // Default to fetching more records to avoid pagination issues
-        if (!params.limit) {
-            params.limit = 1000;
-        }
+        // One page, as asked for. A caller that needs the whole list says so
+        // with listAllLeads, which reads every page and reports whether it
+        // reached the end.
         const query = new URLSearchParams(params).toString();
         return request(`/leads${query ? '?' + query : ''}`);
+    }
+
+    async function listAllLeads(params = {}) {
+        return PagedFetch.all(page => listLeads({ ...params, ...page }));
+    }
+
+    async function listAllPreSalesTasks(params = {}) {
+        return PagedFetch.all(page => listPreSalesTasks({ ...params, ...page }));
+    }
+
+    async function listAllAfterSalesTasks(params = {}) {
+        return PagedFetch.all(page => listAfterSalesTasks({ ...params, ...page }));
     }
 
     async function getLead(id) {
@@ -1184,6 +1205,9 @@ const ApiClient = (function() {
 
         // Task
         listPreSalesTasks,
+        listAllLeads,
+        listAllPreSalesTasks,
+        listAllAfterSalesTasks,
         createPreSalesTask,
         updatePreSalesTask,
         archivePreSalesTask,

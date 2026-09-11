@@ -53,6 +53,10 @@ class InvalidLeadAssignmentError(ValueError):
     """Raised when a member cannot hold a commercial lead assignment."""
 
 
+class InvalidLeadCustomerError(ValueError):
+    """The lead points at a customer that is not on file."""
+
+
 class InvalidLeadContactError(ValueError):
     """Raised when a lead contact is missing, archived or owned by another customer."""
 
@@ -242,6 +246,7 @@ class LeadService:
     ) -> dict:
         """Create new lead."""
         self._validate_commercial_assignee(data.get("owner_id"), "owner")
+        self._validate_customer_exists(data["customer_id"])
         self._validate_primary_contact(data["customer_id"], data.get("primary_contact_id"))
         data = merge_extra_fields(data)
         with self._atomic_write(commit):
@@ -516,6 +521,19 @@ class LeadService:
         if member["role"] == "tech":
             raise InvalidLeadAssignmentError(
                 "Technical users cannot be lead owners or collaborators"
+            )
+
+    def _validate_customer_exists(self, customer_id: str) -> None:
+        """A lead has to belong to a customer that is actually on file.
+
+        The customer id arrives from a form, so it is a boundary: pointing at
+        nothing used to reach the database and come back as a foreign-key error,
+        which the reader saw as "the server broke" rather than "that company is
+        not on file".
+        """
+        if not self.customer_repo.get_by_id(customer_id):
+            raise InvalidLeadCustomerError(
+                "Lead customer must be an existing customer"
             )
 
     def _validate_primary_contact(

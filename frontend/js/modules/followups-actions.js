@@ -31,6 +31,14 @@ window.saveFollowUp = async function() {
     const saveButton = document.getElementById('fu-save-btn');
     if (saveButton?.disabled) return;
     if (saveButton) saveButton.disabled = true;
+    // The form is held for the length of the request: what was submitted is
+    // what is on screen, and anything typed afterwards would be neither sent
+    // nor kept. The action holds the form and the button it locked, so the
+    // release cannot reach a form belonging to somebody else.
+    const action = InquiryPanelAction.begin({
+        editor: 'followup-form', button: 'fu-save-btn',
+    });
+    let written = false;
     try {
         const index = parseInt(document.getElementById('fu-index').value, 10);
         const followUp = Number.isInteger(index) && index >= 0
@@ -42,22 +50,40 @@ window.saveFollowUp = async function() {
         } else {
             await ApiClient.addFollowUp(leadId, data);
         }
-        await refreshCurrentInquiryData(leadId);
-
+        written = true;
+        const stillHere = await refreshCurrentInquiryData(leadId, action);
+        if (!stillHere) {
+            // Saved, and the reader has moved on. The numbers are theirs to
+            // update; the panel in front of them is not ours to touch.
+            await refreshNavigationCounts();
+            return;
+        }
         renderPanelContent('followup');
-        await refreshAllCounts();
-        notify(followUp?.id
-            ? followupActionText('Follow-up updated.')
-            : followupActionText('Follow-up added.'));
+        // refreshAllCounts keeps its own failures to itself and answers with
+        // false. Ignoring that told the reader everything was up to date while
+        // the numbers on the left were still the old ones.
+        const counted = await refreshAllCounts();
+        // Checked again: the counts took a moment, and the reader may have
+        // opened somebody else while they did. Their form is not ours to close.
+        if (!InquiryPanelAction.isCurrent(action)) return;
+        notify(counted === false ? InquiryPanelAction.countsNotRefreshed()
+            : followUp?.id
+                ? followupActionText('Follow-up updated.')
+                : followupActionText('Follow-up added.'));
         hideFollowUpForm();
     } catch (err) {
+        // Written but not redrawn is not a failed save, and must never send
+        // somebody to record the same follow-up twice.
+        if (written) return InquiryPanelAction.savedButNotRefreshed(err);
+        if (!InquiryPanelAction.isCurrent(action)) {
+            return InquiryPanelAction.failedAfterMovingOn(err);
+        }
         console.error('Follow-up save error:', err);
         alert(followupActionText('Error saving follow-up: {error}', {
             error: followupActionText(err?.message || 'Unknown error')
         }));
     } finally {
-        const currentButton = document.getElementById('fu-save-btn');
-        if (currentButton) currentButton.disabled = false;
+        InquiryPanelAction.release(action);
     }
 };
 
@@ -68,12 +94,26 @@ window.archiveFollowUp = async function(index) {
 
     if (!confirm(followupActionText('Archive this follow-up?'))) return;
 
+    const action = InquiryPanelAction.begin();
+    let archived = false;
     try {
         await ApiClient.archiveActivity(leadId, followUp.id);
-        await refreshCurrentInquiryData(leadId);
+        archived = true;
+        if (!await refreshCurrentInquiryData(leadId, action)) {
+            await refreshNavigationCounts();
+            return;
+        }
         renderPanelContent('followup');
-        await refreshAllCounts();
+        if (await refreshAllCounts() === false && InquiryPanelAction.isCurrent(action)) {
+            notify(InquiryPanelAction.countsNotRefreshed());
+        }
     } catch (err) {
+        // Archived, then the re-read failed: saying "could not archive" sends
+        // somebody to archive it a second time.
+        if (archived) return InquiryPanelAction.archivedButNotRefreshed(err);
+        if (!InquiryPanelAction.isCurrent(action)) {
+            return InquiryPanelAction.failedAfterMovingOn(err);
+        }
         console.error('Follow-up archive error:', err);
         alert(followupActionText('Error archiving follow-up: {error}', {
             error: followupActionText(err?.message || 'Unknown error')

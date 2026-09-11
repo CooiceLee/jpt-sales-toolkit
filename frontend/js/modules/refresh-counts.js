@@ -30,11 +30,10 @@ failed one.
 async function refreshNavigationCounts() {
     try {
         if (RoleCapabilities.isTech()) {
-            try {
-                await refreshTechNavigationCounts();
-            } catch (error) {
-                console.error('Tech navigation count refresh failed:', error);
-            }
+            // Failing here draws em dashes beside the modules. Reporting that
+            // as a successful refresh let a caller promise the reader fresh
+            // numbers while the numbers were unknown.
+            await refreshTechNavigationCounts();
             return true;
         }
         applyNavigationCounts(await ApiClient.getDashboard());

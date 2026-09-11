@@ -45,7 +45,11 @@ the newest means the reader has moved on, and the answer is dropped.
     function accept(token, plan) {
         if (!plan || !isCurrent(token)) return false;
         shown = token;
+        const previousId = State.currentTripPlan?.id || null;
         State.currentTripPlan = plan;
+        // A different plan starts at its own settings; the same plan being
+        // re-read leaves the reader in the zone they were working in.
+        window.TripZones?.planChanged?.(plan, previousId);
         return true;
     }
 
@@ -54,6 +58,7 @@ the newest means the reader has moved on, and the answer is dropped.
         if (!isCurrent(token)) return false;
         shown = token;
         State.currentTripPlan = null;
+        window.TripZones?.renderHeader?.(null);
         return true;
     }
 

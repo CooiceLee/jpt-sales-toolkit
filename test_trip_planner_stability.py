@@ -635,6 +635,67 @@ def check_candidate_region_filter_does_not_mutate_plan_region(client: TestClient
     assert persisted["region"] == "EU"
 
 
+def check_a_waypoint_does_not_stop_a_team_route_from_being_saved(
+    client: TestClient,
+    ctx: dict,
+) -> None:
+    """A pass-through waypoint has no half-days, and that zero was written.
+
+    Airports and transit points are joined into the route rather than stayed
+    at, so the team calculation gives them a length of zero half-days. Saving
+    wrote that zero into a column that must be at least one, and the whole
+    generate failed with a 500: one transit stop and the team could not have a
+    route at all. The stop's own length is not the calculation's to blank out
+    either - it is what the reader typed.
+    """
+    plan = _create_plan(client, ctx["headers"], title="Waypoint team route")
+    _add_stop(client, ctx["headers"], plan["id"], ctx["leads"]["berlin"],
+              planned_date="2026-09-15", planned_start_period="AM")
+    _add_stop(client, ctx["headers"], plan["id"], ctx["leads"]["paris"],
+              planned_date="2026-09-17", planned_start_period="AM")
+    created = _require(client.post(
+        f"/api/review/trip-plans/{plan['id']}/free-stops",
+        headers=ctx["headers"],
+        json={"category": "transit", "location_name": "Transit point",
+              "city": "Frankfurt", "country": "Germany",
+              "lat": 50.110, "lng": 8.682, "stay_days": 1,
+              "planned_date": "2026-09-16", "planned_start_period": "AM"},
+    ), 200)
+    # A team plan: it is the team calculation that gives a waypoint no length.
+    _require(client.put(
+        f"/api/review/trip-plans/{plan['id']}/members",
+        headers=ctx["headers"],
+        json={"user_id": ctx["leader_id"], "origin_name_override": "Berlin",
+              "origin_lat_override": 52.52, "origin_lng_override": 13.405,
+              "destination_name_override": "Berlin",
+              "destination_lat_override": 52.52, "destination_lng_override": 13.405,
+              "departure_date": "2026-09-15"},
+    ), 200)
+
+    before = _require(client.get(f"/api/review/trip-plans/{plan['id']}",
+                                 headers=ctx["headers"]), 200)
+    saved = next(stop for stop in before["stops"]
+                 if stop.get("stop_kind") == "free")
+    assert created, "the waypoint was not created"
+    waypoint_id = saved["id"]
+    generated = _require(client.post(
+        f"/api/review/trip-plans/{plan['id']}/generate-itinerary",
+        headers=ctx["headers"],
+        json={"row_version": before["row_version"], "travel_mode": "drive"},
+    ), 200)
+    assert generated.get("schedule_items"), (
+        "the team route came back empty, so the waypoint was not scheduled"
+    )
+    after = _require(client.get(f"/api/review/trip-plans/{plan['id']}",
+                                headers=ctx["headers"]), 200)
+    kept = next(stop for stop in after["stops"] if stop["id"] == waypoint_id)
+    assert kept.get("duration_half_days") == saved.get("duration_half_days"), (
+        "the calculation overwrote the waypoint's own length: "
+        f"{saved.get('duration_half_days')} -> {kept.get('duration_half_days')}"
+    )
+    assert kept.get("stay_days") == saved.get("stay_days")
+
+
 def run() -> None:
     try:
         with TestClient(app) as client:
@@ -645,6 +706,7 @@ def run() -> None:
             check_followup_reschedule_archive_and_lead_recalculation(client, ctx)
             check_missing_coordinates_duplicates_and_route_staleness(client, ctx)
             check_candidate_region_filter_does_not_mutate_plan_region(client, ctx)
+            check_a_waypoint_does_not_stop_a_team_route_from_being_saved(client, ctx)
         print("PASS: Trip Planner stability and data-integrity regressions")
     finally:
         close_db()

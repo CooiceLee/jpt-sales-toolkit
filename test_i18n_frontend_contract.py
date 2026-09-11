@@ -235,11 +235,19 @@ const context = {
         observe() {}
     },
 };
+context.counts = { toggleQueries: 0, langWrites: 0 };
 context.document = {
     body: null,
-    documentElement: { lang: 'en' },
+    documentElement: {
+        _lang: 'en',
+        get lang() { return this._lang; },
+        set lang(value) { context.counts.langWrites += 1; this._lang = value; },
+    },
     addEventListener() {},
-    querySelectorAll() { return []; },
+    querySelectorAll(selector) {
+        if (String(selector).includes('data-language-toggle')) context.counts.toggleQueries += 1;
+        return [];
+    },
     createTreeWalker() { return { nextNode: () => false, currentNode: null }; },
 };
 context.dispatchEvent = () => true;
@@ -367,20 +375,38 @@ assert.strictEqual(context.I18n.t('484 leads'), '484 个商机');
 assert.strictEqual(context.I18n.t('Result: Pending'), '结果：待确认');
 assert.strictEqual(context.I18n.t('Sent: Jul 17, 2026'), '发送时间：2026年7月17日');
 
+// A sentence this interface built from values is not read back off the screen
+// to work out which template made it. That guess is what turned a company
+// called High into 高 and a product line "Laser 1 to Laser 2" into a date
+// range, and no restriction on the guess can tell those apart from the real
+// thing. Counts, ranges and dates are drawn again by the view that owns them
+// when the language changes - see test_translation_boundary.py.
 const countNode = { nodeType: 3, nodeValue: '244 samples' };
 context.I18n.apply(countNode);
-assert.strictEqual(countNode.nodeValue, '244 个售前 / 样品商机');
-context.I18n.setLanguage('en');
-context.I18n.apply(countNode);
-assert.strictEqual(countNode.nodeValue, '244 samples');
+assert.strictEqual(countNode.nodeValue, '244 samples',
+  'the screen walker is still guessing at sentences it did not write');
+assert.strictEqual(context.I18n.t('{count} samples', { count: 244 }),
+  '244 个售前 / 样品商机');
 
+// A phrase it does know is still translated in place, in both directions.
+const labelNode = { nodeType: 3, nodeValue: 'Load more' };
+context.I18n.apply(labelNode);
+assert.strictEqual(labelNode.nodeValue, '加载更多');
+context.I18n.setLanguage('en');
+context.I18n.apply(labelNode);
+assert.strictEqual(labelNode.nodeValue, 'Load more');
+context.I18n.setLanguage('zh-CN');
+
+// Dates on screen come from formatDate, which asks I18n for the locale, so a
+// date the walker finds in a line of text is somebody else's already - it may
+// be a customer's own note, and reformatting it there rewrote their words.
 const dateNode = { nodeType: 3, nodeValue: 'JPT-2607 · Jul 17, 2026' };
 context.I18n.setLanguage('zh-CN');
 context.I18n.apply(dateNode);
-assert.strictEqual(dateNode.nodeValue, 'JPT-2607 · 2026年7月17日');
-context.I18n.setLanguage('en');
-context.I18n.apply(dateNode);
-assert.strictEqual(dateNode.nodeValue, 'JPT-2607 · Jul 17, 2026');
+assert.strictEqual(dateNode.nodeValue, 'JPT-2607 · Jul 17, 2026',
+  'a date inside a line of text was still rewritten in place');
+assert.strictEqual(context.I18n.t('Sent: Jul 17, 2026'), '发送时间：2026年7月17日',
+  'a date the interface itself renders stopped being localized');
 
 const attributes = { title: 'In Progress', value: 'In Progress' };
 const option = {
@@ -405,6 +431,43 @@ context.I18n.setLanguage('en');
 assert.strictEqual(context.formatDate('2026-07-17T12:00:00'), 'Jul 17, 2026');
 assert.strictEqual(context.formatDate('2026-07-17'), 'Jul 17, 2026');
 assert.strictEqual(context.formatDate('not-a-date'), 'not-a-date');
+
+// A subtree that just arrived is translated on its own terms. Stamping the
+// document and searching it for the toggle button belongs to a language
+// change, and doing it per added node is what made one long list take
+// seconds: the observer calls apply() once for every row.
+const row = {
+    nodeType: 1,
+    querySelectorAll: () => [],
+    getAttribute: () => null,
+    setAttribute: () => {},
+};
+context.counts.toggleQueries = 0;
+context.counts.langWrites = 0;
+for (let index = 0; index < 50; index += 1) context.I18n.apply(row);
+assert.strictEqual(context.counts.toggleQueries, 0,
+  'translating an added row searched the whole page for the language toggle');
+assert.strictEqual(context.counts.langWrites, 0,
+  'translating an added row re-stamped the document language');
+
+// A real language change still does both, once.
+context.document.body = {
+    nodeType: 1,
+    querySelectorAll: () => [],
+    getAttribute: () => null,
+    setAttribute: () => {},
+};
+context.I18n.apply(context.document.body);
+assert.strictEqual(context.counts.toggleQueries, 1);
+assert.strictEqual(context.counts.langWrites, 1);
+context.I18n.setLanguage('zh-CN');
+assert.strictEqual(context.counts.langWrites, 2);
+assert.strictEqual(context.document.documentElement.lang, 'zh-CN');
+// And the added row is still translated in the new language.
+const label = { nodeType: 3, nodeValue: 'In Progress', parentElement: null };
+context.I18n.apply(label);
+assert.strictEqual(label.nodeValue, '进行中');
+context.I18n.setLanguage('en');
 """
     result = subprocess.run(
         ["node", "-e", harness],

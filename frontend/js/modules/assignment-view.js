@@ -30,7 +30,7 @@ function renderAssignmentSection(inq) {
                     ${watchers.length === 0 ? '<div style="color:var(--ink-500);font-size:14px;">No watchers</div>' :
                       watchers.map(w => `
                         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--cream-100);border-radius:4px;margin-bottom:4px;">
-                            <span>${escapeHtml(w.user_name || w.user_id)}</span>
+                            <span data-business>${escapeHtml(w.user_name || w.user_id)}</span>
                             <button type="button" class="btn btn-text btn-sm" onclick="removeAssignment('${w.id}')" style="color:var(--danger);">Remove</button>
                         </div>
                       `).join('')
@@ -51,7 +51,7 @@ function renderAssignmentSection(inq) {
                     ${collaborators.length === 0 ? '<div style="color:var(--ink-500);font-size:14px;">No collaborators</div>' :
                       collaborators.map(c => `
                         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:var(--cream-100);border-radius:4px;margin-bottom:4px;">
-                            <span>${escapeHtml(c.user_name || c.user_id)}</span>
+                            <span data-business>${escapeHtml(c.user_name || c.user_id)}</span>
                             <button type="button" class="btn btn-text btn-sm" onclick="removeAssignment('${c.id}')" style="color:var(--danger);">Remove</button>
                         </div>
                       `).join('')
