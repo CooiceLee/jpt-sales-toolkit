@@ -176,7 +176,12 @@ def check_no_document_claims_a_version_nobody_built() -> None:
         ["git", "tag", "--list", "v*-internal"],
         cwd=ROOT, capture_output=True, text=True, check=False,
     )
-    if tags.returncode != 0:
+    # A checkout without tags cannot answer the question this check asks. CI
+    # clones shallow by default, and an empty list there meant "nothing was
+    # ever built", which failed every document that names the package the team
+    # is actually holding. Not knowing is not the same as knowing nothing was
+    # built; the workflow fetches tags so the check really runs there.
+    if tags.returncode != 0 or not tags.stdout.strip():
         return  # Not a checkout; there is nothing to compare against.
     built = {line.strip().lstrip("v") for line in tags.stdout.splitlines() if line.strip()}
     built.add(VERSION)

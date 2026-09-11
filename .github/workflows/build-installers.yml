@@ -13,7 +13,12 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     steps:
+      # Tags say which versions were actually built, and the documentation
+      # checks compare against them. A shallow checkout has none, so the check
+      # could only ever pass by skipping itself.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
