@@ -177,6 +177,11 @@ globalThis.State = { currentTripPlan: { id: 'p1', members: [
 ] } };
 const order = [];
 let inFlight = 0, overlapped = false;
+// The server keeps the plan, so its answer carries every write it has taken -
+// not only the one being answered. The browser drops an answer that arrives
+// after the reader has asked for something newer, which is safe exactly
+// because the newer answer includes the older write.
+const stored = { id: 'p1', members: State.currentTripPlan.members.map(m => ({ ...m })) };
 globalThis.ApiClient = { setTripMember: async (planId, body) => {
   inFlight += 1;
   if (inFlight > 1) overlapped = true;
@@ -184,16 +189,17 @@ globalThis.ApiClient = { setTripMember: async (planId, body) => {
   await new Promise(done => setTimeout(done, body.user_id === 'a' ? 30 : 1));
   inFlight -= 1;
   order.push(body.user_id);
-  return { ...State.currentTripPlan, members: State.currentTripPlan.members.map(
-    member => member.user_id === body.user_id
-      ? { ...member, departure_date: body.departure_date, row_version: 3 } : member) };
+  stored.members = stored.members.map(member => member.user_id === body.user_id
+    ? { ...member, departure_date: body.departure_date, row_version: 3 } : member);
+  return { ...stored, members: stored.members.map(member => ({ ...member })) };
 } };
 await Promise.all([
   TripTeamActions.departureChanged('a', '2026-09-20'),
   TripTeamActions.departureChanged('b', '2026-09-21'),
 ]);
 console.log(JSON.stringify({ order, overlapped,
-  dates: State.currentTripPlan.members.map(m => m.departure_date) }));
+  dates: State.currentTripPlan.members.map(m => m.departure_date),
+  written: stored.members.map(m => m.departure_date) }));
 """, ("trip-plan-identity.js", "trip-team-queue.js",
          "trip-team-actions.js"))
     assert data["overlapped"] is False, (
@@ -203,8 +209,11 @@ console.log(JSON.stringify({ order, overlapped,
     assert data["order"] == ["a", "b"], (
         f"the saves must be answered in the order they were made: {data['order']}"
     )
+    assert data["written"] == ["2026-09-20", "2026-09-21"], (
+        f"both changes must reach the plan: {data['written']}"
+    )
     assert data["dates"] == ["2026-09-20", "2026-09-21"], (
-        f"both changes must survive: {data['dates']}"
+        f"both changes must survive on screen: {data['dates']}"
     )
 
 

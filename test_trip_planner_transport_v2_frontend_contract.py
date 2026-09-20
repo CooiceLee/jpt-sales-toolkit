@@ -28,14 +28,24 @@ def check_static_contract() -> None:
     actions = (MODULES / "trip-itinerary-actions.js").read_text(encoding="utf-8")
     transport_actions = (MODULES / "trip-transport-actions.js").read_text(encoding="utf-8")
     transport_view = (MODULES / "trip-transport-view.js").read_text(encoding="utf-8")
-    itinerary_view = (MODULES / "trip-itinerary-view.js").read_text(encoding="utf-8")
+    itinerary_view = ((MODULES / "trip-itinerary-view.js").read_text(encoding="utf-8")
+                      + (MODULES / "trip-stop-card.js").read_text(encoding="utf-8"))
     i18n = (ROOT / "frontend" / "js" / "i18n.js").read_text(encoding="utf-8")
 
     for element_id in (
         "trip-route-order-mode",
         "trip-transport-priority",
-        "trip-leg-list",
-        "trip-draft-status",
+        # The journeys are read on the timeline and edited one at a time in the
+        # panel beside it; the standing list of every leg is gone, so what has
+        # to exist is the panel that holds the chosen one.
+        "trip-current-plan",
+        # The route's status moved out of the settings card and into the bar
+        # the four zones share: on that card it could only be read in one of
+        # them, and it judged "saved" from the local draft while the server had
+        # already marked the route out of date.
+        "trip-route-status",
+        "trip-route-preview",
+        "trip-route-save",
         "trip-origin-preset",
         "trip-destination-preset",
     ):
@@ -45,10 +55,20 @@ def check_static_contract() -> None:
     # a second place to look and a second thing to keep in step, so they are
     # gone - and must not come back.
     for removed in (
+        'id="trip-leg-list"', 'id="trip-leg-board"',
         "trip-departure-window-start", "trip-departure-window-end",
         "trip-return-window-start", "trip-return-window-end",
+        # Two copies of the same two buttons is two answers to "did this save":
+        # the settings card's pair is gone, the shared bar's pair is the pair.
+        'id="trip-draft-status"',
     ):
         assert removed not in index, f"{removed} is back on the page"
+    settings = index[index.index('data-trip-zone="settings"'):index.index('class="trip-layout"')]
+    for gone in ("previewCurrentTripItinerary()", "generateCurrentTripItinerary()"):
+        assert gone not in settings, (
+            f"the settings card still has its own {gone}: the bar the zones "
+            "share is where the route is previewed and saved"
+        )
     route_form = (MODULES / "trip-route-form.js").read_text(encoding="utf-8")
     for source in (route_form, transport_actions, draft, form):
         for control in ("departure-window", "return-window",
@@ -91,7 +111,7 @@ def check_static_contract() -> None:
         ("Allowed transport and priority", "允许的交通方式与优先级"),
         ("Automatic stop order", "自动规划拜访顺序"),
         ("Keep manual stop order", "保留人工拜访顺序"),
-        ("Lock this leg", "锁定此交通段"),
+        ("Fix the transport mode", "固定交通方式"),
         ("Draft changes are not saved.", "草稿更改尚未保存。"),
         ("Save visit details", "保存拜访信息"),
         ("Stop duration (days)", "停留时长（天）"),
@@ -540,7 +560,9 @@ vm.runInContext(fs.readFileSync('frontend/js/modules/trip-itinerary-actions.js',
 
 (async () => {
   await context.moveTripStop('a', 1);
-  assert.deepStrictEqual(context.State.currentTripPlan.stops.map(item => item.id), ['b', 'a']);
+  // Array.from: the reordered list is built inside the sandbox now, so it is
+  // not the same Array constructor as one built out here.
+  assert.deepStrictEqual(Array.from(context.State.currentTripPlan.stops, item => item.id), ['b', 'a']);
   assert.strictEqual(context.State.currentTripPlan.route_order_mode, 'manual');
   assert.strictEqual(context.TripPlanningDraft.get().routeOrderMode, 'manual');
   assert.deepStrictEqual(Array.from(context.TripPlanningDraft.get().stopOrder), ['b', 'a']);
@@ -566,7 +588,7 @@ const roots = {
   'trip-transport-priority': { innerHTML: '' },
   'trip-leg-list': { innerHTML: '' },
   'trip-leg-count': { textContent: '' },
-  'trip-draft-status': { className: '', textContent: '' },
+  'trip-route-status': { className: '', textContent: '' },
 };
 const escapeHtml = value => String(value ?? '')
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -579,8 +601,10 @@ const context = {
 };
 context.window = context;
 vm.createContext(context);
-vm.runInContext(fs.readFileSync('frontend/js/modules/trip-duration.js', 'utf8'), context);
-vm.runInContext(fs.readFileSync('frontend/js/modules/trip-transport-view.js', 'utf8'), context);
+for (const file of ['trip-duration.js', 'trip-leg-rows.js', 'trip-leg-card.js',
+                    'trip-transport-view.js']) {
+  vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`, 'utf8'), context);
+}
 context.TripTransportView.render({ legs: [{
   leg_key: 'x"><img src=x onerror=1>', from_label: '<script>from</script>',
   to_label: '<img src=x>', selected_mode: 'drive', distance_km: 1,

@@ -148,6 +148,38 @@ const zeroBeside = MoneyTotals.text({ EUR: 0, USD: 5 });
 assert.ok(zeroBeside.includes('EUR'),
   `a zero subtotal disappeared next to a non-zero one: ${zeroBeside}`);
 
+// A total is printed in a unit the reader can take in at a glance. Everything
+// above a thousand used to be printed in thousands, so 4.16 trillion came out
+// as "4,164,615,261K": eleven digits to count through, wrapping mid-number
+// across three lines of a 36px value.
+assert.strictEqual(MoneyTotals.compact(4164615261345), '4.16T',
+  `a trillion printed as ${MoneyTotals.compact(4164615261345)}`);
+assert.strictEqual(MoneyTotals.compact(413453466), '413M');
+assert.strictEqual(MoneyTotals.compact(40000), '40K');
+assert.strictEqual(MoneyTotals.compact(40500), '40.5K');
+assert.strictEqual(MoneyTotals.compact(500), '500');
+assert.ok(!MoneyTotals.compact(4164615261345).includes(',000'),
+  'the unit did not keep up with the size of the number');
+
+// A settled order, by currency code, with the amount nobody gave a currency
+// last. Sorted by size instead, the biggest *number* came first and the card
+// gave it the headline - so JPY 1,000,000 outranked EUR 100,000 and read as
+// the larger piece of business, which is a comparison nothing here can make.
+const order = MoneyTotals.entries({
+  JPY: 1000000, EUR: 100000, UNSPECIFIED: 5000, CNY: 4300000,
+}).map(([code]) => code).join(',');
+assert.strictEqual(order, 'CNY,EUR,JPY,UNSPECIFIED',
+  `the currencies are ranked by their unconverted numbers: ${order}`);
+
+// And the subtotals stay available apart, so a card can lay them out instead
+// of wrapping one long string.
+const rows = MoneyTotals.rows({ USD: 413453466, EUR: 4164615261345 });
+assert.strictEqual(rows.map(row => row.code).join(','), 'EUR,USD', JSON.stringify(rows));
+assert.strictEqual(rows[0].amount, '4.16T');
+assert.deepEqual(MoneyTotals.rows({}), []);
+assert.strictEqual(MoneyTotals.rows({ UNSPECIFIED: 5 })[0].code.toLowerCase(),
+  'no currency');
+
 assert.strictEqual(MoneyTotals.text({}), '—', 'nothing recorded must not read as zero');
 assert.strictEqual(MoneyTotals.text(null), '—');
 assert.strictEqual(MoneyTotals.missingNote(0), '');

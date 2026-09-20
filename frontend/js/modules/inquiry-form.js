@@ -3,6 +3,11 @@ function renderPanelContent(tabId) {
     const inq = State.currentInquiry;
     if (!inq) return;
     PanelDirtyState.reset();
+    // The fields are being rebuilt, so nothing in them is unsaved any more.
+    // An editor that saves through its own button - a sampling task, a
+    // follow-up - refreshes this panel and nothing else, and the line went on
+    // saying "unsaved changes" over a tab with no Save button to press.
+    window.PanelSaveState?.show?.('clean');
 
     if (tabId === 'followup') {
         container.innerHTML = renderFollowupsTab(inq);

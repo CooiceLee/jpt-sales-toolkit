@@ -26,18 +26,27 @@
         const stopId = !isLeg ? entry.source_id : '';
         const who = entry.members.length
             ? entry.members.join(' · ') : t('Unassigned');
-        // Choosing a line shows it on the map. A visit also opens its
-        // preparation, which is the thing there is to do with a visit.
-        const action = stopId
-            ? `TripTeamMap.focusStop('${h(stopId)}');`
-                + `TripBriefingActions.open('${h(stopId)}')`
-            : (entry.source_id ? `TripTeamMap.focusLeg('${
-                h(String(entry.source_id).split('#')[0])}','${
-                h(entry.selected_mode || '')}','${
-                h((entry.memberIds || [])[0] || '')}')` : '');
+        // Choosing a line selects that object: the panel beside the timeline
+        // answers "what about it" and the map shows the same choice from
+        // above. It used to open the preparation editor in another zone, which
+        // moved the reader off the day they were reading.
+        const kind = isLeg ? 'leg' : 'stop';
+        const id = isLeg ? String(entry.source_id || '').split('#')[0] : stopId;
+        // Whose journey this is travels with the choice: the same connection on
+        // two different days is two journeys, and only one of them is the one
+        // the panel beside the timeline is editing.
+        const members = isLeg ? [...new Set(entry.memberIds || [])].map(String).sort() : [];
+        const carried = members.map(value => `'${h(value)}'`).join(', ');
+        const action = id
+            ? `TripSelection.select('${kind}', '${h(id)}', { mode: '${
+                h(entry.selected_mode || '')}', memberId: '${
+                h(members[0] || '')}', members: [${carried}] })` : '';
+        const selected = !!id && window.TripSelection?.is?.(kind, id, members);
         return `<button type="button"
             class="trip-team-entry is-${h(isLeg ? 'leg' : entry.item_type)}${
-                entry.unresolved ? ' is-unresolved' : ''}"
+                entry.unresolved ? ' is-unresolved' : ''}${selected ? ' is-selected' : ''}"
+            data-kind="${h(kind)}" data-id="${h(id)}" data-members="${h(members.join(','))}"
+            aria-pressed="${!!selected}"
             ${action ? `onclick="${action}"` : 'disabled'}>
             <span class="trip-team-entry-who">${h(who)}</span>
             <strong data-business>${h(entry.title || entry.source_id)}${
@@ -54,9 +63,9 @@
         </button>`;
     }
     function renderSlot(slot, entries) {
-        const [date, period] = slot.split('|');
-        return `<section class="trip-team-slot">
-            <h4>${h(date)} · ${h(t(period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'))}</h4>
+        const period = String(slot).split('|')[1];
+        return `<section class="trip-team-slot" data-period="${h(period || 'AM')}">
+            <h4>${h(t(period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'))}</h4>
             <div class="trip-team-slot-body">${entries.map(renderEntry).join('')}</div>
         </section>`;
     }

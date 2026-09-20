@@ -1,12 +1,23 @@
 function renderTripMap() {
     if (!State.tripMap || !State.tripMapLayer) return;
     State.tripMapLayer.clearLayers();
+    // Which marker stands for which business object. Without it a map request
+    // can only move the view to a coordinate and hope the reader works out
+    // which of the dots there was meant.
+    State.tripMapMarkers = new Map();
     const bounds = [];
     const selectedCustomerIds = new Set(
         (State.currentTripPlan?.stops || []).filter(stop => stop?.stop_kind !== 'free').map(stop => stop.customer_id)
     );
 
+    // One member's journey is what the map is showing: customers who are only
+    // candidates for this trip are not part of it. Drawn in the same green as
+    // the stops, they read as that member's own - a map with dots and no line
+    // between them, when in fact none of those dots are theirs.
+    const soloMember = State.currentTripPlan?.planning_mode === 'team'
+        && (window.TripTeamMap?.view?.() || 'all') !== 'all';
     (State.tripCandidates || []).forEach((candidate, index) => {
+        if (soloMember) return;
         const pair = MapSupport.coordinatePair(candidate?.lat, candidate?.lng);
         if (!pair) return;
         const selected = selectedCustomerIds.has(candidate.customer_id);
@@ -18,6 +29,7 @@ function renderTripMap() {
             fillOpacity: 0.86,
             dashArray: candidate.needs_coordinate_review ? '4 3' : null
         });
+
         marker.bindTooltip(escapeHtml(
             `${candidate.customer_name || ''} · ${Number(candidate.score) || 0}`
         ));
@@ -36,6 +48,11 @@ function renderTripMap() {
                     <button type="button" class="btn btn-primary btn-sm" disabled>${escapeHtml(I18n.t('Add to plan'))}</button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="openTripCandidateCoordinateReview(${index})">${escapeHtml(I18n.t('Open Coordinate Review'))}</button>
                 </div>`;
+        State.tripMapMarkers.set(`candidate:${candidate.customer_id}`, {
+            kind: 'candidate', id: candidate.customer_id, marker, point: pair,
+            name: candidate.customer_name, detail: candidate.primary_lead_display_id || '',
+            exact: hasExactCoordinates,
+        });
         marker.bindPopup(`
             <div class="map-popup">
                 <div class="map-popup-title" data-business>${escapeHtml(candidate.customer_name)}</div>
@@ -51,77 +68,11 @@ function renderTripMap() {
         bounds.push(pair);
     });
 
-    const plan = State.currentTripPlan;
-    const isTeam = plan?.planning_mode === 'team';
-    window.TripTeamMap?.renderToolbar?.(plan);
-    if (plan?.stops?.length) {
-        const routePoints = [];
-        const addPoint = (lat, lng, label, color) => {
-            const point = MapSupport.coordinatePair(lat, lng);
-            if (!point) return;
-            routePoints.push(point);
-            bounds.push(point);
-            L.circleMarker(point, {
-                radius: 7,
-                color: '#ffffff',
-                weight: 2,
-                fillColor: color,
-                fillOpacity: 0.95
-            }).bindTooltip(escapeHtml(label)).addTo(State.tripMapLayer);
-        };
-        if (!isTeam) {
-            addPoint(plan.origin_lat, plan.origin_lng,
-                plan.origin_name || I18n.t('Origin'), '#2b6cb0');
-        }
-        const stops = isTeam
-            ? window.TripTeamMap.visibleStops(plan) : (plan.stops || []);
-        stops.filter(Boolean).forEach(stop => {
-            const location = window.TripVisitState?.visitLocation?.(stop) || stop;
-            const point = MapSupport.coordinatePair(location.lat, location.lng);
-            if (!point) return;
-            routePoints.push(point);
-            bounds.push(point);
-            const isFree = stop.stop_kind === 'free';
-            const label = location.name || stop.location_name || stop.customer_name || I18n.t('Stop');
-            const address = [location.address, location.city, location.postal_code, location.country]
-                .filter(Boolean).join(', ');
-            const marker = L.circleMarker(point, {
-                radius: isFree ? 8 : 6,
-                color: '#ffffff', weight: 2,
-                fillColor: isFree ? '#d97706' : '#1f5135', fillOpacity: 0.95,
-            }).bindTooltip(escapeHtml(`${stop.sequence_no || ''}. ${label}${address ? ` · ${address}` : ''}${
-                isFree ? ` · ${I18n.t('Personal stop')}` : ''
-            }`)).addTo(State.tripMapLayer);
-            // A customer visit carries its date on the map: the point of the map
-            // is to see when the trip reaches each customer, not just where.
-            const when = scheduleBadge(stop);
-            if (!isFree && when) {
-                marker.bindTooltip(
-                    `<b>${escapeHtml(String(stop.sequence_no || ''))}</b> ${escapeHtml(when)}`,
-                    { permanent: true, direction: 'top', offset: [0, -8],
-                      className: 'trip-map-when', opacity: 1 }
-                );
-            }
-        });
-        if (!isTeam) {
-            addPoint(plan.destination_lat, plan.destination_lng,
-                plan.destination_name || I18n.t('Destination'), '#7c3aed');
-        }
-        // A team plan has one route per member, so a single line through the
-        // stops in order would be a path nobody travels. The journeys the
-        // calculation produced are drawn instead, and nothing else is.
-        if (isTeam) {
-            window.TripTeamMap.draw(plan, State.tripMapLayer, bounds);
-        } else if (routePoints.length >= 2) {
-            L.polyline(routePoints, {
-                color: '#1f5135',
-                weight: 3,
-                opacity: 0.72,
-                dashArray: '8 6'
-            }).addTo(State.tripMapLayer);
-        }
-    }
+    window.TripPlanMarkers?.draw?.(bounds);
 
+    // Somebody asked for one object a moment ago; fitting the whole trip back
+    // into view would undo that, so the request is restored instead.
+    if (window.TripMapFocus?.restore?.()) return;
     if (bounds.length) {
         State.tripMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 6 });
     }
@@ -148,5 +99,8 @@ window.focusTripCandidate = function(index) {
         alert(I18n.t('This customer needs coordinate review before it can be shown on the map.'));
         return;
     }
+    // Bring the map into view, emphasise this customer and open their own
+    // information box - not just move the centre of a map nobody can see.
+    if (window.TripMapFocus?.show?.('candidate', item.customer_id)) return;
     State.tripMap?.setView(pair, 7);
 };

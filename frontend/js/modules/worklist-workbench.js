@@ -13,6 +13,38 @@
 (function () {
     'use strict';
 
+    // One driver for every workbench. The list scrolls with the page while the
+    // panel beside it is fixed, so the panel's top has to be recomputed *while
+    // the page scrolls* - a ResizeObserver never fires for a scroll, and the
+    // panel stayed at the coordinate the list had on the first screen: a band
+    // of empty page opened above it, growing with every pixel scrolled.
+    const positioners = new Set();
+    let frame = 0;
+
+    function scheduleSync() {
+        if (frame) return;
+        // Marked before the frame is asked for, not after: a callback that
+        // runs while the assignment is still in flight would leave the flag
+        // set and every later scroll would be dropped.
+        frame = 1;
+        requestAnimationFrame(() => {
+            frame = 0;
+            positioners.forEach(run => run());
+        });
+    }
+
+    // The scrolling element is the one the layout actually scrolls in. Listened
+    // to once here rather than once per queue: six listeners would do the same
+    // work six times on every frame of the same scroll.
+    function watchScrolling() {
+        const main = document.querySelector('.main-content');
+        if (!main || main.dataset.wbScrollWatched === 'true') return;
+        main.dataset.wbScrollWatched = 'true';
+        main.addEventListener('scroll', scheduleSync, { passive: true });
+    }
+
+    window.addEventListener('resize', scheduleSync);
+
     function create(key) {
         const module_ = () => document.getElementById(`module-${key}`);
         const list = () => document.getElementById(`${key}-cards`);
@@ -26,7 +58,18 @@
             const box = layout();
             const app = document.getElementById('app');
             if (!box || !app || module_()?.classList.contains('active') === false) return;
-            const top = Math.max(0, Math.round(box.getBoundingClientRect().top));
+            // Follow the list, and stop at the top of the area the reader can
+            // actually see. Clamping to 0 instead would slide the panel under
+            // the application header once the list scrolled far enough.
+            const main = document.querySelector('.main-content');
+            const floor = Math.round(main?.getBoundingClientRect().top || 0);
+            // Level with the pinned line, not below it. Anchored to the line's
+            // bottom, the panel left a band of empty page its own width wide -
+            // at rest, and pinned there while the list scrolled past. The line
+            // spans the list column only, so lining the two up covers nothing.
+            const context = module_()?.querySelector('.wb-context');
+            const anchor = (context || box).getBoundingClientRect().top;
+            const top = Math.max(floor, Math.round(anchor));
             app.style.setProperty('--wb-panel-top', `${top}px`);
         }
 
@@ -76,6 +119,11 @@
         function draw({ items, emptyCopy, listHtml, tableHtml }) {
             const rows = list();
             if (!rows) return;
+            // The line above the list belongs to the query, not to the rows.
+            // An emptied list is exactly when the reader needs to see which
+            // filter emptied it; leaving the previous sentence there puts the
+            // last query's count and conditions over this query's empty page.
+            window.WorklistContext?.update?.(key, items);
             if (!items.length) return drawEmpty(emptyCopy);
             const box = state();
             if (box) { box.hidden = true; box.innerHTML = ''; }
@@ -91,15 +139,18 @@
             syncPanelTop();
         }
 
-        window.addEventListener('resize', syncPanelTop);
+        positioners.add(syncPanelTop);
         document.addEventListener('DOMContentLoaded', () => {
             const frame = layout();
-            if (frame && window.ResizeObserver) new ResizeObserver(syncPanelTop).observe(frame);
+            if (frame && window.ResizeObserver) new ResizeObserver(scheduleSync).observe(frame);
+            watchScrolling();
             syncPanelTop();
         }, { once: true });
 
         return Object.freeze({ draw, drawEmpty, setView, setDensity, syncPanelTop });
     }
 
-    window.WorklistWorkbench = Object.freeze({ create });
+    // Anything that changes the height above the list has to ask for a
+    // re-measure: the panel is positioned from that height.
+    window.WorklistWorkbench = Object.freeze({ create, sync: scheduleSync });
 })();

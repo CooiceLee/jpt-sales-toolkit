@@ -164,6 +164,22 @@ assert.ok(label.className.includes('is-dirty'), label.className);
 PanelSaveState.show('clean');
 listeners.change({ target: { matches: () => false } });
 assert.strictEqual(label.textContent, '', 'a click on plain text reported an edit');
+
+// A tab whose editor saves through its own button - a sampling task, a
+// follow-up - refreshes this panel and nothing else. The panel is rebuilt, so
+// nothing in it is unsaved; the line used to go on saying "unsaved changes"
+// over a tab that has no Save button for the reader to press.
+context.State = { currentInquiry: { id: 'lead-1' } };
+context.PanelDirtyState = { reset() {} };
+context.SamplingModule = { renderTab: () => '<div>saved task</div>' };
+vm.runInContext(fs.readFileSync('frontend/js/modules/inquiry-form.js', 'utf8'), context);
+listeners.input({ target: { matches: () => true } });
+assert.ok(label.textContent.length > 0, 'typing did not report unsaved changes');
+context.renderPanelContent('sample');
+assert.strictEqual(label.textContent, '',
+  'the panel was rebuilt by a sub-editor that saved, and the footer still '
+  + 'claims unsaved changes the reader has no way to save');
+assert.strictEqual(content.innerHTML, '<div>saved task</div>');
 """
 
 

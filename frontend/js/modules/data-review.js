@@ -27,6 +27,28 @@ function applyReviewPeriod() {
     loadDataReview();
 }
 
+// The same numbers the server puts in its own English brief, said in the
+// reader's language. Composed from the counts, never by translating a finished
+// sentence backwards.
+function reviewBrief(summary) {
+    if (!summary || summary.total_leads === undefined) return '';
+    const money = value => MoneyTotals.text(value, { empty: I18n.t('none recorded') });
+    return [
+        I18n.t('Reviewed {total} leads: {open} open, {won} won, {lost} lost.', {
+            total: summary.total_leads || 0, open: summary.open_leads || 0,
+            won: summary.won_leads || 0, lost: summary.lost_leads || 0,
+        }),
+        I18n.t('Pipeline {pipeline}. Won {wonValue}.', {
+            pipeline: money(summary.pipeline_value_by_currency),
+            wonValue: money(summary.won_value_by_currency),
+        }),
+        I18n.t('{overdue} with follow-ups overdue, {stale} open with no activity for 30+ days.', {
+            overdue: summary.overdue_followups || 0,
+            stale: summary.stale_open_leads || 0,
+        }),
+    ].join(' ');
+}
+
 function getReviewFilters() {
     return {
         date_from: document.getElementById('review-date-from')?.value || '',
@@ -52,13 +74,18 @@ window.loadDataReview = async function() {
 
         setText('review-open', summary.open_leads || 0);
         setText('review-won', summary.won_leads || 0);
-        setText('review-won-value', MoneyTotals.text(summary.won_value_by_currency));
+        paintMoneyValue('review-won-value', summary.won_value_by_currency);
         setText('review-win-rate', Math.round((summary.win_rate || 0) * 100));
         setText('review-overdue', summary.overdue_followups || 0);
-        setText('review-brief', data.brief || '');
+        // Written here rather than printed as the server sent it: the server
+        // composes one English sentence, and a sentence assembled from words is
+        // the one thing the screen walker must never try to translate back.
+        setText('review-brief', reviewBrief(summary));
 
         renderReviewTable('review-stage-table', [
-            ['Stage', 'stage'],
+            // The stage is one of this product's own six words, so it is
+            // translated like the funnel's labels - the two are read together.
+            ['Stage', 'stage', 'interface'],
             ['Count', 'count'],
             ['Value', row => MoneyTotals.text(row.value_by_currency)]
         ], data.stage_breakdown || []);

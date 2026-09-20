@@ -353,13 +353,21 @@ for (const file of ['worklist-workbench.js', 'followup-workbench.js']) {
   vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`, 'utf8'), context);
 }
 
+// The workbench reads "now" itself, so these are counted from today rather
+// than written down: fixed dates made this pass until the day the earliest of
+// them arrived, and then failed for a reason that had nothing to do with
+// grouping.
+const dueIn = offset => {
+  const when = new Date();
+  when.setDate(when.getDate() + offset);
+  return when.toISOString().slice(0, 10);
+};
 const sorted = [
-  { id: 'waited-longest', company_name: 'A', next_followup_date: '2026-09-20' },
-  { id: 'overdue-but-fresh', company_name: 'B', next_followup_date: '2026-09-01' },
-  { id: 'also-later', company_name: 'C', next_followup_date: '2026-09-21' },
+  { id: 'waited-longest', company_name: 'A', next_followup_date: dueIn(3) },
+  { id: 'overdue-but-fresh', company_name: 'B', next_followup_date: dueIn(-19) },
+  { id: 'also-later', company_name: 'C', next_followup_date: dueIn(4) },
 ];
-// The workbench reads "now" itself, so the dates above are relative to today
-// only in the test's intent; what is asserted is the order, not the label.
+// What is asserted is the order, not the label.
 context.FollowupWorkbench.render(sorted);
 const listHtml = element('followup-cards').innerHTML;
 const order = [...listHtml.matchAll(/data-inquiry-id="([^"]+)"/g)].map(match => match[1]);

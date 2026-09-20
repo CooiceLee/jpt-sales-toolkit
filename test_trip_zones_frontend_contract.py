@@ -248,11 +248,17 @@ def check_every_briefing_entry_point_reveals_it() -> None:
         "these modules reach for the briefing editor themselves instead of "
         f"going through the one path that reveals it: {openers}"
     )
+    # Both spellings: a module that reaches it through window uses `?.`, and
+    # the point is which door they use, not how they spell it.
     callers = [
         path.name for path in sorted(modules.glob("*.js"))
         if "TripBriefingActions.open(" in path.read_text(encoding="utf-8")
+        or "TripBriefingActions?.open?.(" in path.read_text(encoding="utf-8")
     ]
-    assert len(callers) >= 4, f"only {callers} open a briefing; four buttons do"
+    assert len(callers) >= 4, (
+        f"only {callers} open a briefing; the picker, the flexible-visit list, "
+        "the execution card, the timeline's detail panel and the visit-drop all do"
+    )
     actions = (modules / "trip-briefing-actions.js").read_text(encoding="utf-8")
     assert "TripBriefingReveal.show(root)" in actions, (
         "opening the editor no longer goes through the reveal"

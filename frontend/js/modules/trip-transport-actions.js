@@ -54,18 +54,26 @@
                 clearedOverrides = true;
             }
             draft.routeOrderMode = nextMode;
-            if (nextMode !== 'manual') Object.values(draft.stopDurations || {}).forEach(item => {
-                item.locked = false;
-            });
         });
+        /**
+         * Choosing how the stops are ordered says nothing about the times
+         * customers agreed to.
+         *
+         * Switching to automatic order used to clear every duration's `locked`
+         * flag and untick the confirmation boxes on screen - and that flag is
+         * what the calculation reads for "this visit is an appointment"
+         * (trip_team_adapter._is_locked overrides the saved stop with it). An
+         * automatic route is exactly the case where an agreed time has to be
+         * planned around, and the next save of that visit would have written
+         * the unticked box back as "not confirmed".
+         */
         (State.currentTripPlan?.stops || []).forEach(stop => {
             const control = document.getElementById(`stop-schedule-lock-${stop.id}`);
             if (!control) return;
-            control.disabled = nextMode !== 'manual' || !stop.planned_date;
-            if (control.disabled) control.checked = false;
+            control.disabled = !stop.planned_date;
             control.parentElement?.setAttribute('title', I18n.t(control.disabled
-                ? 'Plan a date and choose Manual order to lock this visit.'
-                : 'Keep this visit at its current time when updating the route.'));
+                ? 'Enter the agreed date, then confirm it here.'
+                : 'The customer agreed this time. The route will be planned around it.'));
         });
         if (clearedOverrides) {
             notify(I18n.t('Manual leg settings were cleared because automatic order may change the route.'));
@@ -97,6 +105,9 @@
         TripPlanningDraft.change(draft => {
             draft.stopDurations[stopId] = { ...(draft.stopDurations[stopId] || {}), half_days: duration };
         });
+        // The dates beside the box are the last calculation's until the route is
+        // worked out again, and this is the moment that becomes true.
+        window.tripStopMarkPending?.(stopId);
         notify(I18n.t('Stay changed in the draft. Updating the preview; the route is not saved yet.'));
         schedulePreview();
     }

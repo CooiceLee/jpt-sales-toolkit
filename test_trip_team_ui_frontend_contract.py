@@ -27,6 +27,7 @@ globalThis.window = globalThis;
 globalThis.document = { getElementById: () => null };
 globalThis.TripDuration = { label: value => `${value} half-days` };
 globalThis.State = {};
+globalThis.Date = Date;
 """
 
 
@@ -44,7 +45,8 @@ def run_js(body: str) -> dict:
     sources = "\n".join(
         (MODULES / name).read_text(encoding="utf-8")
         for name in ("trip-schedule-view.js", "trip-team-risks.js",
-                     "trip-team-timeline-view.js", "trip-team-timeline.js")
+                     "trip-team-timeline-view.js", "trip-team-timeline.js",
+                     "trip-timeline-model.js", "trip-timeline-view.js")
     )
     script = f"{HARNESS}\n{sources}\n{body}"
     result = subprocess.run(
@@ -555,7 +557,8 @@ const context = { console, escapeHtml: v => String(v ?? ''),
 context.window = context; vm.createContext(context);
 for (const f of ['trip-schedule-view.js', 'trip-team-risks.js',
                  'trip-team-timeline-view.js', 'trip-team-timeline.js',
-                 'trip-team-journeys.js', 'trip-transport-view.js']) {
+                 'trip-team-journeys.js', 'trip-leg-rows.js', 'trip-leg-card.js',
+                 'trip-transport-view.js']) {
   vm.runInContext(fs.readFileSync('frontend/js/modules/' + f, 'utf8'), context);
 }
 const draft = { legOverrides: {}, transportModePriority: ['flight', 'drive'] };
@@ -628,8 +631,11 @@ def check_module_wiring() -> None:
         "every trip is planned as a team, so there is no mode to choose"
     )
     schedule = (MODULES / "trip-schedule-view.js").read_text(encoding="utf-8")
-    assert "planning_mode === 'team'" in schedule, (
-        "the schedule view must send team plans to the team timeline"
+    # One timeline for every plan: a team trip and a single traveller's trip
+    # are the same days with a different number of people on them, and two
+    # renderers meant two answers to "what happens on Tuesday".
+    assert "TripTimelineView?.render?.(plan, root)" in schedule, (
+        "the schedule view must draw through the one timeline"
     )
     assert "TripTeamView?.render?.(plan)" in schedule
     api = (ROOT / "frontend" / "js" / "api-client.js").read_text(encoding="utf-8")
@@ -828,6 +834,8 @@ globalThis.State = {};
 globalThis.TripPlanningDraft = { MODES: ['flight', 'drive', 'ground_public', 'other'] };
 __TIMELINE__
 __JOURNEYS__
+__ROWS__
+__CARD__
 __VIEW__
 const plan = {
     planning_mode: 'team',
@@ -871,6 +879,10 @@ def check_a_row_number_finds_the_leg_that_row_shows() -> None:
         .replace("__TIMELINE__", (MODULES / "trip-team-timeline.js").read_text(
             encoding="utf-8"))
         .replace("__JOURNEYS__", (MODULES / "trip-team-journeys.js").read_text(
+            encoding="utf-8"))
+        .replace("__ROWS__", (MODULES / "trip-leg-rows.js").read_text(
+            encoding="utf-8"))
+        .replace("__CARD__", (MODULES / "trip-leg-card.js").read_text(
             encoding="utf-8"))
         .replace("__VIEW__", (MODULES / "trip-transport-view.js").read_text(
             encoding="utf-8"))

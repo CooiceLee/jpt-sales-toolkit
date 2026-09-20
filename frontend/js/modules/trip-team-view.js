@@ -8,12 +8,38 @@
             || plan?.origin_name || t('Plan departure point');
         const to = member.destination_name_override
             || plan?.destination_name || t('Plan return point');
-        return `${from} → ${to}`;
+        // Whose points these are decides whether the plan's own departure field
+        // applies to this person at all, and that is what the card was not
+        // saying: the same two names are shown either way.
+        const own = member.origin_lat_override != null
+            || member.destination_lat_override != null;
+        return `${from} → ${to}${own ? ` · ${t('own places')}` : ''}`;
+    }
+
+    // Outside the plan's own dates the calculation passes the date over, so the
+    // field says that where it was typed - waiting for a recalculation to
+    // mention it is why somebody set the same date twice and saw nothing move.
+    function departureNote(plan, member) {
+        const day = member.departure_date || '';
+        if (!day) return '';
+        if (plan?.start_date && day < plan.start_date) {
+            return t('Before the trip starts on {date}; the trip cannot begin earlier.',
+                { date: plan.start_date });
+        }
+        if (plan?.end_date && day > plan.end_date) {
+            return t('After the trip ends on {date}.', { date: plan.end_date });
+        }
+        return '';
     }
 
     function renderMember(plan, member) {
         const total = plan?.itinerary_summary?.member_totals?.[member.user_id];
-        const metrics = total ? [
+        // Nobody on no visits has no journey, so "0 km · back 15 Sep" is a
+        // calculated placeholder standing where a fact should be - and it
+        // contradicts the line underneath saying they have no trip at all.
+        const travels = (window.TripTeamItinerary?.stops?.(plan, member.user_id)
+            || []).length > 0;
+        const metrics = total && travels ? [
             total.distance_km != null
                 ? t('{count} km', {
                     count: Math.round(total.distance_km).toLocaleString('en-US'),
@@ -24,7 +50,8 @@
         return `<li class="trip-team-member">
             <div>
                 <strong data-business>${h(member.display_name || member.user_id)}</strong>
-                <small>${h(endpointLine(plan, member))}</small>
+                <small title="${h(endpointLine(plan, member))}">${
+                    h(endpointLine(plan, member))}</small>
                 ${metrics ? `<small class="trip-team-metrics">${h(metrics)}</small>` : ''}
             </div>
             <label class="trip-team-departure">
@@ -35,9 +62,20 @@
                     onchange="TripTeamActions.departureChanged('${h(member.user_id)}', this.value)"
                     title="${h(t('Empty means this member leaves with the team.'))}">
             </label>
+            ${departureNote(plan, member)
+                ? `<span class="trip-team-departure-note">${
+                    h(departureNote(plan, member))}
+                    <button type="button" class="btn btn-text btn-sm"
+                        onclick="TripTeamView.showPlanDates()">${
+                        h(t('Change the trip dates'))}</button></span>` : ''}
+            <button type="button" class="btn btn-text btn-sm trip-team-endpoint-open"
+                onclick="TripTeamEndpoints.toggle('${h(member.user_id)}')">${
+                h(t('Change places'))}</button>
             <button type="button" class="btn btn-secondary btn-sm trip-team-remove"
                 title="${h(t('Remove'))}" aria-label="${h(t('Remove'))}"
                 onclick="TripTeamActions.remove('${h(member.user_id)}')">&times;</button>
+            ${window.TripTeamItinerary?.render?.(plan, member) || ''}
+            <div class="trip-team-endpoints" id="trip-team-endpoints-${h(member.user_id)}" hidden></div>
         </li>`;
     }
 
@@ -62,6 +100,11 @@
     function render(plan, target = document.getElementById('trip-team-body')) {
         const panel = document.getElementById('trip-team-panel');
         if (!target || !panel) return;
+        // Somebody may be part-way through editing one member's places. The
+        // card is rebuilt from scratch here - by their own save, by another
+        // member's, by a route calculation - so what they typed is taken out
+        // first and put back afterwards rather than quietly thrown away.
+        const held = window.TripTeamEndpoints?.capture?.();
         // The card belongs to team planning. A single-traveller plan has no team
         // to show, so it is not there at all rather than shown empty.
         panel.hidden = !plan?.id;
@@ -78,7 +121,20 @@
                 ))}</p>`}
             ${addRow(plan)}
         `;
+        if (held) window.TripTeamEndpoints?.restore?.(held);
     }
 
-    window.TripTeamView = Object.freeze({ render, renderMember, endpointLine });
+    // The date that has to move is the plan's, and it is in the other card.
+    // Saying "this will not take effect" without a way to the thing that would
+    // make it take effect leaves the reader to hunt for it.
+    function showPlanDates() {
+        const field = document.getElementById('trip-start-date');
+        if (!field) return;
+        field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        field.focus({ preventScroll: true });
+    }
+
+    window.TripTeamView = Object.freeze({
+        render, renderMember, endpointLine, showPlanDates,
+    });
 })();

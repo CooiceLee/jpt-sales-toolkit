@@ -11,7 +11,8 @@
         const action = item.can_edit ? `
             <button type="button" class="btn btn-secondary btn-sm"
                 onclick="openCoordinateCorrectionFromReview(${customerIdLiteral(item)})">
-                ${escapeHtml(coordinateText(item.status === 'missing' ? 'Add' : 'Fix'))}
+                ${escapeHtml(coordinateText(
+                    item.status === 'missing' ? 'Add coordinates' : 'Fix'))}
             </button>` : '<span aria-hidden="true">—</span>';
         return `
             <tr>

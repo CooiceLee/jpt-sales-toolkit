@@ -154,6 +154,9 @@ for (const path of [
   'frontend/js/modules/money-totals-view.js',
   'frontend/js/modules/review-map-view.js',
   'frontend/js/modules/review-map.js',
+  // The plan's own markers moved out of renderTripMap when that file outgrew
+  // its module boundary; both halves are still one drawing.
+  'frontend/js/modules/trip-plan-markers.js',
   'frontend/js/modules/trip-candidates-map.js',
 ]) {
   vm.runInContext(fs.readFileSync(path, 'utf8'), context, { filename: path });

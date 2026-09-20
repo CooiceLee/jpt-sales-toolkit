@@ -15,6 +15,7 @@
         const plan = State.currentTripPlan;
         const stop = (plan?.stops || []).find(item => item.id === stopId);
         if (!plan?.id || !stop) return;
+        const wasLocked = Boolean(stop.schedule_locked);
         const payload = window.TripStopScheduleControls.readPayload(stopId);
         const wanted = document.getElementById(`stop-schedule-lock-${stopId}`);
         if (wanted?.checked && !payload.planned_date) {
@@ -24,6 +25,7 @@
         }
         try {
             setTripBusy(true);
+            window.TripAgreeStatus?.set?.(stopId, 'saving');
             const token = TripPlanIdentity.intend();
             const saved = await ApiClient.updateTripStop(
                 plan.id, stopId,
@@ -34,6 +36,7 @@
                 ? 'Agreed time saved. The route will be planned around it.'
                 : 'Visit time saved.'));
             window.refreshTripStopCard?.(State.currentTripPlan, stopId);
+            window.TripAgreeStatus?.set?.(stopId, 'saved');
             TripPlanRefresh.redrawVisits();
             window.TripScheduleView?.renderPlan?.(State.currentTripPlan);
             renderTripMap();
@@ -41,11 +44,29 @@
             console.error('Save agreed visit time error:', err);
             await handleTripError(err, 'Save agreed visit time');
             renderCurrentTripPlan();
+            // After the redraw, so it is the new card that says it failed.
+            window.TripAgreeStatus?.set?.(stopId, 'failed');
             return;
         } finally {
             setTripBusy(false);
         }
-        window.TripTransportActions?.schedulePreview?.();
+        /**
+         * Recalculate for a time the route has to respect - not for one it is
+         * free to move.
+         *
+         * Only a confirmed visit holds its place; every other date is the
+         * calculation's own output. Asking for a preview straight after an
+         * unconfirmed date was typed therefore recalculated the trip and put
+         * its own day back in the field, which reads as a save that did not
+         * work - and left whoever then ticked "customer confirmed" pinning the
+         * day the calculation chose instead of the one they agreed.
+         *
+         * Unpinning a time that *was* confirmed does change the route, so that
+         * still asks for one.
+         */
+        if (payload.schedule_locked || wasLocked) {
+            window.TripTransportActions?.schedulePreview?.();
+        }
     }
 
     window.TripStopScheduleActions = Object.freeze({ appointmentChanged });

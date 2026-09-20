@@ -14,8 +14,13 @@
     function render() {
         const root = document.getElementById('trip-free-stop-draft-status');
         if (root) root.textContent = dirty ? I18n.t('Personal stop changes are not saved.') : '';
+        // Being open, and being unsaved, are both reasons the shared bar
+        // refuses a route action. Cancelling this editor ends both of them, and
+        // an answer that only changes on the next keystroke leaves the reader
+        // looking at a greyed-out button with nothing left holding it.
+        window.TripRouteBar?.render?.();
     }
-    function mark() { dirty = true; render(); }
+    function mark() { if (dirty) return; dirty = true; render(); }
     function reset() { dirty = false; render(); }
     function confirmDiscard(message = 'Discard unsaved personal stop changes?') {
         return !dirty || confirm(I18n.t(message));

@@ -41,7 +41,13 @@
     }
 
     // Why the panel is not usable, in the reader's own terms. Null means it is.
+    //
+    // Asked of the shared derivation, so this panel and the bar above it give
+    // the same answer: they used to disagree, and the settings card would say
+    // the route matched the saved plan while this one refused the download.
     function blockedReason(plan) {
+        const shared = window.TripRouteState?.derive?.(plan);
+        if (shared) return shared.actions.download.reason;
         if (!plan?.id) return 'Select a saved itinerary to download.';
         if (window.TripPlanningDraft?.get?.()?.dirty) {
             return 'Save the current route draft before exporting it.';

@@ -99,7 +99,14 @@
             // idea whether their work was saved.
             try {
                 await TripPlanRefresh.reread(planId, { token: session.token });
-                notify(I18n.t('Customer visit preparation saved.'));
+                // Two facts, and the reader needs both: the preparation is
+                // saved, and - when the place or the attendees decided the
+                // route - the route it was calculated from is no longer the
+                // one on file. Saying only the first reads as "all done".
+                const stale = window.TripRouteState?.derive?.()?.serverStale;
+                notify(I18n.t(stale
+                    ? 'Visit preparation saved. The route changed with it and needs recalculating.'
+                    : 'Customer visit preparation saved.'));
             } catch (refreshError) {
                 console.error('Refresh after saving a visit briefing failed:', refreshError);
                 notify(I18n.t('The visit preparation was saved, but the page could not be refreshed. Reopen this visit to see the latest - do not save again.'));

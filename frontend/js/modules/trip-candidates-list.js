@@ -20,6 +20,10 @@ function inCurrentPlan(candidate) {
 
 function renderTripCandidates() {
     const container = document.getElementById('trip-candidate-list');
+    // Redrawing this list throws its scroll position away, and it is redrawn
+    // every time the plan changes - which is while the reader is reading it.
+    const side = document.querySelector('.trip-side[data-trip-zone="route"]');
+    const readingAt = side ? side.scrollTop : 0;
     const candidates = State.tripCandidates || [];
     const pagination = State.tripCandidatePagination || {};
     if (!container) return;
@@ -45,7 +49,7 @@ function renderTripCandidates() {
                     <tr>
                         <td>
                             <div style="font-weight:600;" data-business>${escapeHtml(item.customer_name)}</div>
-                            <div style="font-size:12px;color:var(--ink-500);" data-business>${escapeHtml(item.primary_lead_display_id || '')}</div>
+                            <div class="trip-candidate-id" data-business>${escapeHtml(item.primary_lead_display_id || '')}</div>
                         </td>
                         <td data-business>${escapeHtml([item.city, item.country].filter(Boolean).join(', ') || '-')}</td>
                         <td><span class="score-pill">${escapeHtml(item.score)}</span></td>
@@ -59,7 +63,8 @@ function renderTripCandidates() {
                         <td class="trip-candidate-actions">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="focusTripCandidate(${index})">${escapeHtml(I18n.t('Map'))}</button>
                             ${inCurrentPlan(item) ? `
-                                <button type="button" class="btn btn-secondary btn-sm" disabled>${escapeHtml(I18n.t('Already added'))}</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="TripVisitFinder.open({ query: ${
+                                    JSON.stringify(item.customer_name || '')} })">${escapeHtml(I18n.t('Set agreed visit time'))}</button>
                             ` : TripCandidateState.hasExactCoordinates(item) ? `
                                 <button type="button" class="btn btn-primary btn-sm" onclick="addCandidateToCurrentPlan(${index})">${escapeHtml(I18n.t('Add to plan'))}</button>
                             ` : `
@@ -81,7 +86,10 @@ function renderTripCandidates() {
             </button>
         </div>
     `;
+    if (side && readingAt) side.scrollTop = readingAt;
+    window.TripSideHeight?.sync?.();
 }
+
 
 window.loadMoreTripCandidates = async function() {
     const pagination = State.tripCandidatePagination || {};

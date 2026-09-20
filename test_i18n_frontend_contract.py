@@ -88,8 +88,110 @@ def check_authorization_screens_translate_what_they_show() -> None:
             )
 
 
+# Written into the page rather than through I18n.t(): a label, an option, a
+# placeholder. The screen walker translates those too - but only what the
+# dictionary knows, so one missing entry is one word that stays English while
+# the line beside it is Chinese. The follow-up form read
+# "Date / Method / Content" with 状态 between them.
+LEAVE_IN_ENGLISH = {
+    # File formats and extensions are read as names, not words.
+    "XLSX", "HTML", "ICS", "CSV", "Markdown", ".jptauth", ".jptreq",
+    # Brand and product names.
+    "JPT Sales Toolkit", "WhatsApp",
+    # Examples and a timezone, shown as the shape of the answer.
+    "example@company.com", "Europe/Berlin",
+    # The toggle writes this one itself, in whichever language is not current.
+    "Switch to 中文",
+    # A developer-only page.
+    "RUNNING", "Runs a same-origin browser regression against the main app.",
+    # Entity-encoded in the source; the dictionary holds the decoded text.
+    "Calculate &amp; save route", "Execution &amp; return", "Route &amp; schedule",
+    "Shared itinerary &#183; for everyone on this trip",
+}
+
+UI_TEXT_PATTERNS = (
+    r"<label[^>]*>([^<>{}$]+?)</label>",
+    r"<option[^>]*>([^<>{}$]+?)</option>",
+    r"<button[^>]*>([^<>{}$]+?)</button>",
+    r"<th[^>]*>([^<>{}$]+?)</th>",
+    r'placeholder="([^"{}$]+?)"',
+    r"<summary[^>]*>([^<>{}$]+?)</summary>",
+    r"<h[234][^>]*>([^<>{}$]+?)</h[234]>",
+)
+
+
+def check_every_written_label_is_in_the_dictionary() -> None:
+    i18n = _source("frontend/js/i18n.js")
+    known = set(re.findall(r"\[\s*'((?:[^'\\]|\\.)*)'\s*,", i18n))
+    known |= set(re.findall(r'\[\s*"((?:[^"\\]|\\.)*)"\s*,', i18n))
+    known = {value.replace("\\'", "'") for value in known}
+    missing = {}
+    root = ROOT / "frontend"
+    for path in sorted(list(root.rglob("*.js")) + list(root.rglob("*.html"))):
+        if "vendor" in path.parts or path.name in {"i18n.js", "regression.html"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for pattern in UI_TEXT_PATTERNS:
+            for raw in re.findall(pattern, text):
+                value = " ".join(raw.split())
+                if (not value or value in LEAVE_IN_ENGLISH or value in known
+                        or not re.search(r"[A-Za-z]{2,}", value)
+                        or value.startswith("&") or value.startswith("http")):
+                    continue
+                missing.setdefault(value, str(path.relative_to(ROOT)))
+    assert not missing, (
+        "written straight into the page and not in the dictionary, so they stay "
+        f"English beside their own translated neighbours: {missing}"
+    )
+
+
+def check_no_word_is_defined_twice() -> None:
+    """One English phrase, one Chinese word.
+
+    The dictionary is a list of pairs turned into an object, so a phrase listed
+    twice silently keeps the last one - and the earlier Chinese then lives on
+    only as a reverse lookup. That is how a button reading 添加 came to be
+    redrawn as 补充: the screen walker resolved the rendered Chinese back to a
+    *different* English key and printed that key's translation instead. The
+    reader saw a word belonging to another button.
+    """
+    i18n = _source("frontend/js/i18n.js")
+    pairs = re.findall(
+        r"\[\s*'((?:[^'\\]|\\.)*)'\s*,\s*\n?\s*'((?:[^'\\]|\\.)*)'\s*\]", i18n)
+    seen = {}
+    doubled = {}
+    for english, chinese in pairs:
+        if english in seen and seen[english] != chinese:
+            doubled[english] = (seen[english], chinese)
+        elif english in seen:
+            doubled[english] = (chinese, chinese)
+        seen[english] = chinese
+    assert not doubled, (
+        "these phrases are listed more than once, so only the last one is used "
+        f"and the others come back as reverse lookups: {doubled}"
+    )
+
+
+def check_the_button_says_what_it_does() -> None:
+    """Adding a customer to the trip is not "supplementing" anything."""
+    i18n = _source("frontend/js/i18n.js")
+    assert "['Add to plan', '加入行程']" in i18n, (
+        "the candidate button reads as a vague 添加/补充 rather than as what it "
+        "does: it makes this customer a stop on this trip"
+    )
+    assert "['Add coordinates', '补充坐标']" in i18n, (
+        "the coordinate review borrows the generic Add again, which puts its "
+        "wording on every other Add button in the product"
+    )
+    table = _source("frontend/js/modules/coordinate-review-table.js")
+    assert "'Add coordinates'" in table, "the table still asks for the generic Add"
+
+
 def main() -> None:
     check_server_messages_are_translated()
+    check_every_written_label_is_in_the_dictionary()
+    check_no_word_is_defined_twice()
+    check_the_button_says_what_it_does()
     check_authorization_screens_translate_what_they_show()
     i18n = (ROOT / "frontend" / "js" / "i18n.js").read_text(encoding="utf-8")
     utils = (ROOT / "frontend" / "js" / "shared" / "utils.js").read_text(encoding="utf-8")

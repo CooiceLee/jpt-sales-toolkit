@@ -4,7 +4,10 @@ window.moveTripStop = async function(stopId, direction) {
     if (window.TripVisitDraft?.guard?.()) return;
     const plan = State.currentTripPlan;
     if (!plan?.id) return;
-    const stops = plan.stops || [];
+    // The list the reader is looking at - see trip-stop-order.js.
+    // Moving against the stored order while the screen shows the draft's would
+    // swap the wrong pair the moment anybody moves a stop twice.
+    const stops = window.TripStopOrder?.stops?.(plan.stops || []) || (plan.stops || []);
     const index = stops.findIndex(stop => stop.id === stopId);
     const target = index + direction;
     if (index < 0 || target < 0 || target >= stops.length) return;
@@ -46,19 +49,32 @@ window.moveTripStop = async function(stopId, direction) {
 window.saveTripStopResult = async function(stopId) {
     if (State.tripBusy) return;
     if (window.TripVisitDraft?.guard?.()) return;
+    // Somebody else changed this purpose while it was being typed: which
+    // version survives is the reader's decision, not this button's.
+    if (window.TripStopTyping?.blockSave?.(stopId)) return;
     if (!State.currentTripPlan?.id) return;
     try {
         setTripBusy(true);
         const token = TripPlanIdentity.intend();
-        const moved = await ApiClient.updateTripStop(State.currentTripPlan.id, stopId, {
+        // What happened on a visit is recorded in the execution card, which has
+        // the actual date and half-day the server requires with it. Sending
+        // result_status from here could only ever say "Planned" - or be
+        // refused for want of fields this form does not have.
+        const payload = {
             row_version: (State.currentTripPlan.stops || []).find(stop => stop.id === stopId)?.row_version || null,
             ...TripStopScheduleControls.readPayload(stopId),
-            visit_purpose: document.getElementById(`stop-purpose-${stopId}`)?.value?.trim() || null,
-            result_status: document.getElementById(`stop-result-${stopId}`)?.value || 'Planned',
-            result_notes: document.getElementById(`stop-notes-${stopId}`)?.value?.trim() || null
-        });
+        };
+        // Only a purpose with something pending in it is submitted. Sending
+        // whatever the field happens to show would put it back over a value
+        // this save was never about - a save of the agreed time, made after
+        // somebody else edited the purpose, would quietly undo their edit.
+        if (window.TripStopTyping?.isDirty?.(stopId)) {
+            payload.visit_purpose = (window.TripStopTyping.draftOf(stopId) || '').trim() || null;
+        }
+        const moved = await ApiClient.updateTripStop(State.currentTripPlan.id, stopId, payload);
         if (!TripPlanIdentity.accept(token, moved)) return;
-        notify(I18n.t('Visit details saved'));
+        window.TripStopTyping?.markClean?.(stopId);
+        notify(I18n.t('Visit details saved') + window.TripSaveScope?.note?.(stopId));
         window.refreshTripStopCard?.(State.currentTripPlan, stopId);
         window.TripPlannerModule?.renderVisitExecution(State.currentTripPlan);
     } catch (err) {

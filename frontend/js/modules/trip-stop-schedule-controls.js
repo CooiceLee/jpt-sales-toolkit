@@ -32,6 +32,7 @@
                 { date: stop.planned_date,
                   period: I18n.t(agreedPeriod === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)') }
             ))}</p>` : ''}
+            <div class="trip-agree-fields" id="stop-agree-fields-${id}">
             <label class="trip-field-label"><span>${h(I18n.t('Agreed visit date'))}</span>
                 <input type="date" class="form-input" id="stop-agreed-date-${id}"
                     value="${h(stop.planned_date || '')}"
@@ -41,6 +42,13 @@
                     onchange="TripStopScheduleActions.appointmentChanged('${id}')">
                     ${option('AM', agreedPeriod, 'Morning (AM)')}${option('PM', agreedPeriod, 'Afternoon (PM)')}
                 </select></label>
+            <label class="trip-check trip-schedule-lock" title="${h(I18n.t(lockHint))}">
+                <input type="checkbox" id="stop-schedule-lock-${id}" onchange="TripStopScheduleActions.appointmentChanged('${id}')" ${stop.schedule_locked ? 'checked' : ''}>
+                <span>${h(I18n.t('Customer confirmed this time'))}</span>
+            </label>
+            <p class="trip-agree-save" id="stop-agree-save-${id}">${h(
+                window.TripAgreeStatus?.hint?.(stop) || I18n.t('Saved as soon as you change it'))}</p>
+            </div>
             <label class="trip-field-label"><span>${h(I18n.t('Preferred period'))}</span>
                 <select class="form-input" id="stop-period-${id}" onchange="TripTransportActions.schedulePreferenceChanged('${id}')">
                     ${option('auto', period, 'Automatic')}${option('AM', period, 'Morning (AM)')}${option('PM', period, 'Afternoon (PM)')}
@@ -51,10 +59,6 @@
                     ${option('confirmed', confirmation, 'Confirmed')}${option('needs_reconfirmation', confirmation, 'Needs reconfirmation')}
                     ${option('cancelled', confirmation, 'Cancelled')}
                 </select></label>
-            <label class="trip-check trip-schedule-lock" title="${h(I18n.t(lockHint))}">
-                <input type="checkbox" id="stop-schedule-lock-${id}" onchange="TripStopScheduleActions.appointmentChanged('${id}')" ${stop.schedule_locked ? 'checked' : ''}>
-                <span>${h(I18n.t('Customer confirmed this time'))}</span>
-            </label>
         </div>`;
     }
 

@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.13.3-internal"
+  #define AppVersion "0.13.4-internal"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\..\dist\JPT Sales Toolkit"
@@ -11,7 +11,7 @@
   #define OutputBaseFilename "JPT-Sales-Toolkit-0.13.3-internal-Windows-x64-UNSIGNED-INTERNAL-Setup"
 #endif
 #ifndef VersionInfoVersion
-  #define VersionInfoVersion "0.13.3.0"
+  #define VersionInfoVersion "0.13.4.0"
 #endif
 
 [Setup]

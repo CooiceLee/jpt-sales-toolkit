@@ -125,6 +125,9 @@ function setTripBusy(busy) {
     State.tripBusy = busy;
     const root = document.getElementById('module-trip-planner');
     if (!root) return;
+    // Said out loud rather than only by greying things out: a disabled button
+    // does not tell anybody whether their request is still running.
+    setTimeout(() => window.TripRouteBar?.render?.(), 0);
     root.classList.toggle('trip-busy', busy);
     root.querySelectorAll('button, input, select, textarea').forEach(control => {
         if (busy) {

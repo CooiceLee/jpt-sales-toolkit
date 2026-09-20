@@ -105,7 +105,8 @@ function renderFollowupsTab(inq) {
         </div>
         </div>
         <div class="followup-panel-history">
-            ${list || '<div class="empty-state">No follow-ups recorded yet.</div>'}
+            ${list || `<div class="empty-state compact">${escapeHtml(
+                I18n.t('No formal follow-up recorded yet.'))}</div>`}
         </div>
         </div>
     `;

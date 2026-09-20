@@ -70,43 +70,14 @@
         ))}</div>`;
     }
 
+    // One line of time, grouped by day - see trip-timeline-view.js. This
+    // module keeps what makes two members' items the same thing, which is the
+    // part the timeline, the map and the tests all have to agree on.
     function render(plan, target = document.getElementById('trip-schedule-list')) {
-        if (!target) return;
-        const items = plan?.schedule_items || [];
-        if (!items.length) {
-            target.innerHTML = `<div class="empty-state compact">${h(t(
-                'Save or preview a route to create the team timeline.'
-            ))}</div>`;
-            return;
-        }
-        const slots = new Map();
-        items.forEach(item => {
-            const key = slotOf(item);
-            slots.set(key, [...(slots.get(key) || []), item]);
-        });
-        const ordered = [...slots.keys()].sort();
-        target.innerHTML = incompleteNotice(plan) + ordered
-            .map(slot => TripTeamTimelineView.renderSlot(
-                slot, groupSlot(slots.get(slot), plan).map(entry => ({
-                    ...entry,
-                    commitment: TripTeamTimelineView.commitment(plan, entry),
-                }))))
-            .join('');
-    }
-
-    function renderPlan(plan) {
-        render(plan);
-        window.TripTeamRisks?.render?.(plan);
-        window.TripFlexibleSuggestions?.render?.(plan);
-        const status = document.getElementById('trip-schedule-status');
-        if (status) {
-            status.textContent = t('{count} people travelling', {
-                count: (plan?.members || []).length,
-            });
-        }
+        window.TripTimelineView?.render?.(plan, target);
     }
 
     window.TripTeamTimeline = Object.freeze({
-        render, renderPlan, groupSlot, identityOf, incompleteNotice,
+        render, groupSlot, identityOf, incompleteNotice,
     });
 })();

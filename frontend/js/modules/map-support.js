@@ -1,8 +1,18 @@
 (() => {
+    /**
+     * Where the background map comes from.
+     *
+     * CARTO's basemaps need an account: without a key every tile is stamped
+     * "API KEY REQUIRED", which is what the screenshots showed - the map still
+     * drew, so nothing failed loudly, and the watermark sat across the trip.
+     * OpenStreetMap's own tiles need no key, and the attribution they require
+     * is the one already shown. Keeping the CARTO entry named and unused would
+     * be an invitation to switch back to a service we have no account for.
+     */
     const TILE_SOURCES = {
         light: {
-            url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-            attribution: '&copy; OpenStreetMap, CARTO'
+            url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            attribution: '&copy; OpenStreetMap contributors'
         },
         standard: {
             url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',

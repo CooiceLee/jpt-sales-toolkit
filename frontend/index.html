@@ -973,7 +973,7 @@
                 </div>
 
                 <!-- Trip Planner Module -->
-                <div id="module-trip-planner" class="module">
+                <div id="module-trip-planner" class="module" data-candidates="closed">
                     <h1 class="module-title">Trip Planner</h1>
                     <div class="filters-bar">
                         <select class="filter-select" id="trip-candidate-region" title="Candidate customer region" aria-label="Candidate customer region">
@@ -998,6 +998,16 @@
                         <div class="trip-zone-plan">
                             <strong id="trip-zone-plan-name">No plan selected</strong>
                             <span id="trip-zone-plan-dates"></span>
+                        </div>
+                        <div class="trip-zone-actions" id="trip-route-bar" role="group"
+                            aria-label="Route status and actions">
+                            <span id="trip-route-status" class="trip-route-status" role="status"
+                                aria-live="polite"></span>
+                            <span id="trip-route-next" class="trip-route-next"></span>
+                            <button type="button" class="btn btn-secondary btn-sm" id="trip-route-preview"
+                                onclick="TripRouteBar.preview()">Preview route</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="trip-route-save"
+                                onclick="TripRouteBar.save()">Calculate &amp; save route</button>
                         </div>
                         <div class="trip-zone-tabs" role="tablist" aria-label="Trip planning steps">
                             <button type="button" class="trip-zone-tab active" data-trip-zone-tab="settings"
@@ -1087,11 +1097,7 @@
                                     </div>
                                     <input type="text" class="form-input" id="trip-holidays" placeholder="Holidays: 2026-05-01, 2026-10-01">
                                     <textarea class="form-input" id="trip-description" rows="3" placeholder="Planning notes"></textarea>
-                                    <div id="trip-draft-status" class="trip-draft-status" role="status" aria-live="polite"></div>
-                                    <div class="trip-action-row">
-                                        <button type="button" class="btn btn-secondary" onclick="previewCurrentTripItinerary()">Preview route</button>
-                                        <button type="button" class="btn btn-primary" onclick="generateCurrentTripItinerary()">Save route</button>
-                                    </div>
+
                                 </div>
                                 <div id="trip-plan-list" style="margin-top:16px;"></div>
                             </div>
@@ -1117,22 +1123,24 @@
                     <section id="trip-schedule-panel" class="review-panel trip-schedule-panel" aria-labelledby="trip-schedule-title" data-trip-zone="route">
                         <div class="trip-schedule-heading">
                             <div>
-                                <div class="card-title" id="trip-schedule-title">Daily Schedule</div>
-                                <small>Review customer visits, personal stops and travel legs by morning or afternoon.</small>
+                                <div class="card-title" id="trip-schedule-title">Trip timeline</div>
+                                <small>Day by day, morning and afternoon: visits, personal stops and the travel between them. Choose one to see and change it on the right.</small>
                             </div>
-                            <span id="trip-schedule-status" class="trip-schedule-status" role="status" aria-live="polite"></span>
+                            <div class="trip-schedule-heading-actions">
+                                <span id="trip-schedule-status" class="trip-schedule-status" role="status" aria-live="polite"></span>
+                                <button type="button" class="btn btn-secondary btn-sm" id="trip-suggest-route" onclick="TripSuggestionActions.searchRoute()">Search travel options</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="trip-add-free-stop"
+                                    aria-controls="trip-free-stop-editor" aria-expanded="false" onclick="TripFreeStopForm.open()">+ Add personal stop</button>
+                            </div>
+                            <span id="trip-suggestion-status" class="trip-suggestion-status" role="status" aria-live="polite"></span>
                         </div>
+                        <div id="trip-plan-headline" class="trip-plan-headline"></div>
+                        <div id="trip-timeline-toolbar" class="trip-timeline-toolbar"></div>
+                        <section id="trip-visit-finder" class="trip-visit-finder" hidden aria-label="Arrange a visit"></section>
                         <div class="trip-schedule-workspace">
                             <div id="trip-schedule-list" class="trip-schedule-list"></div>
-                        </div>
-                    </section>
-                            <div class="review-panel" data-trip-zone="route">
-                                <div class="card-title">Selected Stops</div>
-                                <div class="trip-free-stop-tools">
-                                    <button type="button" class="btn btn-secondary btn-sm" id="trip-add-free-stop"
-                                        aria-controls="trip-free-stop-editor" aria-expanded="false" onclick="TripFreeStopForm.open()">+ Add personal stop</button>
-                                    <small>Rest, hotel, transit, meal, or another non-customer stop. Airports belong to the flight leg that uses them.</small>
-                                </div>
+                            <aside class="trip-detail-panel" aria-labelledby="trip-detail-title">
+                                <h2 class="card-title" id="trip-detail-title">Selected item</h2>
                                 <section id="trip-free-stop-editor" class="trip-free-stop-editor" hidden aria-labelledby="trip-free-stop-editor-title">
                                     <div class="trip-free-stop-editor-head">
                                         <strong id="trip-free-stop-editor-title">Add personal stop</strong>
@@ -1198,16 +1206,15 @@
                                         <button type="button" class="btn btn-primary btn-sm" id="trip-free-stop-save" onclick="TripFreeStopActions.save()">Save stop</button>
                                     </div>
                                 </section>
-                                <details class="trip-leg-panel" open>
-                                    <summary><span>Route legs</span><span id="trip-leg-count"></span></summary>
-                                    <div class="trip-suggestion-toolbar">
-                                        <button type="button" class="btn btn-secondary btn-sm" id="trip-suggest-route" onclick="TripSuggestionActions.searchRoute()">Search travel options</button>
-                                        <span id="trip-suggestion-status" role="status" aria-live="polite"></span>
-                                    </div>
-                                    <div id="trip-leg-list"></div>
-                                </details>
-                                <div id="trip-current-plan"></div>
-                            </div>
+                                <div id="trip-current-plan" class="trip-detail-body"></div>
+                            </aside>
+                        </div>
+                    </section>
+                    <details class="review-panel trip-stop-order" data-trip-zone="route">
+                        <summary><span>Reorder stops</span><small>The plan's own order, with Up and Down. The timeline above is read by date.</small></summary>
+                        <div id="trip-stop-board" class="trip-board"></div>
+                        <div id="trip-stop-order-list" class="trip-order-list"></div>
+                    </details>
                             <div class="review-panel" data-trip-zone="execution">
                                 <div class="card-title">Visit Execution</div>
                                 <div id="trip-visit-execution"></div>
@@ -1574,7 +1581,7 @@
             <div class="panel-content" id="panel-content"></div>
             <div class="panel-footer">
                 <span id="panel-save-state" class="panel-save-state" role="status" aria-live="polite"></span>
-                <button type="button" class="btn btn-secondary" onclick="closePanel()">Cancel</button>
+                <button type="button" class="btn btn-secondary" id="panel-dismiss-btn" onclick="closePanel()">Cancel</button>
                 <button type="button" class="btn btn-primary" id="panel-save-btn" onclick="saveInquiry()">Save Changes</button>
             </div>
         </aside>
@@ -1618,6 +1625,7 @@
     <script src="/static/js/modules/intake-submit.js?v=1.0"></script>
     <script src="/static/js/modules/card-template.js?v=1.2"></script>
     <script src="/static/js/modules/cards.js?v=1.2"></script>
+    <script src="/static/js/modules/worklist-context.js?v=1.0"></script>
     <script src="/static/js/modules/worklist-workbench.js?v=1.0"></script>
     <script src="/static/js/modules/worklist-rows.js?v=1.0"></script>
     <script src="/static/js/modules/queue-workbenches.js?v=1.0"></script>
@@ -1702,8 +1710,15 @@
     <script src="/static/js/modules/trip-suggestion-state.js?v=1.0"></script>
     <script src="/static/js/modules/trip-leg-overrides.js?v=1.0"></script>
     <script src="/static/js/modules/trip-planning-draft.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-order.js?v=1.0"></script>
     <script src="/static/js/modules/trip-suggestion-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-suggestion-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-open-editors.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-route-state.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-route-bar.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-route-focus.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-leg-rows.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-leg-card.js?v=1.0"></script>
     <script src="/static/js/modules/trip-transport-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-leg-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-leg-airports.js?v=1.0"></script>
@@ -1714,11 +1729,34 @@
     <script src="/static/js/modules/trip-candidate-state.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidate-requests.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidates-list.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-bar-offset.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-side-height.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-plan-markers.js?v=1.0"></script>
     <script src="/static/js/modules/trip-candidates-map.js?v=1.0"></script>
     <script src="/static/js/modules/trip-plan-list-sync.js?v=1.0"></script>
     <script src="/static/js/modules/trip-plans.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-schedule-controls.js?v=1.0"></script>
     <script src="/static/js/modules/trip-stop-appointment-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-board.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-board-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-card.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-selection.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-timeline-model.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-timeline-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-timeline-toolbar.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-order-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-times.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-typing.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-purpose-conflict.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-stop-pending.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-save-scope.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-agree-status.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-map-focus.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-detail-panel.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-visit-finder-view.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-visit-finder.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-day-nav.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-candidate-panel.js?v=1.0"></script>
     <script src="/static/js/modules/trip-itinerary-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-plan-title-actions.js?v=1.0"></script>
     <script src="/static/js/modules/trip-plan-identity.js?v=1.0"></script>
@@ -1739,6 +1777,11 @@
     <script src="/static/js/modules/trip-team-view.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-queue.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-actions.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-endpoint-form.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-endpoints.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-itinerary.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-team-visit-drop.js?v=1.0"></script>
+    <script src="/static/js/modules/trip-zone-updates.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-journeys.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-colors.js?v=1.0"></script>
     <script src="/static/js/modules/trip-team-map.js?v=1.0"></script>

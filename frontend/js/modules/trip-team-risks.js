@@ -41,6 +41,10 @@
             '{stop} is booked for the {bookedPeriod}, not the {preferredPeriod} you asked for. The time the customer agreed is the one the route uses.',
             risk
         ),
+        member_departure_before_plan_start: risk => t(
+            '{member} is set to leave on {departureDate}, before this trip starts on {startDate}. The trip cannot begin earlier, so they leave with the team on {startDate}.',
+            risk
+        ),
         member_departure_after_plan_end: risk => t(
             '{member} is set to leave on {departureDate}, after the trip ends on {deadline}. They are travelling with the team until this is corrected.',
             risk
@@ -71,6 +75,7 @@
             stop: stopName(plan, risk.stop_id),
             plannedDate: risk.planned_date,
             departureDate: risk.departure_date,
+            startDate: risk.start_date,
             period: t(risk.period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),
             bookedPeriod: t(risk.booked_period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),
             preferredPeriod: t(risk.preferred_period === 'PM' ? 'Afternoon (PM)' : 'Morning (AM)'),

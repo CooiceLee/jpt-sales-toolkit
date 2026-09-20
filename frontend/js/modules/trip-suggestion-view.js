@@ -71,7 +71,14 @@
                 state.privacyNotice ? t(state.privacyNotice) : '', ...(state.warnings || []).map(item => t(item))].filter(Boolean).join(' ');
             status.textContent = state.status === 'error' ? t(state.error) : state.status === 'ready' ? ready : '';
         }
-        (plan?.legs || []).forEach(renderLeg);
+        // The rows on screen, not the legs underneath them: colleagues on one
+        // journey are a single row, so walking plan.legs wrote every result
+        // after the first merge into the row below the one it was found for -
+        // and the last row got none at all.
+        const rows = window.TripTransportView?.rows?.()
+            || window.TripLegRows?.rows?.(plan, window.TripPlanningDraft?.get?.())
+            || (plan?.legs || []).map(leg => ({ leg }));
+        rows.forEach((row, index) => renderLeg(row.leg, index));
     }
     window.TripSuggestionView = Object.freeze({ render });
 })();

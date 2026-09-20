@@ -19,6 +19,9 @@ def check_static_contract() -> None:
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     api = (ROOT / "frontend" / "js" / "api-client.js").read_text(encoding="utf-8")
     itinerary = (MODULES / "trip-itinerary-view.js").read_text(encoding="utf-8")
+    # The stop cards moved to their own module when the route panel became two
+    # folded columns; the itinerary view still draws the list around them.
+    stop_card = (MODULES / "trip-stop-card.js").read_text(encoding="utf-8")
     planner = (MODULES / "trip-planner.js").read_text(encoding="utf-8")
     suggestions = (MODULES / "trip-suggestion-actions.js").read_text(encoding="utf-8")
     itinerary_actions = (MODULES / "trip-itinerary-actions.js").read_text(encoding="utf-8")
@@ -37,10 +40,10 @@ def check_static_contract() -> None:
     assert "/free-stops`" in api and "/free-stops/${stopId}/archive" in api
     assert "method: 'DELETE'" not in api[api.index("async function addTripFreeStop"):api.index("async function updateTripStop")]
     assert "/transport-suggestions" in api
-    assert "stop.stop_kind === 'free'" in itinerary
-    assert "TripFreeStopActions.archive" in itinerary
-    assert itinerary.count('oninput="TripTransportActions.stayChanged') == 2
-    assert 'onchange="TripTransportActions.stayChanged' not in itinerary
+    assert "stop.stop_kind === 'free'" in stop_card
+    assert "TripFreeStopActions.archive" in stop_card
+    assert stop_card.count('oninput="TripTransportActions.stayChanged') == 2
+    assert 'onchange="TripTransportActions.stayChanged' not in stop_card
     assert "stop?.stop_kind !== 'free'" in planner
     assert "force_refresh" in suggestions and "TripPlanningDraft.change" in suggestions
     assert suggestions.count("TripFreeStopDraft?.guardRouteAction") >= 2
@@ -313,7 +316,8 @@ const pairs={'{start} to {end}':'{start} 至 {end}','From {location}: {mode}, {d
 const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,document:{getElementById(){return null},querySelectorAll(){return[]}},escapeHtml:v=>String(v??''),
  I18n:{t:(text,params={})=>Object.entries(params).reduce((value,[key,item])=>value.replace(`{${key}}`,item),pairs[text]||text)}};
 context.window=context;vm.createContext(context);
-vm.runInContext(fs.readFileSync('frontend/js/modules/trip-itinerary-view.js','utf8'),context);
+for(const file of ['trip-itinerary-view.js','trip-stop-card.js'])
+ vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 const output=context.formatTripStopSchedule({planned_date:'2026-09-15',planned_end_date:'2026-09-16',travel_from_label:'巴黎',travel_mode:'drive',travel_distance_km:20,travel_time_hours:1});
 assert(output.includes('2026-09-15 至 2026-09-16'));assert(output.includes('从 巴黎 出发：驾车，20 公里，1 小时'));
 assert(!output.includes('From ')&&!output.includes(' to '));
@@ -333,7 +337,7 @@ const initial={id:'p1',row_version:1,route_order_mode:'auto',legs:[],stops:[
  {id:'c2',stop_kind:'customer',sequence_no:3,customer_name:'Customer two',stay_days:1},
 ]};
 const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{tripBusy:false,currentTripPlan:initial,tripCandidatePagination:{limit:25,offset:0}},
- document:{getElementById:id=>elements.get(id)||null,querySelectorAll(){return[]}},
+ document:{getElementById:id=>elements.get(id)||null,querySelectorAll(){return[]},querySelector(){return null}},
  I18n:{t:(text,params={})=>Object.entries(params).reduce((value,[key,item])=>value.replace(`{${key}}`,item),text)},
  escapeHtml:value=>String(value??''),TripTransportView:{render(){}},TripTransportActions:{schedulePreview(){}},
  TripPlannerModule:{renderVisitExecution(){}},notify(){},renderTripMap(){},
@@ -341,7 +345,7 @@ const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.curre
  numericOrNull(value){if(value===''||value==null)return null;const number=Number(value);return Number.isFinite(number)?number:null;},
  parseHolidayInput(){return[]},tripDateTimeLocalValue(value){return value||''}};
 context.window=context;vm.createContext(context);
-for(const file of ['trip-duration.js','trip-stop-schedule-controls.js','trip-form.js','trip-stop-duration-payload.js','trip-leg-overrides.js','trip-planning-draft.js','trip-itinerary-view.js','trip-plan-list-sync.js','trip-itinerary-actions.js'])
+for(const file of ['trip-duration.js','trip-stop-schedule-controls.js','trip-form.js','trip-stop-duration-payload.js','trip-leg-overrides.js','trip-planning-draft.js','trip-selection.js','trip-detail-panel.js','trip-itinerary-view.js','trip-stop-card.js','trip-plan-list-sync.js','trip-itinerary-actions.js'])
  vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 context.populateTripPlanForm(initial,{committed:true});
 
@@ -361,15 +365,19 @@ context.State.currentTripPlan=preview;
 assert.strictEqual(context.TripPlanningDraft.previewApplied(preview,revision),true);
 context.populateTripPlanForm(preview);
 context.renderCurrentTripPlan();
-assert(elements.get('trip-current-plan').innerHTML.includes('id="stop-stay-c1" value="3"'));
-assert(elements.get('trip-current-plan').innerHTML.includes('id="stop-stay-f1"\n                value="2"'));
+const stayShown=(html,id,value)=>new RegExp(`id="stop-stay-${id}"\\s+value="${value}"`).test(html);
+// One form at a time now: the stop that is chosen is the stop whose form is
+// on screen, and it is the unsaved value that has to be in it.
+const show=id=>{context.TripSelection.select('stop',id);return elements.get('trip-current-plan').innerHTML;};
+assert(stayShown(show('c1'),'c1','3'));
+assert(stayShown(show('f1'),'f1','2'));
 
 (async()=>{
  await context.moveTripStop('f1',1);
- assert.deepStrictEqual(context.State.currentTripPlan.stops.map(stop=>stop.id),['c1','c2','f1']);
+ assert.deepStrictEqual(Array.from(context.State.currentTripPlan.stops,stop=>stop.id),['c1','c2','f1']);
  assert.strictEqual(context.TripPlanningDraft.get().stopDurations.f1.half_days,4,'free-stop stay must survive move');
  await context.moveTripStop('c1',1);
- assert.deepStrictEqual(context.State.currentTripPlan.stops.map(stop=>stop.id),['c2','c1','f1']);
+ assert.deepStrictEqual(Array.from(context.State.currentTripPlan.stops,stop=>stop.id),['c2','c1','f1']);
  assert.strictEqual(context.TripPlanningDraft.get().stopDurations.c1.half_days,6,'customer-stop stay must survive move');
 
  // A same-plan server refresh can still contain the saved value 1. Reconcile
@@ -378,9 +386,8 @@ assert(elements.get('trip-current-plan').innerHTML.includes('id="stop-stay-f1"\n
  context.State.currentTripPlan=stale;context.populateTripPlanForm(stale);context.renderCurrentTripPlan();
  assert.strictEqual(context.TripPlanningDraft.get().stopDurations.c1.half_days,6);
  assert.strictEqual(context.TripPlanningDraft.get().stopDurations.f1.half_days,4);
- const html=elements.get('trip-current-plan').innerHTML;
- assert(html.includes('id="stop-stay-c1" value="3"'));
- assert(html.includes('id="stop-stay-f1"\n                value="2"'));
+ assert(stayShown(show('c1'),'c1','3'));
+ assert(stayShown(show('f1'),'f1','2'));
 })().catch(error=>{console.error(error);process.exit(1)});
 """)
 

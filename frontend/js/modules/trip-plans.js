@@ -34,7 +34,12 @@ window.selectTripPlan = async function(planId) {
             'Discard unsaved personal stop changes and switch plans?'
         )) return;
     try {
-        if (State.currentTripPlan?.id !== planId) window.TripVisitDraft?.reset?.();
+        if (State.currentTripPlan?.id !== planId) {
+            window.TripVisitDraft?.reset?.();
+            // Another plan is another reading position: a two-stop plan opened
+            // at the depth of a twenty-stop one starts below its own end.
+            window.TripRouteFocus?.forget?.(planId);
+        }
         const token = TripPlanIdentity.intend();
         const plan = await ApiClient.getTripPlan(planId);
         if (!TripPlanIdentity.accept(token, plan)) return;

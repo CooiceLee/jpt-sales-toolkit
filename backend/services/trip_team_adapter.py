@@ -182,6 +182,10 @@ def member_departure_slots(core, member_repo, plan_id: str,
     second start - the plan cannot begin before it begins - so the team slot
     stands. A date after the end is a real mistake worth saying out loud: it
     would put somebody's departure past the day the trip is over.
+
+    Both of those are reported. Standing silently was the worse half of the
+    rule: somebody set a departure before the trip began, nothing moved, and
+    nothing said the date had been passed over - so they set it again.
     """
     slots, risks = {}, []
     for user, value in member_repo.departure_slots(plan_id).items():
@@ -200,6 +204,16 @@ def member_departure_slots(core, member_repo, plan_id: str,
             continue
         if core._slot_key((day, "AM")) > core._slot_key(start_slot):
             slots[user] = (day, "AM")
+        elif day < start_slot[0]:
+            # Passed over, not applied: say which date is being used instead.
+            risks.append(
+                {
+                    "kind": "member_departure_before_plan_start",
+                    "member_id": user,
+                    "departure_date": day.isoformat(),
+                    "start_date": start_slot[0].isoformat(),
+                }
+            )
     return slots, risks
 
 

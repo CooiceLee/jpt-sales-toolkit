@@ -72,14 +72,10 @@
         return rows.every(row => going.has(row.user_id));
     }
 
-    function blankRow(kind) {
-        return blanks[kind]();
-    }
+    const blankRow = kind => blanks[kind]();
 
     /** The reader touched the list of people, so it is theirs now. */
-    function markRosterEdited() {
-        inheritedRoster = false;
-    }
+    const markRosterEdited = () => { inheritedRoster = false; };
 
     /** Still "whoever is travelling": it came back naming nobody, and it
      * still reads as the whole team. The second test alone is what turned a
@@ -89,6 +85,9 @@
     }
 
     function renderStatus(message = '') {
+        // The shared route bar's answer depends on this draft, so it is redrawn
+        // wherever this is: loaded, typed into, saved, cancelled.
+        window.TripRouteBar?.render?.();
         const root = document.getElementById('trip-briefing-draft-status');
         if (!root) return;
         root.textContent = message || (dirty ? I18n.t('Visit preparation changes are not saved.') : '');
@@ -109,7 +108,7 @@
     }
 
     function markDirty() {
-        if (!record) return;
+        if (!record || dirty) return;
         dirty = true;
         renderStatus();
     }

@@ -5,6 +5,11 @@ function renderReviewTable(containerId, columns, rows) {
         container.innerHTML = '<div class="empty-state compact">No data</div>';
         return;
     }
+    // A column says whether its values are this interface's own words or
+    // somebody's data. The stage of a lead is one of six words this product
+    // chose; a customer's name is not. Marking every cell as business text kept
+    // the stage column in English while the funnel beside it read 新建/跟进中,
+    // and the two could not be matched up.
     container.innerHTML = `
         <table class="data-table compact-table">
             <thead>
@@ -13,9 +18,10 @@ function renderReviewTable(containerId, columns, rows) {
             <tbody>
                 ${rows.map(row => `
                     <tr>
-                        ${columns.map(([, getter]) => {
+                        ${columns.map(([, getter, kind]) => {
                             const value = typeof getter === 'function' ? getter(row) : row[getter];
-                            return `<td data-business>${escapeHtml(value ?? '-')}</td>`;
+                            const own = kind === 'interface';
+                            return `<td${own ? '' : ' data-business'}>${escapeHtml(value ?? '-')}</td>`;
                         }).join('')}
                     </tr>
                 `).join('')}

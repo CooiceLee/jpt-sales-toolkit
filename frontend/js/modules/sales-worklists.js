@@ -104,7 +104,7 @@
             });
             setText('deal-quoting', dealLeads.filter(lead => lead.sales_stage === 'Quoted').length);
             setText('deal-won', won.length);
-            setText('deal-value', MoneyTotals.text(wonByCurrency));
+            paintMoneyValue('deal-value', wonByCurrency);
             // Every figure on this card is computed from the list that was
             // read, so a list that stopped short makes all of them partial.
             setText('deal-value-note', [MoneyTotals.missingNote(wonWithoutAmount),

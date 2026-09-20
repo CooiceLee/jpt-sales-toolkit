@@ -83,8 +83,10 @@ def check_the_editor_and_its_picker_are_in_the_preparation_zone() -> None:
 
 def check_the_preparation_zone_does_not_repeat_the_overview() -> None:
     tree = parsed()
+    # The standing list of every leg is gone: journeys are read on the timeline
+    # and edited one at a time in the panel beside it.
     for name in ("trip-schedule-list", "trip-map", "trip-risk-bar",
-                 "trip-current-plan", "trip-leg-list"):
+                 "trip-current-plan", "trip-stop-order-list"):
         chains = tree.found.get(name) or []
         assert chains, f"{name} is not on the page at all"
         # Every occurrence, not just the first: a second copy dropped into the

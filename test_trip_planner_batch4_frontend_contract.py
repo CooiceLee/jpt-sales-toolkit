@@ -58,7 +58,10 @@ def check_batch4_assets_and_dom_contract() -> None:
     # leave a large empty panel on the right.
     css = _source("frontend/css/style.css")
     actions = _source("frontend/js/modules/trip-briefing-actions.js")
-    assert ".trip-schedule-workspace:not(.has-open-briefing)" in css
+    # The schedule workspace is now the timeline and the panel for whatever
+    # is chosen on it, which is always there; the briefing editor has its own
+    # zone and its own grid, and that is the one that releases a column.
+    assert ".trip-briefing-workspace:not(.has-open-briefing)" in css
     assert "classList.toggle('has-open-briefing'" in actions
 
     # The editor contents are intentionally generated only after a customer
@@ -124,8 +127,10 @@ def check_api_and_language_contract() -> None:
             f"missing final bilingual UI label: {english} / {chinese}"
         )
     planner = _source("frontend/js/modules/trip-planner.js")
-    itinerary = _source("frontend/js/modules/trip-itinerary-view.js")
-    schedule = _source("frontend/js/modules/trip-schedule-view.js")
+    itinerary = _source("frontend/js/modules/trip-stop-card.js")
+    # The half-day board became the timeline; the mode label it localizes is
+    # drawn by the entry renderer now.
+    schedule = _source("frontend/js/modules/trip-team-timeline-view.js")
     for label in (
         "Unscheduled stops", "Export day report", "No scheduled date", "Customer personnel",
         "Channel partner companions", "JPT internal participants", "Lead",
@@ -134,7 +139,7 @@ def check_api_and_language_contract() -> None:
         assert f"t('{label}')" in planner, f"Trip execution must localize {label} at render time"
     assert "I18n.t('Visit purpose')" in itinerary
     assert "I18n.t('Result notes')" in itinerary
-    assert "transportModeLabel(item.selected_mode" in schedule
+    assert "modeLabel(entry.selected_mode)" in schedule
 
 
 def check_duration_conversion_and_route_payload() -> None:
@@ -187,12 +192,19 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(payload.stop_durations)),{
 
 
 def check_schedule_items_are_sorted_and_all_kinds_render() -> None:
+    """Every kind reaches the timeline, in time order, in the reader's language.
+
+    The half-day board became one timeline for every plan, so the same contract
+    is checked against the renderer that now draws it.
+    """
     _node(r"""
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 const target={innerHTML:''};
-const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,document:{getElementById:id=>id==='trip-schedule-list'?target:null},
+const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,Date,document:{getElementById:id=>id==='trip-schedule-list'?target:null,querySelectorAll:()=>[]},
  I18n:{t:v=>v==='Flight'?'航班':v},escapeHtml:v=>String(v??'')};context.window=context;vm.createContext(context);
-vm.runInContext(fs.readFileSync('frontend/js/modules/trip-schedule-view.js','utf8'),context);
+for(const file of ['trip-schedule-view.js','trip-team-timeline-view.js','trip-team-timeline.js',
+                   'trip-timeline-model.js','trip-timeline-view.js'])
+ vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 const items=[
  {slot_key:'2026-09-15:PM',date:'2026-09-15',period:'PM',schedule_index:2,item_type:'free',source_id:'f1',title:'Hotel'},
  {slot_key:'2026-09-16:AM',date:'2026-09-16',period:'AM',schedule_index:3,item_type:'leg',source_id:'l1',title:'Paris to Lyon',selected_mode:'flight'},
@@ -200,10 +212,13 @@ const items=[
 ];
 const sorted=context.TripScheduleView.sortItems(items);
 assert.deepStrictEqual(Array.from(sorted,x=>x.slot_key),['2026-09-15:AM','2026-09-15:PM','2026-09-16:AM']);
-context.TripScheduleView.render(items,target);
+context.TripTimelineView.render({schedule_items:items,stops:[],members:[]},target);
 for(const text of ['Rayxion','Hotel','Paris to Lyon','AM','PM']) assert(target.innerHTML.includes(text),text);
 assert(target.innerHTML.includes('航班'),'canonical transport mode must be localized');
 for(const kind of ['customer','free','leg']) assert(target.innerHTML.includes(kind),kind);
+// Days first, half-days inside them: two days, three half-days.
+assert.strictEqual((target.innerHTML.match(/class="trip-day"/g)||[]).length,2,target.innerHTML);
+assert.strictEqual((target.innerHTML.match(/class="trip-team-slot"/g)||[]).length,3);
 """)
 
 
@@ -238,7 +253,7 @@ def check_map_uses_effective_visit_location() -> None:
     _node(r"""
 const fs=require('fs');const vm=require('vm');const assert=require('assert');
 const points=[];const tooltips=[];
-const marker=()=>({bindTooltip(value){tooltips.push(value);return this},bindPopup(){return this},addTo(){return this}});
+const marker=()=>({bindTooltip(value){tooltips.push(value);return this},bindPopup(){return this},addTo(){return this},setPopupContent(){return this},openPopup(){return this}});
 const stop={sequence_no:1,stop_kind:'customer',customer_name:'Customer default',lat:1,lng:2,
  visit_location:{name:'Paris meeting room',address:'12 Rue Demo',city:'Paris',country:'France',lat:48.86,lng:2.35}};
 const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.currentTripPlan=plan;return true},clear(){context.State.currentTripPlan=null;return true},isCurrent:()=>true},console,State:{tripMap:{fitBounds(){}},tripMapLayer:{clearLayers(){}},tripCandidates:[],currentTripPlan:{stops:[stop]}},
@@ -246,7 +261,8 @@ const context={TripPlanIdentity:{intend:()=>1,accept(t,plan){context.State.curre
  L:{circleMarker:marker,polyline:marker},I18n:{t:value=>value},escapeHtml:value=>String(value??''),formatMoney(){return''},
  TripVisitState:{visitLocation:item=>item.visit_location||item}};
 context.window=context;vm.createContext(context);
-vm.runInContext(fs.readFileSync('frontend/js/modules/trip-candidates-map.js','utf8'),context);
+for(const file of ['trip-plan-markers.js','trip-candidates-map.js'])
+ vm.runInContext(fs.readFileSync(`frontend/js/modules/${file}`,'utf8'),context);
 context.renderTripMap();
 assert(points.some(pair=>pair[0]===48.86&&pair[1]===2.35));
 assert(!points.some(pair=>pair[0]===1&&pair[1]===2));

@@ -65,6 +65,7 @@ window.openInquiryPanel = async function(leadId, targetContext = null) {
         State.currentInquiry = inquiry;
         setText('panel-title', [inquiry.inquiry_id || leadId, inquiry.company_name].filter(Boolean).join(' · '));
         renderPanelTabs(panelTabForContext(targetContext));
+        window.WorklistContext?.refresh?.();
         return true;
     } catch (err) {
         if (requestId !== inquiryPanelRequestId) return false;
@@ -89,6 +90,7 @@ window.closePanel = function() {
     State.currentInquiry = null;
     WorklistUI.clear();
     PanelDirtyState.reset();
+    window.WorklistContext?.refresh?.();
     return true;
 };
 
@@ -141,5 +143,11 @@ function renderPanelTabs(activeTabId = 'basic') {
 
 function togglePanelSaveButton(tabId) {
     const actionTabs = ['sample', 'followup', 'aftersales', 'quality', 'files'];
-    document.getElementById('panel-save-btn')?.classList.toggle('hidden', actionTabs.includes(tabId));
+    const readOnly = actionTabs.includes(tabId);
+    document.getElementById('panel-save-btn')?.classList.toggle('hidden', readOnly);
+    // With nothing to save, that button closes the panel - and calling it
+    // "Cancel" made it read as "undo what I just typed". The discard
+    // confirmation that closePanel() runs is untouched either way.
+    const dismiss = document.getElementById('panel-dismiss-btn');
+    if (dismiss) dismiss.textContent = I18n.t(readOnly ? 'Close' : 'Cancel');
 }

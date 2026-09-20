@@ -58,12 +58,21 @@
             });
         });
         const stranded = window.TripTeamJourneys.incompleteMembers(plan, active);
+        // Nothing to draw is not the same as failing to draw it. Somebody who
+        // is on the trip but on none of its visits has no journey at all, and
+        // an empty map with no sentence on it reads as a drawing that broke.
+        const idle = active !== 'all' && !drawn.length && !stranded.length
+            && !visibleStops(plan).length
+            ? window.TripTeamJourneys.memberName(plan, active) : '';
         const notice = document.getElementById('trip-map-notice');
         if (notice) {
-            notice.hidden = !stranded.length;
+            notice.hidden = !stranded.length && !idle;
             notice.textContent = stranded.length
                 ? t('No route is drawn for {members} yet: the plan cannot say where they are.',
                     { members: stranded.join(' · ') })
+                : idle
+                ? t('{name} is on this trip but not on any of its visits, so there is no route to draw.',
+                    { name: idle })
                 : '';
         }
         return drawn.length;

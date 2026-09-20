@@ -409,7 +409,7 @@ async function loadDashboard() {
         setText('kpi-recent', stats.recent_7_days || 0);
         setText('kpi-following', counts.followup);
         setText('kpi-won', wonCount);
-        setText('kpi-pipeline', MoneyTotals.text(stats.won_value_by_currency));
+        paintMoneyValue('kpi-pipeline', stats.won_value_by_currency);
 
         applyNavigationCounts(stats);
 
@@ -427,6 +427,23 @@ async function loadDashboard() {
     // Map errors have their own visible state and must not invalidate valid KPIs.
     if (!WorklistRequest.isCurrent(request)) return;
     if (typeof loadReviewMap === 'function') await loadReviewMap();
+}
+
+// A total that is several totals. Amounts in different currencies are not
+// added together, so the card has to show more than one number - and one long
+// string in a 36px value wrapped mid-number across three lines.
+function paintMoneyValue(id, byCurrency) {
+    const host = document.getElementById(id);
+    if (!host) return;
+    const rows = window.MoneyTotals?.rows?.(byCurrency) || [];
+    if (!rows.length) { host.textContent = '—'; return; }
+    // Every currency at the same size. Enlarging the first one made whichever
+    // had the biggest unconverted number look like the biggest piece of
+    // business, which is a comparison this product deliberately never makes.
+    host.innerHTML = `<span class="kpi-money">${rows.map(row =>
+        `<span class="kpi-money-row"><span class="kpi-money-code">${
+            escapeHtml(row.code)}</span><span>${escapeHtml(row.amount)}</span></span>`
+    ).join('')}</span>`;
 }
 
 function renderFunnel(byStage) {

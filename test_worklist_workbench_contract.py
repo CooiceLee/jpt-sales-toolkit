@@ -142,6 +142,147 @@ def check_the_panel_column_is_not_tied_to_one_page() -> None:
     assert ".workbench-followup" not in CSS
 
 
+SCROLL_HARNESS = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert/strict');
+
+// A page that scrolls, a list inside it, and a panel positioned from a CSS
+// variable - the three parts the real layout is made of.
+let scrollTop = 0;
+const LIST_TOP_AT_REST = 300;   // where the list starts on the first screen
+const MAIN_TOP = 48;            // below the application header
+const CONTEXT_HEIGHT = 36;      // the line pinned above the list
+const listeners = { scroll: [], resize: [], loaded: [] };
+const variables = {};
+
+const context = {
+  console,
+  requestAnimationFrame: callback => { callback(); return 1; },
+  addEventListener: (type, handler) => { (listeners[type] ||= []).push(handler); },
+  document: {
+    addEventListener: (type, handler) => {
+      if (type === 'DOMContentLoaded') listeners.loaded.push(handler);
+    },
+    querySelector: selector => {
+      if (selector === '.main-content') return main;
+      return null;
+    },
+    getElementById: id => (id === 'app' ? app : null),
+  },
+};
+const main = {
+  dataset: {},
+  addEventListener: (type, handler) => { (listeners[type] ||= []).push(handler); },
+  getBoundingClientRect: () => ({ top: MAIN_TOP }),
+};
+const app = { style: { setProperty: (name, value) => { variables[name] = value; } } };
+const contextRow = {
+  getBoundingClientRect: () => {
+    // Sticky, and flush with the top of the scrollport: its own `top` cancels
+    // the container's padding, so no list row shows in a strip above it.
+    const top = Math.max(MAIN_TOP, LIST_TOP_AT_REST - scrollTop - CONTEXT_HEIGHT);
+    return { top, bottom: top + CONTEXT_HEIGHT, height: CONTEXT_HEIGHT };
+  },
+};
+const layoutBox = { getBoundingClientRect: () => ({ top: LIST_TOP_AT_REST - scrollTop }) };
+const moduleHost = {
+  classList: { contains: name => name === 'active' },
+  querySelector: selector => (selector === '.wb-context' ? contextRow : null),
+};
+context.document.querySelector = selector => {
+  if (selector === '.main-content') return main;
+  if (selector === '#module-handler .wb-layout') return layoutBox;
+  return null;
+};
+context.document.getElementById = id => {
+  if (id === 'app') return app;
+  if (id === 'module-handler') return moduleHost;
+  return null;
+};
+context.window = context;
+vm.createContext(context);
+vm.runInContext(fs.readFileSync('frontend/js/modules/worklist-workbench.js', 'utf8'),
+                context, { filename: 'worklist-workbench.js' });
+
+const workbench = context.WorklistWorkbench.create('handler');
+listeners.loaded.forEach(run => run());
+
+const scrollTo = value => {
+  scrollTop = value;
+  assert.ok(listeners.scroll.length > 0,
+    'nothing listens for the page scrolling, so the panel can only be right on the first screen');
+  listeners.scroll.forEach(run => run());
+};
+const panelTop = () => parseInt(variables['--wb-panel-top'], 10);
+const lineTop = () => Math.round(contextRow.getBoundingClientRect().top);
+
+workbench.syncPanelTop();
+assert.equal(panelTop(), lineTop(),
+  'the panel does not start level with the line pinned above the list, so a '
+  + 'band of empty page its own width wide sits above it');
+assert.equal(listeners.scroll.length, 1,
+  'the scroll is listened to more than once: six queues would do the same work six times');
+
+for (const position of [120, 900, 25000]) {
+  scrollTo(position);
+  assert.equal(panelTop(), Math.max(MAIN_TOP, lineTop()),
+    `scrolled to ${position}: panel at ${panelTop()}, line at ${lineTop()}`);
+  assert.ok(panelTop() >= MAIN_TOP,
+    'the panel slid under the application header');
+}
+
+// Scrolled far enough for the line to be pinned, the panel reaches the top of
+// the scrolling area: the empty band above it is gone, not merely smaller.
+scrollTo(25000);
+assert.equal(panelTop(), MAIN_TOP,
+  `a ${panelTop() - MAIN_TOP}px strip of empty page stays pinned above the panel`);
+
+scrollTo(0);
+assert.equal(panelTop(), lineTop(), 'scrolling back to the top left the panel behind');
+
+// A second workbench must not add a second scroll listener.
+context.WorklistWorkbench.create('deal');
+listeners.loaded.forEach(run => run());
+assert.equal(listeners.scroll.length, 1, 'each queue added its own scroll listener');
+
+console.log(JSON.stringify({ ok: true }));
+"""
+
+
+def check_the_pinned_line_is_flush_with_the_scrolling_area() -> None:
+    """A sticky `top: 0` stops at the padding edge, not at the top of the view.
+
+    The scrolling area is padded, so the line stopped 24px down it and list
+    rows went on showing - cut in half by the line - in the strip above.
+    """
+    assert "--main-pad" in CSS, (
+        "the scrolling area's padding is not named, so the line above the list "
+        "cannot cancel it out"
+    )
+    assert "top: calc(-1 * var(--main-pad" in CSS, (
+        "the pinned line stops below the top of the scrolling area again, and "
+        "half a list row shows in the strip above it"
+    )
+
+
+def check_the_panel_follows_the_page_while_it_scrolls() -> None:
+    """The list scrolls and the panel is fixed, so its top has to be recomputed.
+
+    Measured before this was fixed: with the list scrolled 44,810px the panel
+    was still at the coordinate the list had on the first screen, and the band
+    of empty page above it was exactly that far out of date.
+    """
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(SCROLL_HARNESS)
+        script = handle.name
+    result = subprocess.run(["node", script], capture_output=True, text=True, cwd=ROOT)
+    Path(script).unlink(missing_ok=True)
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert json.loads(result.stdout.strip().splitlines()[-1])["ok"]
+
+
 HARNESS = r"""
 const fs = require('fs');
 const vm = require('vm');
@@ -238,6 +379,8 @@ def main() -> None:
     check_the_view_switch_is_not_a_filter()
     check_the_panel_column_is_not_tied_to_one_page()
     check_the_rows_hold_up_on_real_tools()
+    check_the_pinned_line_is_flush_with_the_scrolling_area()
+    check_the_panel_follows_the_page_while_it_scrolls()
     print("PASS: the inquiry and pre-sales queues share the shape and keep "
           "their own fields")
 

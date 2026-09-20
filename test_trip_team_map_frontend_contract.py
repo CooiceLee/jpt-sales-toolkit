@@ -257,12 +257,14 @@ def check_one_rule_for_both_views() -> None:
         assert invented not in journeys, (
             f"the map is deciding journey identity for itself: {invented}"
         )
-    # The legacy single-path line must not be drawn for a team plan.
-    candidates = (MODULES / "trip-candidates-map.js").read_text(encoding="utf-8")
-    assert "} else if (routePoints.length >= 2) {" in candidates, (
+    # The legacy single-path line must not be drawn for a team plan. (The
+    # plan's own markers and lines moved into trip-plan-markers.js when
+    # renderTripMap outgrew its module boundary.)
+    markers = (MODULES / "trip-plan-markers.js").read_text(encoding="utf-8")
+    assert "} else if (routePoints.length >= 2) {" in markers, (
         "a team plan must not get one line through the stops in order"
     )
-    assert "TripTeamMap.draw(plan" in candidates
+    assert "TripTeamMap.draw(plan" in markers
     team_map = (MODULES / "trip-team-map.js").read_text(encoding="utf-8")
     assert "dashArray" not in team_map, (
         "an unknown route must be absent, not a dashed guess"
@@ -272,12 +274,16 @@ def check_one_rule_for_both_views() -> None:
         assert f'id="{element}"' in index, f"missing element: {element}"
     for name in ("trip-team-journeys.js", "trip-team-map.js"):
         assert name in index, f"module never loaded: {name}"
-    timeline = "".join(
-        (MODULES / name).read_text(encoding="utf-8")
-        for name in ("trip-team-timeline.js", "trip-team-timeline-view.js")
-    )
-    assert "TripTeamMap.focusStop" in timeline and "TripTeamMap.focusLeg" in timeline, (
+    # Choosing a line on the timeline is one selection, and the map is that
+    # same choice seen from above - so it follows the selection rather than
+    # being a second place to pick something.
+    selection = (MODULES / "trip-selection.js").read_text(encoding="utf-8")
+    assert "TripTeamMap?.focusStop" in selection and "TripTeamMap?.focusLeg" in selection, (
         "choosing a timeline line must show it on the map"
+    )
+    timeline = (MODULES / "trip-team-timeline-view.js").read_text(encoding="utf-8")
+    assert "TripSelection.select(" in timeline, (
+        "the timeline picks something without going through the selection"
     )
 
 

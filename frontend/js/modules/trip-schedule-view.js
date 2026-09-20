@@ -24,50 +24,6 @@
         });
     }
 
-    function itemLabel(item) {
-        if (typeOf(item) === 'leg') {
-            return item.title || item.label || [item.from_label || item.origin, item.to_label || item.destination]
-                .filter(Boolean).join(' → ') || I18n.t('Travel leg');
-        }
-        return item.title || item.customer_name || item.location_name || item.label || I18n.t('Untitled');
-    }
-
-    function renderItem(item) {
-        const type = ['customer', 'free', 'leg'].includes(typeOf(item)) ? typeOf(item) : 'free';
-        const stopId = item.stop_id || item.source_id || item.id || '';
-        const canOpen = type === 'customer' && stopId;
-        const slotProgress = item.half_day_count > 1
-            ? I18n.t('Half-day {index} of {count}', { index: item.half_day_index || 1, count: item.half_day_count }) : '';
-        const details = type === 'leg'
-            ? [transportModeLabel(item.selected_mode || item.travel_mode || item.mode),
-                item.time_hours != null ? I18n.t('{count} hours', { count: item.time_hours }) : '', slotProgress]
-            : [item.city, item.country,
-                item.duration_half_days ? TripDuration.label(item.duration_half_days) : slotProgress];
-        return `<button type="button" class="trip-schedule-item is-${h(type)}" ${canOpen
-            ? `onclick="TripBriefingActions.open('${h(stopId)}')"` : 'disabled'}>
-            <span class="trip-schedule-item-type">${h(I18n.t({ customer: 'Customer visit', free: 'Personal stop', leg: 'Travel leg' }[type]))}</span>
-            <strong>${h(itemLabel(item))}</strong>
-            <small>${h(details.filter(Boolean).join(' · '))}</small>
-            ${item.confirmation_status ? `<em>${h(I18n.t(item.confirmation_status))}</em>` : ''}
-        </button>`;
-    }
-
-    function render(items = [], target = document.getElementById('trip-schedule-list'), plannedDays = []) {
-        if (!target) return;
-        const sorted = sortItems(items);
-        const days = [...new Set([...plannedDays, ...sorted.map(dayOf)].filter(Boolean))].sort();
-        if (!days.length) {
-            target.innerHTML = `<div class="empty-state compact">${h(I18n.t('Save or preview a route to create the AM/PM schedule.'))}</div>`;
-            return;
-        }
-        target.innerHTML = days.map(day => `<section class="trip-schedule-day">
-            <h3>${h(day)}</h3><div class="trip-schedule-periods">
-            ${['AM', 'PM'].map(period => `<div class="trip-schedule-period"><h4>${h(I18n.t(period === 'AM' ? 'Morning (AM)' : 'Afternoon (PM)'))}</h4>
-                ${sorted.filter(item => dayOf(item) === day && periodOf(item) === period).map(renderItem).join('')
-                    || `<div class="trip-schedule-empty">${h(I18n.t('Available'))}</div>`}
-            </div>`).join('')}</div></section>`).join('');
-    }
-
     function businessDays(plan) {
         const start = dayOf({ date: plan?.start_date });
         const end = plan?.itinerary_summary?.calculated_end_date || plan?.end_date || start;
@@ -85,50 +41,71 @@
         return result;
     }
 
+    /**
+     * An out-of-date itinerary is not an empty one: say why it went away and
+     * offer the way back, instead of a grid of empty half-days.
+     *
+     * The way back is whatever is actually possible now. While an editor
+     * somewhere holds unsaved work, every route action is refused - so a
+     * "preview route" button here could only produce the same alert the shared
+     * bar is already showing. It offers the thing that has to happen first, and
+     * says whose work it is.
+     */
     function staleNotice(plan) {
         const summary = plan?.itinerary_summary || {};
         if (!(summary.stale === true || summary.valid === false)) return '';
-        // An out-of-date itinerary is not an empty one. Say why it went away and
-        // offer the way back, instead of showing a grid of empty half-days.
         const reason = (summary.warnings || [])[0]
             || 'The itinerary is out of date. Preview and save it again.';
+        const blocked = (window.TripRouteState?.derive?.(plan)?.editors || [])[0];
+        const action = blocked
+            ? `<button type="button" class="btn btn-secondary btn-sm"
+                    onclick="TripRouteBar.goToBlocker()">${escapeHtml(I18n.t('Go to it'))}</button>`
+            : `<button type="button" class="btn btn-primary btn-sm"
+                    onclick="previewCurrentTripItinerary()">${escapeHtml(I18n.t('Preview route'))}</button>`;
         return `<div class="empty-state compact trip-schedule-stale">
             <div>${escapeHtml(I18n.t(reason))}</div>
-            <button type="button" class="btn btn-primary btn-sm"
-                onclick="previewCurrentTripItinerary()">${escapeHtml(I18n.t('Preview route'))}</button>
+            ${blocked ? `<div class="trip-schedule-blocked">${escapeHtml(I18n.t(
+                'Save or cancel first: {what}', { what: blocked.label }))}</div>` : ''}
+            ${action}
         </div>`;
     }
 
+    /**
+     * One reading surface for every plan.
+     *
+     * A team plan and a single traveller's plan are the same timeline with a
+     * different number of people on it; keeping two renderers meant two answers
+     * to "what happens on Tuesday" and only one of them was ever maintained.
+     */
     function renderPlan(plan) {
         window.TripTeamView?.render?.(plan);
         window.TripExportActions?.refresh?.(plan);
-        // Team planning has its own timeline: a plan with several travellers
-        // cannot be read as one column of half-days.
-        if (plan?.planning_mode === 'team') {
-            window.TripTeamTimeline?.renderPlan?.(plan);
-            return;
-        }
         window.TripTeamRisks?.render?.(plan);
+        window.TripSelection?.reconcile?.(plan);
         const root = document.getElementById('trip-schedule-list');
+        const status = document.getElementById('trip-schedule-status');
         const notice = staleNotice(plan);
         if (notice) {
             if (root) root.innerHTML = notice;
-            const status = document.getElementById('trip-schedule-status');
             if (status) status.textContent = I18n.t('Needs a new preview');
+            window.TripTimelineToolbar?.render?.(plan);
             return;
         }
-        render(plan?.schedule_items || [], root, businessDays(plan));
-        const status = document.getElementById('trip-schedule-status');
-        if (status) status.textContent = I18n.t('{count} schedule items', {
-            count: (plan?.schedule_items || []).length,
-        });
+        window.TripTimelineView?.render?.(plan, root);
+        window.TripTimelineToolbar?.render?.(plan);
+        window.TripFlexibleSuggestions?.render?.(plan);
+        if (status) {
+            status.textContent = (plan?.members || []).length > 1
+                ? I18n.t('{count} people travelling', { count: plan.members.length })
+                : I18n.t('{count} schedule items', { count: (plan?.schedule_items || []).length });
+        }
         const openStopId = window.TripBriefingDraft?.getStopId?.();
         if (!plan?.id || (openStopId && !(plan.stops || []).some(stop => stop.id === openStopId))) {
             window.TripBriefingActions?.close?.({ force: true });
         }
     }
 
-    window.TripScheduleView = Object.freeze({ sortItems, render, renderPlan,
-        businessDays, dayOf, periodOf, transportModeLabel });
+    window.TripScheduleView = Object.freeze({ sortItems, renderPlan,
+        businessDays, dayOf, periodOf, transportModeLabel, staleNotice });
     window.addEventListener?.('language:changed', () => renderPlan(State.currentTripPlan));
 })();

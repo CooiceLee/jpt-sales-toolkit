@@ -85,13 +85,15 @@
         status('');
         categoryChanged();
         window.TripFreeStopTeamControls?.render?.(stop);
-        window.TripFreeStopDraft?.reset?.();
         const editor = el('trip-free-stop-editor');
         if (editor) editor.hidden = false;
         el('trip-add-free-stop')?.setAttribute('aria-expanded', 'true');
         const title = el('trip-free-stop-editor-title');
         if (title) title.textContent = I18n.t(stop ? 'Edit personal stop' : 'Add personal stop');
         el('trip-free-stop-name')?.focus();
+        // Last, not first: the reset is what tells the shared bar this editor
+        // changed, and until `hidden` is off the bar would be told it is closed.
+        window.TripFreeStopDraft?.reset?.();
     }
     function close(options = {}) {
         if (!options.force && !window.TripFreeStopDraft?.confirmDiscard?.()) return false;
