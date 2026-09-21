@@ -195,27 +195,63 @@ def check_no_document_claims_a_version_nobody_built() -> None:
 
 
 def check_the_guide_separates_what_shipped_from_what_did_not() -> None:
-    """Half the guide describes work that is still only in the source tree."""
+    """Which half of the guide applies depends on the package in front of the reader.
+
+    While the candidate was unbuilt, and then built but undistributed, that
+    split was "only in the source tree" against "in your hands". Distribution
+    does not end the question, it changes the pair: the members who upgraded
+    against the ones still on the older package. Either way the guide has to
+    say, before the first instruction, which of the two the reader is - and
+    a reader left on the old one needs to be told to upgrade, not merely that
+    something exists elsewhere.
+    """
     text = GUIDE.read_text(encoding="utf-8")
     assert "〔候选〕" in text, (
-        "the guide does not mark which parts need a version nobody has yet"
+        "the guide does not mark which parts need a version not everybody has"
     )
     boundary = text[:text.index("## 1.")]
-    # A candidate can now be built and still not be in anybody's hands, so
-    # either wording counts - what must be said is that the reader does not
-    # have it yet.
-    assert "已分发" in boundary and ("未打包" in boundary or "尚未分发" in boundary), (
+    assert "已分发" in boundary, (
         "the guide does not say, before the first instruction, which of it "
         "applies to the package the reader has"
     )
-    # The sections whose entry points do not exist in the shipped package.
+    if "未打包" not in boundary and "尚未分发" not in boundary:
+        # Distributed: the table a reader meets first has to tie the marked
+        # parts to the package that carries them, and tell somebody on the
+        # older package to upgrade. Said anywhere on the page is not the same
+        # as said in the row that is about them.
+        rows = [line for line in boundary.splitlines() if line.startswith("|")]
+        current = tuple(int(part) for part in VERSION.split("-")[0].split("."))
+        older = [
+            line for line in rows
+            if any(tuple(int(part) for part in found.split(".")) < current
+                   for found in re.findall(r"v(\d+\.\d+\.\d+)-internal", line))
+        ]
+        assert older, (
+            "the guide says the candidate has been distributed and never names "
+            "the package a member might still be on"
+        )
+        for line in older:
+            # "升级到 X", not the word 升级 anywhere - the row label itself
+            # carries it, and a row that only labels the old package tells
+            # nobody where to go.
+            assert "升级到" in line, (
+                "the guide names an older package without telling a reader on "
+                f"it which version to upgrade to: {line[:80]}"
+            )
+        assert any("〔候选〕" in line and f"v{VERSION}" in line for line in rows), (
+            "nothing ties the 〔候选〕 parts to the package that has them, so a "
+            "reader cannot tell what to install"
+        )
+    # The sections whose entry points the older package does not have.
     for section in ("## 1. 〔候选〕", "## 6. 〔候选〕"):
-        assert section in text, f"{section} is not marked as unreleased"
+        assert section in text, f"{section} is not marked as needing the new package"
     for name in ("README.md", "docs/current-internal-runbook.md"):
         declaration = (ROOT / name).read_text(encoding="utf-8")
-        assert "尚未打包" in declaration or "尚未分发" in declaration, (
-            f"{name} presents unreleased work as part of a released package"
-        )
+        assert (
+            "尚未打包" in declaration
+            or "尚未分发" in declaration
+            or f"当前已分发候选：`v{VERSION}`" in declaration
+        ), f"{name} presents unreleased work as part of a released package"
 
 
 def check_it_is_honest_about_what_is_unfinished() -> None:
